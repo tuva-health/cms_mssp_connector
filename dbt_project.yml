@@ -27,6 +27,7 @@ vars:
   input_schema: raw_data
   claims_enabled: true
   cms_alr_connector: true
+  provider_attribution_enabled: true
 
 
 models:
