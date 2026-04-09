@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: mssp_raw
+    database: "{{ var('input_database') }}"
+    schema: "{{ var('input_schema') }}"
+    tables:
+      - name: claims_benefit_enhancement_and_demonstration_code_file_cclfa
+      - name: cclfb_claims_benefit_enhancement_and_demonstration_code_file_cclfb

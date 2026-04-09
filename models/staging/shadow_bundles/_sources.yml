@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: mssp_raw
+    database: "{{ var('input_database') }}"
+    schema: "{{ var('input_schema') }}"
+    tables:
+      - name: shadow_bundles_dm
+      - name: shadow_bundles_epi
+      - name: shadow_bundles_hh
+      - name: shadow_bundles_hs
+      - name: shadow_bundles_ip
+      - name: shadow_bundles_opl
+      - name: shadow_bundles_pb
+      - name: shadow_bundles_sn

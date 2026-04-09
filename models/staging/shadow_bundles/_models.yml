@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: stg_shadow_bundles_dm
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_shadow_bundles_epi
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_shadow_bundles_hh
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_shadow_bundles_hs
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_shadow_bundles_ip
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_shadow_bundles_opl
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_shadow_bundles_pb
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_shadow_bundles_sn
+    config:
+      schema: _stg_input_layer

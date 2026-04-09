@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: mssp_raw
+    database: "{{ var('input_database') }}"
+    schema: "{{ var('input_schema') }}"
+    tables:
+      - name: participants_list
+      - name: provider_and_supplier_list

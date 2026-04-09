@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: mssp_raw
+    database: "{{ var('input_database') }}"
+    schema: "{{ var('input_schema') }}"
+    tables:
+      - name: mcqm_beneficiaries
+      - name: mcqm_dm_001ssp
+      - name: mcqm_bcs_112ssp
+      - name: mcqm_dep_134ssp
+      - name: mcqm_htn_236ssp

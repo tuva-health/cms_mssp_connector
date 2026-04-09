@@ -1,0 +1,10 @@
+version: 2
+
+models:
+  - name: stg_beneficiary_exclusions
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_excluded_beneficiary_mbi_xref
+    config:
+      schema: _stg_input_layer

@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: mssp_raw
+    database: "{{ var('input_database') }}"
+    schema: "{{ var('input_schema') }}"
+    tables:
+      - name: baip_beneficiary_advanced_investment_payment
+      - name: beur_beneficiary_expenditure_utilization_report
+      - name: ncbp_non_claims_based_payments

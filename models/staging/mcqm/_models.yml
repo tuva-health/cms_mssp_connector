@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: stg_mcqm_bcs_112ssp
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_mcqm_beneficiaries
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_mcqm_dep_134ssp
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_mcqm_dm_001ssp
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_mcqm_htn_236ssp
+    config:
+      schema: _stg_input_layer

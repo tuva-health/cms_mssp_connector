@@ -1,0 +1,10 @@
+version: 2
+
+models:
+  - name: stg_cclfb_claims_benefit_enhancement_and_demonstration_code_file_cclfb
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_claims_benefit_enhancement_and_demonstration_code_file_cclfa
+    config:
+      schema: _stg_input_layer

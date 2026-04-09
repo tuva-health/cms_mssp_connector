@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: stg_baip_beneficiary_advanced_investment_payment
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_beur_beneficiary_expenditure_utilization_report
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_ncbp_non_claims_based_payments
+    config:
+      schema: _stg_input_layer

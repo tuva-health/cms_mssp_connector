@@ -1,0 +1,12 @@
+[project]
+name = "cms-mssp_connector"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "dbt-core==1.10.20",
+    "dbt-duckdb==1.10.1",
+    "duckdb==1.4.3",
+    "dbt-snowflake==1.10.7",
+]

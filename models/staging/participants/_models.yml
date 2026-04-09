@@ -1,0 +1,10 @@
+version: 2
+
+models:
+  - name: stg_participants_list
+    config:
+      schema: _stg_input_layer
+
+  - name: stg_provider_and_supplier_list
+    config:
+      schema: _stg_input_layer

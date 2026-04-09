@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: mssp_raw
+    database: "{{ var('input_database') }}"
+    schema: "{{ var('input_schema') }}"
+    tables:
+      - name: beneficiary_exclusions
+      - name: excluded_beneficiary_mbi_xref
