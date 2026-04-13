@@ -25,6 +25,7 @@ clean-targets:
 vars:
   input_database: vbca_tuva_dev
   input_schema: raw_data
+  
   claims_enabled: true
   cms_alr_connector: true
   provider_attribution_enabled: true
