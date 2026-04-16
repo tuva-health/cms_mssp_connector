@@ -6,7 +6,15 @@ name: 'cms_mssp_connector'
 version: '1.0.0'
 
 # This setting configures which "profile" dbt uses for this project.
-profile: 'vbca'
+profile: 'default'
+
+vars:
+  input_database: tuva
+  input_schema: raw_data
+  
+  claims_enabled: true
+  cms_alr_connector: true
+  provider_attribution_enabled: true
 
 # These configurations specify where dbt should look for different types of files.
 # The `model-paths` config, for example, states that models in this project can be
@@ -22,16 +30,11 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
-vars:
-  input_database: vbca_tuva_dev
-  input_schema: raw_data
-  
-  claims_enabled: true
-  cms_alr_connector: true
-  provider_attribution_enabled: true
-
-
 models:
-  cms_mssp_connector:
-    staging:
-      +materialized: view
+   cms_mssp_connector:
+     final:
+       +materialized: table
+     intermediate:
+       +materialized: table
+     staging:
+       +materialized: view
