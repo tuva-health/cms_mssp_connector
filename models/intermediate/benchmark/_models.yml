@@ -862,6 +862,16 @@ models:
       a column rather than a property of the workbook, which is why it gets its
       own model rather than joining `int_expenditures_quarterly`.
 
+      There is one latest quarter per workbook, read off the regional
+      expenditure section and applied to all three metrics. The three sections
+      are three headings inside one sheet of one delivery, written by CMS in one
+      pass, and `[I]` blends `[E]`, `[G]` and `[H]` into a single factor — so a
+      quarter is a property of the workbook here, not of a section. Letting each
+      section pick its own would let `[I]` combine one quarter's regional factor
+      with another quarter's weights, silently.
+      `assert_regional_metrics_agree_on_the_latest_quarter` warns if the
+      sections ever stop advancing together.
+
     config:
       schema: _int_input_layer
 
@@ -972,19 +982,39 @@ models:
 
       - name: IS_LATEST_QUARTER
         description: >
-          True on the highest-numbered quarter column that actually carries a
-          number, false everywhere else — including on the benchmark year
-          column and on every quarter CMS has not reported yet.
+          True on the quarter column the workbook reports as current, false
+          everywhere else — including on the benchmark year column and on every
+          quarter CMS has not reported yet.
 
-          "Carries a number" means `VALUE_NUMERIC is not null`, which also
-          excludes CMS's `'-'` not-applicable marker.
+          That quarter is the highest-numbered one carrying a number in the
+          **regional expenditure** section, and it is applied to all three
+          metrics. "Carries a number" means `VALUE_NUMERIC is not null`, which
+          also excludes CMS's `'-'` not-applicable marker.
 
-          The scope is `(FILE_PATH, METRIC)`. A workbook is one delivery of one
-          quarter, so a later delivery must not decide which quarter is current
-          inside an earlier one — but the sheet's three sections are populated
-          independently, and pooling them lets a section that has run ahead drag
-          the other two onto a quarter they have no data for, leaving `[E]` and
-          `[H]` returning rows of NULL while the reported values sit unflagged.
+          The scope is `FILE_PATH`: one workbook is one delivery of one quarter,
+          so a later delivery must not decide which quarter is current inside an
+          earlier one. Within the workbook the quarter is not decided per
+          section, because the sections are not independent — `[I]` blends
+          `[E]`, `[G]` and `[H]` into one number, and a per-section quarter
+          would let it combine a Q1 regional factor with Q2 weights without
+          anything saying so.
+
+          Anchoring on the regional expenditure section rather than taking the
+          highest quarter any section reached also avoids the opposite failure:
+          a section running ahead cannot drag the others onto a quarter they
+          hold no data for, because whatever has run ahead necessarily has data
+          for the anchor quarter too.
+
+          That the three sections advance together is an assumption about how
+          CMS writes the sheet.
+          `assert_regional_metrics_agree_on_the_latest_quarter` makes it
+          checkable and warns if it is ever violated.
+
+          The quarter is taken from the highest-numbered column carrying a
+          number anywhere in the anchor section. The reference implementation
+          reads the ESRD row specifically; the two agree unless ESRD is blank
+          where another enrollment type is populated, where the broader rule
+          keeps data the narrower one would discard.
 
           False, never NULL, so a filter on it is safe.
         data_tests:

@@ -11,13 +11,48 @@
     "Carries a number" is VALUE_NUMERIC is not null, which also excludes CMS's
     '-' not-applicable marker.
 
-    The scope is (FILE_PATH, METRIC), not FILE_PATH alone. One workbook is one
-    delivery of one quarter, so a later delivery must not decide which quarter
-    is current inside an earlier one — but the three sections of this sheet are
-    also populated independently, and pooling them lets one section that has
-    run ahead drag the other two onto a quarter they have no data for. [E] and
-    [H] would then return four rows of NULL while the values CMS actually
-    reported sat unflagged.
+    There is one latest quarter per workbook, and it is read off the regional
+    expenditure section. Which quarter is current is a property of the delivery,
+    not of a section: the three sections are three headings inside one sheet of
+    one workbook, written by CMS in one pass, and the reference implementation
+    reads the quarter off the Regional Expenditures rows and applies it to [E],
+    [G] and [H] alike.
+
+    Anchoring rather than pooling or splitting, because the other two shapes
+    each fail in a way this one cannot.
+
+    Per-metric — each section choosing its own quarter — keeps the sections
+    independent, and if one ever ran ahead [I] would silently blend a Q1
+    regional factor against Q2 weights. [I] combines all three into a single
+    number, so mixing quarters inside it is simply wrong.
+
+    Workbook-wide max — the highest quarter any section has reached — fails the
+    other way: a section that has run ahead drags the other two onto a quarter
+    they hold no data for, and [E] and [H] come back as four rows of NULL while
+    the values CMS actually reported sit unflagged.
+
+    Anchored on the regional expenditure section, neither happens. If another
+    section runs ahead it necessarily has data for the anchor quarter too, so
+    nothing goes NULL and nothing mixes.
+
+    The scope is still FILE_PATH, never wider. One workbook is one delivery of
+    one quarter, and a later delivery must not decide which quarter is current
+    inside an earlier one.
+
+    One deliberate difference from the reference implementation, which is
+    otherwise what this rule reproduces: find_latest_quarter_col reads the
+    quarter off the ESRD row specifically, while this takes the highest quarter
+    carrying a number anywhere in the section. The two agree unless ESRD is
+    blank where another enrollment type is populated — in which case the
+    reference would fall back to an earlier quarter and return NULLs for the
+    four types that do have data, and this does not. The broader rule is kept
+    for that reason, and named here so the divergence is a decision rather than
+    a discrepancy.
+
+    That the three sections advance together is an assumption about CMS, not
+    something this model can enforce, so it is made checkable:
+    assert_regional_metrics_agree_on_the_latest_quarter warns if they ever
+    disagree.
 -#}
 
 with source as (
@@ -71,14 +106,16 @@ typed as (
 
 latest_quarter as (
 
+    {#- One row per workbook. The anchor is the regional expenditure section;
+        the weights follow it rather than each finding its own quarter. -#}
     select
         FILE_PATH,
-        METRIC,
         max(QUARTER_NUM) as LATEST_QUARTER_NUM
     from typed
     where PERIOD_TYPE = 'quarter'
+      and METRIC = 'regional_expenditure'
       and VALUE_NUMERIC is not null
-    group by FILE_PATH, METRIC
+    group by FILE_PATH
 
 )
 
@@ -136,4 +173,3 @@ left join enrollment_type
 
 left join latest_quarter
     on typed.FILE_PATH = latest_quarter.FILE_PATH
-   and typed.METRIC = latest_quarter.METRIC
