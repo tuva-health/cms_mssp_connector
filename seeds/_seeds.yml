@@ -1,0 +1,61 @@
+version: 2
+
+seeds:
+
+  - name: mssp_enrollment_type
+    description: >
+      Crosswalk from the Medicare enrollment type labels CMS writes in column A
+      of the benchmark workbooks to a canonical key.
+
+      The labels are not consistent, and not only between the three report
+      families — the same QEXPU workbook writes `End Stage Renal Disease` and
+      `Aged/Dual` on Table 1 and `ESRD` and `Aged/dual` on Table 2. BNMRK Table 6
+      splits two ways (`ESRD` / `Aged/Disabled`) in its first two sections and
+      four ways in the rest.
+
+      Every row here was derived by enumerating the distinct `ROW_LABEL` values
+      actually present in the benchmark staging models, not from the report
+      layouts. Matching is case-insensitive on a trimmed label, so a single row
+      covers both `Aged/dual` and `Aged/Dual`.
+
+      Two things this seed deliberately does not carry. It has no `unmapped`
+      row: an unmatched label cannot join to one, so the models supply
+      `unmapped` themselves, and `assert_benchmark_enrollment_types_are_mapped`
+      fails on it. And it has no row for the aggregate lines that repeat their
+      section's heading — those are recognised structurally in the models
+      instead, because CMS rewords them between deliveries and an enumeration
+      of their text would go stale without anyone noticing.
+
+    config:
+      schema: _int_input_layer
+
+    columns:
+      - name: ROW_LABEL_UPPER
+        description: >
+          The worksheet label, upper-cased and trimmed. The join key: models
+          match `upper(trim(ROW_LABEL))` against it.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          Canonical key: `esrd`, `disabled`, `aged_dual`, `aged_non_dual`,
+          `aged_disabled` or `total`.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual', 'aged_disabled', 'total']
+
+      - name: ENROLLMENT_TYPE_LABEL
+        description: Display form of the canonical key.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE_SORT
+        description: >
+          Sort key giving the enrollment types the order CMS presents them in,
+          with the aggregate last.
+        data_tests:
+          - not_null
