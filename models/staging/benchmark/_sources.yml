@@ -1,0 +1,36 @@
+version: 2
+
+sources:
+  - name: mssp_raw
+    database: "{{ var('input_database') }}"
+    schema: "{{ var('input_schema') }}"
+    tables:
+      # Historical Benchmark Report (BNMRK) — one workbook per delivery.
+      - name: bnmrk_table_1
+      - name: bnmrk_table_1a
+      - name: bnmrk_table_1b
+      - name: bnmrk_table_1c
+      - name: bnmrk_table_2
+      - name: bnmrk_table_3
+      - name: bnmrk_table_4
+      - name: bnmrk_table_5
+      # Table 6 (ACPT) is absent from the March preliminary delivery and only
+      # appears from the June delivery onward.
+      - name: bnmrk_table_6
+      - name: bnmrk_parameters
+
+      # Annual Expenditure & Utilization (AEXPU) — one workbook per benchmark year.
+      - name: aexpu_table_1
+      # Tables 1A and 4A (excluding COVID-19 episodes) exist for BY1 and BY2
+      # only; the BY3 workbook does not carry them.
+      - name: aexpu_table_1a
+      - name: aexpu_table_3
+      - name: aexpu_table_4
+      - name: aexpu_table_4a
+      - name: aexpu_parameters
+
+      # Quarterly Expenditure & Utilization (QEXPU) — one workbook per quarter.
+      - name: qexpu_table_1
+      - name: qexpu_table_2
+      - name: qexpu_table_3
+      - name: qexpu_parameters

@@ -1,0 +1,447 @@
+version: 2
+
+# Staging views over the three sectioned CMS workbook families: BNMRK
+# (Historical Benchmark), AEXPU (annual Expenditure & Utilization) and QEXPU
+# (quarterly Expenditure & Utilization).
+#
+# All twenty raw tables share one long/tidy schema — one row per worksheet
+# cell, carrying the section grammar (group / section / row / column labels)
+# that located it. Column documentation and tests are therefore identical
+# across all twenty models, so they are written once on stg_bnmrk_table_1 and
+# aliased with YAML anchors rather than repeated twenty times.
+#
+# Grain: (FILE_PATH, ROW_NUM, COLUMN_GROUP_LABEL, COLUMN_LABEL).
+
+models:
+
+  - name: stg_bnmrk_table_1
+    description: >
+      Historical Benchmark Report sheet `Table 1 - Historical Benchmark`:
+      person years, CMS-HCC risk scores and risk ratios, and historical
+      benchmark expenditures by Medicare enrollment type, one column per
+      benchmark year (`BY1`/`BY2`/`BY3`) plus the blended `Benchmark` column.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: &benchmark_data_tests
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - FILE_PATH
+              - ROW_NUM
+              - COLUMN_GROUP_LABEL
+              - COLUMN_LABEL
+
+      # CMS's non-numeric cell markers must never reach VALUE_NUMERIC as a
+      # number: '-' means "not applicable", not zero, and a percentage string
+      # is not the fraction it looks like.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "VALUE_NUMERIC is null"
+          config:
+            where: "trim(VALUE_TEXT) in ('-', '', 'N/A') or right(trim(VALUE_TEXT), 1) = '%'"
+
+      # And the converse, so the cast cannot fail silently: a cell written as a
+      # plain decimal literal must produce a number. The filter defines
+      # "numeric-looking" without reference to the macro under test — nothing
+      # but digits, a point and a sign, and at least one digit.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "VALUE_NUMERIC is not null"
+          config:
+            where: >-
+              VALUE_TEXT is not null
+              and length(trim(VALUE_TEXT)) > 0
+              and length(translate(trim(VALUE_TEXT), '0123456789.+-', '')) = 0
+              and length(translate(trim(VALUE_TEXT), '0123456789', '')) < length(trim(VALUE_TEXT))
+
+    columns: &benchmark_columns
+      - name: ROW_NUM
+        description: >
+          1-based index of the source worksheet row this value came from. Part
+          of the model grain, but not unique on its own: one worksheet row
+          emits one row here per source column.
+        data_tests:
+          - not_null
+
+      - name: GROUP_LABEL
+        description: >
+          Nearest preceding unbracketed section heading — the outer level of
+          the sheet's section grammar. NULL where no outer heading precedes the
+          row.
+
+      - name: SECTION_CODE
+        description: >
+          Code taken from a `[X]` prefix on the section heading, brackets
+          stripped (`A1`, `B`, `L`). NULL where the heading carries no prefix,
+          which is every row on the sheets CMS does not letter.
+
+      - name: SECTION_LABEL
+        description: >
+          Section heading text with any `[X]` prefix removed. NULL where no
+          heading precedes the row.
+
+      - name: ROW_LABEL
+        description: >
+          Column A of the source worksheet row — `ESRD`, `Aged/dual`, `Person
+          Years`. Non-NULL by construction: upstream drops rows whose column A
+          is blank, and a row headed by a bracketed `[X]` code with no text
+          after it falls back to the code itself.
+        data_tests:
+          - not_null
+
+      - name: COLUMN_GROUP_LABEL
+        description: >
+          Outer label of a two-row column header. NULL on single-header sheets,
+          which is all but `stg_aexpu_table_3` and `stg_qexpu_table_3`. Carried
+          in the model grain because a two-row header can repeat a sub-label
+          under two different groups.
+
+      - name: COLUMN_LABEL
+        description: >
+          Header label of the source column — `BY1`, `Benchmark`, `PY1`, `Q1`,
+          `ACO-Specific`. Columns blank in every header row are dropped
+          upstream, so this is never NULL.
+        data_tests:
+          - not_null
+
+      - name: VALUE_TEXT
+        description: >
+          The source cell, verbatim and unmodified — the audit trail for
+          everything downstream. `'-'` is CMS's "not applicable" marker and is
+          preserved as-is rather than nulled. NULL only where the cell itself
+          is empty, which happens for quarters and deliveries CMS has not
+          reported yet.
+
+      - name: VALUE_NUMERIC
+        description: >
+          `VALUE_TEXT` cast to numeric, or NULL where `VALUE_TEXT` is not a
+          number. Non-numeric cells — `'-'`, `''`, `'N/A'`, percentages, date
+          ranges and free text — all become NULL rather than raising or
+          silently zeroing. Scaled to 24 decimal places against a deepest
+          observed fraction of 17, so CMS-HCC risk ratios and trend weights
+          survive the cast unrounded with room to spare.
+
+      - name: FILE_PATH
+        description: >
+          Full path of the source workbook. Part of the model grain.
+        data_tests:
+          - not_null
+
+      - name: DIRECTORY_NAME
+        description: >
+          Name of the delivery bundle directory the workbook arrived in.
+        data_tests:
+          - not_null
+
+      - name: FILE_NAME
+        description: >
+          File name of the source workbook.
+        data_tests:
+          - not_null
+
+      - name: FILE_DATE
+        description: >
+          Reporting date of the delivery, derived from the file name alone:
+          quarter end for QEXPU, benchmark year end for AEXPU, and the
+          `D<YYMMDD>` delivery stamp for BNMRK.
+
+          NULL whenever that token is not a real date. A BNMRK stamp is the only
+          one that can fail to parse in practice, and CMS sample and anonymised
+          workbooks ship placeholder stamps that do — so BNMRK rows can arrive
+          with FILE_DATE NULL, but a genuine delivery populates it. Do not treat
+          "NULL for BNMRK" as an invariant downstream; use SUBMISSION_ID to
+          identify a benchmark delivery.
+
+      - name: ACO_ID
+        description: >
+          CMS-assigned ACO identifier the delivery belongs to. Every row of a
+          given workbook carries the same value.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: >
+          Performance year of the delivery, taken from the file store path and
+          cast to an integer. NULL if the path carries no four-digit year,
+          which no correctly organised file store does — hence documented but
+          not asserted.
+
+      - name: BENCHMARK_YEAR
+        description: >
+          Benchmark year of the workbook, cast to an integer. Populated for the
+          AEXPU family only, which ships one workbook per benchmark year;
+          always NULL for BNMRK and QEXPU.
+
+      - name: SUBMISSION_ID
+        description: >
+          Delivery stamp from the file name, of the form `D<YYMMDD>.T<NNNNNNN>`.
+          This is the only thing separating the March, June and October BNMRK
+          deliveries, which are otherwise identically named. Workbooks without
+          a stamp are rejected upstream, so this is never NULL.
+        data_tests:
+          - not_null
+
+      - name: PERIOD
+        description: >
+          Period label: `<YYYY>Q<N>` for QEXPU, `Y<YYYY>` for AEXPU, and the
+          submission id for BNMRK, whose deliveries are not periodic.
+
+  - name: stg_bnmrk_table_1a
+    description: >
+      Historical Benchmark Report sheet `Table 1A - Regional Adjustment`:
+      derivation of the regional adjustment, including the cap and the risk /
+      dual-eligibility offset factor.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_bnmrk_table_1b
+    description: >
+      Historical Benchmark Report sheet `Table 1B - Prior Savings Adj`:
+      eligibility for and derivation of the prior savings adjustment, with one
+      column per performance year corresponding to each benchmark year.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_bnmrk_table_1c
+    description: >
+      Historical Benchmark Report sheet `Table 1C - Health Equity Adj`:
+      eligibility for and derivation of the health equity benchmark adjustment.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_bnmrk_table_2
+    description: >
+      Historical Benchmark Report sheet `Table 2 - Trend Factor`: national and
+      regional per capita expenditures, the national and regional weights, and
+      the blended trend factor, by benchmark year.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_bnmrk_table_3
+    description: >
+      Historical Benchmark Report sheet `Table 3 - Truncation`: expenditure
+      truncation thresholds by benchmark year.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_bnmrk_table_4
+    description: >
+      Historical Benchmark Report sheet `Table 4 - Renormalization`: CMS-HCC
+      risk score renormalization factors by benchmark year.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_bnmrk_table_5
+    description: >
+      Historical Benchmark Report sheet `Table 5 - Reg Adj Weight`: the
+      percentage weight used to calculate the regional adjustment, given the
+      ACO's spending relative to its regional service area.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_bnmrk_table_6
+    description: >
+      Historical Benchmark Report sheet `Table 6 - ACPT`: the Accountable Care
+      Prospective Trend, its modified USPCC growth rates and the resulting flat
+      dollar amounts by performance year.
+
+      CMS omits this sheet from the March preliminary delivery and first ships
+      it in June, so the model legitimately covers fewer submissions than the
+      other BNMRK models.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_bnmrk_parameters
+    description: >
+      Historical Benchmark Report sheet `Parameters`: the key/value inputs to
+      the benchmark — ACO track, assignment method, benchmark year weights,
+      risk adjustment model versions and reporting windows. These values are
+      overwhelmingly text rather than numbers, so `VALUE_NUMERIC` is NULL on
+      most rows.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_aexpu_table_1
+    description: >
+      Annual Expenditure & Utilization sheet `Table_1-Aggregate_EU_Report`:
+      person years, total and component expenditures per assigned beneficiary,
+      and utilization rates, compared across `ACO-Specific`, `All MSSP ACOs`
+      and `National Assignable FFS`.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_aexpu_table_1a
+    description: >
+      Annual Expenditure & Utilization sheet `Table_1A-EU_Excluding_COVID`: the
+      Table 1 measures recomputed excluding COVID-19 episodes.
+
+      CMS ships this sheet in the BY1 and BY2 workbooks only, never BY3, so the
+      model legitimately covers fewer benchmark years than `stg_aexpu_table_1`.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_aexpu_table_3
+    description: >
+      Annual Expenditure & Utilization sheet `Table_3-SNF_Report`: skilled
+      nursing facility stays, admission rates and rates per 1,000 person years.
+      This sheet carries a two-row column header, so `COLUMN_GROUP_LABEL` is
+      populated for the affiliated-SNF columns.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_aexpu_table_4
+    description: >
+      Annual Expenditure & Utilization sheet `Table_4-Exp_Truncation`:
+      truncated expenditure amounts and percentages by Medicare enrollment
+      type.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_aexpu_table_4a
+    description: >
+      Annual Expenditure & Utilization sheet `Table_4A-Ex_Trc_Excluding_COVID`:
+      the Table 4 measures recomputed excluding COVID-19 episodes.
+
+      As with Table 1A, CMS ships this sheet in the BY1 and BY2 workbooks only,
+      never BY3.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_aexpu_parameters
+    description: >
+      Annual Expenditure & Utilization sheet `Parameters`: the key/value
+      expenditure truncation thresholds and factors, both including and
+      excluding COVID-19 episodes.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_qexpu_table_1
+    description: >
+      Quarterly Expenditure & Utilization sheet `Table_1-Aggregate_EU_Report`:
+      the quarterly counterpart of `stg_aexpu_table_1`.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_qexpu_table_2
+    description: >
+      Quarterly Expenditure & Utilization sheet
+      `Table_2-Regional_Expenditures`: regional expenditures and the national
+      and regional weights, one column per quarter (`Q1` to `Q4`) plus
+      `Benchmark Year 3`.
+
+      Quarters CMS has not reported yet are blank in the workbook and arrive
+      here with both `VALUE_TEXT` and `VALUE_NUMERIC` NULL.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_qexpu_table_3
+    description: >
+      Quarterly Expenditure & Utilization sheet `Table_3-SNF_Report`: the
+      quarterly counterpart of `stg_aexpu_table_3`, likewise carrying a two-row
+      column header.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
+
+  - name: stg_qexpu_parameters
+    description: >
+      Quarterly Expenditure & Utilization sheet `Parameters`: the key/value
+      expenditure truncation thresholds and factors for the quarter.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *benchmark_data_tests
+
+    columns: *benchmark_columns
