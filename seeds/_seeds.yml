@@ -59,3 +59,161 @@ seeds:
           with the aggregate last.
         data_tests:
           - not_null
+
+  - name: mssp_msr_lookup
+    description: >
+      The Minimum Savings Rate band table, transcribed from the MSR schedule the
+      benchmark calculator applies to `[S]` assigned beneficiaries to produce
+      `[U]`.
+
+      One row per band. Within a band the rate moves linearly from `MSR_AT_LOW`
+      at `ASSIGNED_BENEFICIARIES_LOW` to `MSR_AT_HIGH` at
+      `ASSIGNED_BENEFICIARIES_HIGH`, so a count between two published endpoints
+      is interpolated rather than rounded to the nearest band. The rate falls as
+      the assigned population grows.
+
+      Two bands are flat, carrying the same rate at both ends: the smallest,
+      which pins 12.2% below 500 beneficiaries, and the largest, which pins 2.0%
+      from 60,000 upward. Interpolating across a flat band and reading its
+      endpoint give the same answer, so no branch is needed for them beyond the
+      one the unbounded ends require.
+
+      Both bounds are inclusive, and both are nullable, meaning unbounded on
+      that side. The top band has no upper bound. The bottom band is written
+      with no lower bound rather than starting at 1, which is the one place this
+      seed departs from a literal transcription: the published schedule starts
+      the band at 1, and the reference implementation falls through its band
+      loop for a count below 1 and returns 12.2% from a trailing default. Making
+      the bottom band unbounded below reaches the same answer from the table
+      instead of from a constant, and leaves no beneficiary count the table
+      cannot price.
+
+      `assert_msr_lookup_bands_are_contiguous` checks that the bands tile the
+      whole number line without gaps or overlaps, and that the rate is
+      continuous where they meet.
+
+    config:
+      schema: _int_input_layer
+      column_types:
+        ASSIGNED_BENEFICIARIES_LOW: bigint
+        ASSIGNED_BENEFICIARIES_HIGH: bigint
+        MSR_AT_LOW: numeric(38,10)
+        MSR_AT_HIGH: numeric(38,10)
+
+    columns:
+      - name: ASSIGNED_BENEFICIARIES_LOW
+        description: >
+          Inclusive lower bound of the band. NULL means unbounded below, which
+          only the smallest band is.
+
+      - name: ASSIGNED_BENEFICIARIES_HIGH
+        description: >
+          Inclusive upper bound of the band. NULL means unbounded above, which
+          only the largest band is.
+
+      - name: MSR_AT_LOW
+        description: Minimum savings rate, as a proportion, at the band's lower bound.
+        data_tests:
+          - not_null
+
+      - name: MSR_AT_HIGH
+        description: Minimum savings rate, as a proportion, at the band's upper bound.
+        data_tests:
+          - not_null
+
+  - name: mssp_aco_agreement
+    description: >
+      Per-ACO, per-performance-year agreement facts the CMS workbooks do not
+      carry: which minimum savings rate the ACO elected, and which performance
+      year of its agreement period the delivery falls in.
+
+      This seed is configuration, not data. It ships with one obviously
+      synthetic row — `EXAMPLE-ACO` in performance year 1900 — purely to fix the
+      column types and show the shape. That row matches no delivery. Replace it
+      with real rows locally; this project is published, so no genuine ACO
+      identifier belongs in it.
+
+      Every ACO is optional here, and an ACO with no row is not an error. It
+      takes the documented defaults instead — `Variable` for the MSR type and
+      `PY1` for the agreement performance year — and both facts are flagged as
+      defaulted on the output rows so the guess is never mistaken for a
+      configured value. `assert_acos_have_an_agreement_configuration` warns,
+      without failing the build, when an ACO in the data has no row here.
+
+    config:
+      schema: _int_input_layer
+      column_types:
+        ACO_ID: varchar
+        PERFORMANCE_YEAR: integer
+        MSR_TYPE: varchar
+        FIXED_MSR_RATE: numeric(38,10)
+        ACO_TRACK: varchar
+        ACPT_PERFORMANCE_YEAR_LABEL: varchar
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ACO_ID
+              - PERFORMANCE_YEAR
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier, matching the identifier in the file store path.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: >
+          Performance year the row applies to. An agreement fact can change
+          between years — an ACO advances through its track and its agreement
+          period — so the key is the pair, not the ACO alone.
+        data_tests:
+          - not_null
+
+      - name: MSR_TYPE
+        description: >
+          `Variable` where the ACO's minimum savings rate is the
+          beneficiary-count schedule in `mssp_msr_lookup`, `Fixed` where it
+          elected a flat rate. A flat rate applies only from 5,000 assigned
+          beneficiaries upward; below that the variable schedule applies
+          regardless of the election. That threshold is the only condition the
+          calculation applies — see `fct_projected_savings.MSR_BASIS_APPLIED`.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Variable', 'Fixed']
+
+      - name: FIXED_MSR_RATE
+        description: >
+          The elected flat rate as a proportion — 0.005 for 0.5%. NULL when
+          `MSR_TYPE` is `Variable`. A `Fixed` row that leaves this NULL has
+          elected nothing usable and falls back to the variable schedule, which
+          `assert_fixed_msr_rows_carry_a_rate` reports.
+
+      - name: ACO_TRACK
+        description: >
+          Participation track and level, verbatim as CMS names it, for example
+          `BASIC Level B` or `ENHANCED`. Carried but never read by the
+          calculation, which gates a flat rate on the beneficiary count alone.
+
+          It is here because in the Shared Savings Program only a two-sided ACO
+          can elect a flat MSR, so a `Fixed` row against a one-sided track is a
+          data-entry error — one worth being able to see, and deliberately not
+          one that silently changes `[U]`.
+
+      - name: ACPT_PERFORMANCE_YEAR_LABEL
+        description: >
+          Which of the BNMRK Table 6 columns — `PY1` through `PY5` — carries the
+          Accountable Care Prospective Trend for this performance year. That
+          sheet projects the trend across a whole agreement period, so reading
+          `[J]` means choosing a column, and the choice is the ACO's position in
+          its agreement period rather than anything the workbook states.
+
+          Defaults to `PY1` when no row exists, matching the reference
+          implementation's default.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['PY1', 'PY2', 'PY3', 'PY4', 'PY5']

@@ -2,8 +2,9 @@
 
 `cms_mssp_connector` is a dbt project that stages raw CMS MSSP source files into a consistent input layer for downstream analytics.
 
-The project stages MSSP raw tables into a lightweight input layer, and adds a
-thin intermediate layer over the CMS benchmark workbooks. Most models pass source columns through as-is, with a small set of helper macros for safer type normalization such as date and numeric casting. The CMS source data is then passed into the existing cms_alr_connector and medicare_cclf_connector projects, where it is finally inputted into the Tuva models for analytics.
+The project stages MSSP raw tables into a lightweight input layer, adds a
+thin intermediate layer over the CMS benchmark workbooks, and derives the
+three-way blended benchmark update and projected savings from them. Most models pass source columns through as-is, with a small set of helper macros for safer type normalization such as date and numeric casting. The CMS source data is then passed into the existing cms_alr_connector and medicare_cclf_connector projects, where it is finally inputted into the Tuva models for analytics.
 
 ## What It Builds
 
@@ -40,8 +41,37 @@ deliveries without choosing between them:
 - `int_expenditures_quarterly` — QEXPU Table 1
 - `int_expenditures_regional` — QEXPU Table 2, regional expenditures and weights
 
-They calculate nothing. Deriving the benchmark from these inputs is a separate
-concern and deliberately lives downstream of this project.
+They calculate nothing. Deriving the benchmark from these inputs is the job of
+the final layer.
+
+Final models live under `models/final`, are materialized as tables and are
+configured into the `input_layer` schema alongside the other connectors' final
+models:
+
+- `fct_projected_benchmark_by_enrollment_type` — the per-enrollment-type inputs
+  and update factors, ending in the projected updated benchmark expenditure
+- `fct_projected_savings` — the ACO-level mean projected benchmark, the
+  projected savings percentage, the estimated minimum savings rate, and the two
+  comparisons between them
+
+Two things about their grain govern how they must be queried, and both are
+documented at length in `models/final/benchmark/_models.yml`:
+
+- CMS delivers the historical benchmark up to three times for one performance
+  year and the deliveries carry different numbers, so every pairing of a
+  reported quarter with a benchmark delivery is a row. Filter on
+  `IS_LATEST_BENCHMARK_SUBMISSION` for one row per quarter; an unfiltered query
+  multiplies rows and averages over three answers to the same question.
+- A pairing whose inputs are incomplete keeps its row and carries NULLs, flagged
+  `IS_CALCULABLE = false`. The March preliminary delivery ships no Table 6, so
+  the prospective trend and everything below it cannot be derived for anything
+  paired with it. Dropping the row would be tidier and much harder to notice.
+
+Two seeds supply what the workbooks do not carry: `seeds/mssp_msr_lookup.csv`,
+the minimum savings rate band schedule, and `seeds/mssp_aco_agreement.csv`, the
+per-ACO minimum savings rate election and agreement performance year. The second
+ships with a synthetic example row only; an ACO with no row takes documented
+defaults and every output row it produces is flagged `IS_AGREEMENT_DEFAULTED`.
 
 ## Expected Source Data
 
@@ -182,7 +212,16 @@ dbt docs serve
 - Staging models are configured as views in `dbt_project.yml`.
 - The project includes adapter-dispatched macros in `macros/` for safer cross-database casting. `cast_numeric_or_null` and `cast_year_or_null` return NULL instead of raising when a source value is not a number or not a four-digit year, which the benchmark workbooks require because every worksheet cell — figures, `-` markers and free text alike — arrives in one text column.
 - Several project vars are already defined: `claims_enabled`, `cms_alr_connector`, and `provider_attribution_enabled`.
-- Intermediate models are configured as tables in `dbt_project.yml`.
+- Intermediate models and final models are configured as tables in `dbt_project.yml`.
+- `macros/to_double.sql` and `macros/safe_divide.sql` exist for the final layer.
+  The benchmark calculation is a chain of ratios and products over cells Excel
+  stores as doubles, and doing that arithmetic in `numeric(38,24)` goes wrong
+  both ways: the products overflow — DuckDB raises `Out of Range Error: Needed
+  scale 48`, Snowflake truncates to its 38-digit cap — and the quotients come
+  back at a scale derived from the operands rather than from the value, so
+  Snowflake's `2 / 3` carries six fractional digits. `safe_divide` also returns
+  NULL on a zero or NULL denominator rather than raising, which the preliminary
+  delivery and CMS's `'-'` marker both require.
 - `seeds/mssp_enrollment_type.csv` maps the Medicare enrollment type labels CMS writes in the benchmark workbooks to canonical keys. The labels are inconsistent between report families and even between sheets of one workbook, so the mapping is seeded rather than hardcoded; matching is case-insensitive, and a label the seed does not cover is marked `unmapped` and fails a test rather than being dropped.
 
 ## Project Structure
@@ -190,6 +229,8 @@ dbt docs serve
 ```text
 .
 |-- models/
+|   |-- final/
+|   |   `-- benchmark/
 |   |-- intermediate/
 |   |   `-- benchmark/
 |   `-- staging/

@@ -1,0 +1,874 @@
+version: 2
+
+# The three-way blended benchmark update, calculated.
+#
+# Phase 3 stages every worksheet cell; phase 4 types the sheets the benchmark
+# depends on into facts. These two models do the arithmetic — steps [A] through
+# [W] of CMS's 'UPD BNMRK Estimation CALC' — and they are the only place in the
+# project where a number is derived rather than read.
+#
+# The bracketed letters are CMS's, and they are the audit trail: every derived
+# column below names its step and its formula in its description. They are not
+# in the column names. A warehouse column called `K` tells a reader nothing,
+# and the letters are CMS's numbering of a particular worksheet, which is a
+# thing that changes.
+#
+# Two properties of the grain govern how both models must be queried, and both
+# are stated again on every column they touch because getting them wrong is
+# silent:
+#
+#   IS_LATEST_BENCHMARK_SUBMISSION
+#       CMS delivers the historical benchmark up to three times for one
+#       performance year and the three carry different numbers, so a quarter is
+#       paired with each of them and every pairing is a row. An unfiltered query
+#       multiplies rows by the number of deliveries and, worse, sums and averages
+#       over three answers to the same question. Filter on this flag for one row
+#       per quarter.
+#
+#   IS_CALCULABLE
+#       A pairing whose inputs are incomplete keeps its row and NULLs what it
+#       cannot compute. The March preliminary delivery ships no Table 6, so [J]
+#       is absent and [K], [M], [P] and [R] cannot be derived. Dropping the row
+#       would be tidier and much harder to notice.
+
+models:
+
+  - name: fct_projected_benchmark_by_enrollment_type
+    description: >
+      Steps `[A]` through `[O]`: the per-enrollment-type inputs and the update
+      factors blended from them, ending in `[M]`, the projected updated
+      benchmark expenditure for each Medicare enrollment type.
+
+      One row per enrollment type per (reported quarter x benchmark delivery).
+      Four enrollment types, so four rows per pairing, always — including for a
+      pairing that computes nothing.
+
+      The inputs come from one coherent delivery on each side. The quarterly
+      side is pinned to the latest submission of the quarter, because a
+      redelivered quarter supersedes the one before it. The benchmark side is
+      not pinned at all, because a redelivered benchmark stands beside its
+      predecessor rather than replacing it, and one `BENCHMARK_SUBMISSION_ID`
+      selects `[A]` from the AEXPU BY3 workbook, `[J]` from BNMRK Table 6 and
+      `[L]` from BNMRK Table 1 out of the same bundle — the AEXPU workbooks ship
+      inside the BNMRK bundle and carry its submission stamp.
+
+      All arithmetic is done in 64-bit floating point, which is what the source
+      cells already are: Excel stores them as doubles. See the `to_double` and
+      `safe_divide` macros.
+
+    config:
+      schema: input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ACO_ID
+              - PERFORMANCE_YEAR
+              - PERIOD
+              - BENCHMARK_SUBMISSION_ID
+              - ENROLLMENT_TYPE
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: >
+          Performance year the benchmark is set for, and the year whose quarters
+          are measured against it. The quarterly report and the benchmark
+          delivery are joined on it: a quarter is only ever measured against a
+          benchmark for its own performance year.
+        data_tests:
+          - not_null
+
+      - name: PERIOD
+        description: >
+          The quarter the ACO's own figures come from, `<YYYY>Q<N>`, from the
+          QEXPU delivery. Part of the grain.
+        data_tests:
+          - not_null
+
+      - name: QUARTER_NUM
+        description: Quarter number 1-4 parsed out of `PERIOD`, for ordering.
+
+      - name: BENCHMARK_SUBMISSION_ID
+        description: >
+          Which benchmark delivery this row's `[A]`, `[J]` and `[L]` were read
+          from — the March preliminary, June preliminary-final or October final
+          submission stamp. Part of the grain, and the reason a quarter can
+          appear more than once.
+        data_tests:
+          - not_null
+
+      - name: IS_LATEST_BENCHMARK_SUBMISSION
+        description: >
+          True on the rows built from the most recent benchmark delivery for the
+          performance year. This is the filter that reduces the model to one row
+          per quarter per enrollment type; without it a query returns one row per
+          delivery and any aggregate over it is wrong rather than merely large.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          Canonical Medicare enrollment type. The calculation blends exactly
+          four, and all four are present on every pairing.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual']
+
+      - name: ENROLLMENT_TYPE_LABEL
+        description: Display form of `ENROLLMENT_TYPE`.
+
+      - name: ENROLLMENT_TYPE_SORT
+        description: Sort key giving the enrollment types CMS's own presentation order.
+
+      - name: NATIONAL_BASE_EXPENDITURE_PER_CAPITA
+        description: >
+          `[A]` National assignable fee-for-service expenditure per capita for
+          benchmark year 3, from AEXPU Table 1 of the BY3 workbook in this
+          benchmark delivery. The denominator of the national update factor.
+
+      - name: NATIONAL_CURRENT_EXPENDITURE_PER_CAPITA
+        description: >
+          `[B]` National assignable fee-for-service expenditure per capita for
+          the reported quarter, from QEXPU Table 1.
+
+      - name: NATIONAL_EXPENDITURE_UPDATE_FACTOR
+        description: >
+          `[C] = [B] / [A]` — how far national expenditure has moved since the
+          benchmark base year. NULL if either side is missing or `[A]` is zero.
+
+      - name: REGIONAL_BASE_EXPENDITURE_PER_CAPITA
+        description: >
+          `[D]` Regional expenditure for benchmark year 3, from the
+          `Benchmark Year 3` column of QEXPU Table 2.
+
+      - name: REGIONAL_CURRENT_EXPENDITURE_PER_CAPITA
+        description: >
+          `[E]` Regional expenditure for the latest quarter CMS has populated in
+          QEXPU Table 2. That sheet ships all four quarter columns from Q1
+          onward and leaves the unreported ones blank, so "latest" is the last
+          column carrying a number, not the last column present.
+
+      - name: REGIONAL_EXPENDITURE_UPDATE_FACTOR
+        description: >
+          `[F] = [E] / [D]` — the regional counterpart of `[C]`.
+
+      - name: NATIONAL_WEIGHT
+        description: >
+          `[G]` The weight CMS gives the national update factor for this
+          enrollment type, from QEXPU Table 2 at the latest reported quarter.
+          Carried unrounded; these run to sixteen decimal places.
+
+      - name: REGIONAL_WEIGHT
+        description: >
+          `[H]` The weight CMS gives the regional update factor, from the same
+          sheet and quarter.
+
+      - name: NATIONAL_REGIONAL_BLENDED_UPDATE_FACTOR
+        description: >
+          `[I] = ([C] x [G]) + ([F] x [H])` — the two update factors blended at
+          CMS's weights. NULL if any of the four is NULL.
+
+      - name: ACCOUNTABLE_CARE_PROSPECTIVE_TREND
+        description: >
+          `[J]` The Accountable Care Prospective Trend for this performance
+          year, from BNMRK Table 6 section F, read at the column named by
+          `ACPT_PERFORMANCE_YEAR_LABEL`.
+
+          NULL for the March preliminary delivery, which does not carry Table 6
+          at all. That is absence, not failure, and it is the reason `[K]`
+          onward can be NULL on a row whose other inputs are complete.
+
+      - name: THREE_WAY_BLENDED_UPDATE_FACTOR
+        description: >
+          `[K] = (2/3)[I] + (1/3)[J]` — the national-regional blend and the
+          prospective trend, at CMS's fixed two-to-one weighting.
+
+      - name: HISTORICAL_BENCHMARK_EXPENDITURE
+        description: >
+          `[L]` Historical benchmark expenditure after applying the adjustment,
+          from BNMRK Table 1 section L, `Benchmark` column. The figure the
+          update factor is applied to.
+
+      - name: PROJECTED_UPDATED_BENCHMARK_EXPENDITURE
+        description: >
+          `[M] = [K] x [L]` — the projected updated benchmark expenditure for
+          this enrollment type. The output of this model, and the input `[P]`
+          weights.
+
+      - name: PERSON_YEARS
+        description: >
+          `[N]` ACO-specific person years for this enrollment type, from QEXPU
+          Table 1.
+
+      - name: TOTAL_PERSON_YEARS
+        description: >
+          `[N]` total. Read from the section's own `Total` row rather than summed
+          from the four enrollment types: CMS rounds each row independently and
+          the four do not add to the total it prints. Carried so `[O]` can be
+          checked without reopening the workbook.
+
+      - name: ENROLLMENT_PROPORTION
+        description: >
+          `[O] = [N]_type / [N]_total` — this enrollment type's share of the
+          ACO's assigned population, and the weight `[P]` applies to `[M]`.
+
+          The four proportions need not sum to exactly 1. The denominator is
+          CMS's printed Total row, not the sum of the four parts, and CMS rounds
+          every row of the sheet independently.
+          `assert_enrollment_proportions_sum_to_one` warns — rather than fails —
+          when the gap exceeds what that rounding can explain, and states the
+          bound and its derivation.
+
+      - name: IS_CALCULABLE
+        description: >
+          True where `[M]` was derived, false where an input was missing and the
+          chain broke. False rows are kept deliberately: the March delivery
+          computes nothing, and a quarter that silently disappeared from a
+          report is much harder to notice than one full of NULLs.
+        data_tests:
+          - not_null
+
+      - name: QUARTERLY_SUBMISSION_ID
+        description: >
+          Delivery stamp of the QEXPU workbook behind `[B]`, `[D]`, `[E]`,
+          `[G]`, `[H]` and `[N]`. Lineage: with this and
+          `BENCHMARK_SUBMISSION_ID` every figure on the row traces to a named
+          workbook.
+        data_tests:
+          - not_null
+
+      - name: ANNUAL_EXPENDITURE_BENCHMARK_YEAR
+        description: >
+          Calendar benchmark year of the AEXPU workbook `[A]` was read from —
+          the third and most recent year of the delivery's benchmark window.
+          NULL only where `[A]` itself could not be found.
+
+      - name: ANNUAL_EXPENDITURE_SUBMISSION_ID
+        description: >
+          Delivery stamp of that AEXPU workbook. Equal to
+          `BENCHMARK_SUBMISSION_ID` by construction — it is the key `[A]` is
+          joined on — and carried anyway so a reader of one row can see which
+          workbook the figure came from without knowing that.
+
+          The equality is possible because CMS ships the AEXPU workbooks inside
+          the BNMRK bundle, so they carry its stamp. That is upstream's property
+          and `assert_annual_expenditures_share_the_benchmark_delivery` checks
+          it where it can actually be falsified, against the intermediate
+          models rather than against this column.
+
+      - name: ACPT_PERFORMANCE_YEAR_LABEL
+        description: >
+          Which BNMRK Table 6 column `[J]` was read from — `PY1` through `PY5`.
+          The sheet projects the trend across a whole agreement period, so
+          reading `[J]` means choosing a column, and the choice comes from the
+          `mssp_aco_agreement` seed rather than from the workbook.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['PY1', 'PY2', 'PY3', 'PY4', 'PY5']
+
+      - name: IS_AGREEMENT_DEFAULTED
+        description: >
+          True where the ACO has no row in `mssp_aco_agreement` for this
+          performance year, so `ACPT_PERFORMANCE_YEAR_LABEL` is the `PY1`
+          default rather than a configured value. A defaulted `[J]` column is a
+          guess, and a guess that looks like a configured value is worse than
+          one that announces itself.
+        data_tests:
+          - not_null
+
+  - name: fct_projected_savings
+    description: >
+      Steps `[P]` through `[W]`: the ACO-level mean projected updated benchmark,
+      the projected savings percentage against it, the estimated minimum savings
+      rate, and the two verdicts.
+
+      One row per (reported quarter x benchmark delivery) — the same grain as
+      `fct_projected_benchmark_by_enrollment_type` with the enrollment types
+      collapsed, and the same two warnings. A query that does not filter on
+      `IS_LATEST_BENCHMARK_SUBMISSION` gets up to three rows per quarter giving
+      three different savings percentages, and a row whose `IS_CALCULABLE` is
+      false is a pairing that was kept rather than dropped.
+
+      The verdicts are a boolean and an enum, not prose. The reference
+      implementation returns English sentences for `[V]` and `[W]` because it
+      renders them straight onto a page; a column that has to be string-matched
+      to be used is a worse version of the same fact.
+
+    config:
+      schema: input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ACO_ID
+              - PERFORMANCE_YEAR
+              - PERIOD
+              - BENCHMARK_SUBMISSION_ID
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: Performance year the benchmark is set for.
+        data_tests:
+          - not_null
+
+      - name: PERIOD
+        description: The quarter the ACO's own figures come from, `<YYYY>Q<N>`.
+        data_tests:
+          - not_null
+
+      - name: QUARTER_NUM
+        description: Quarter number 1-4 parsed out of `PERIOD`, for ordering.
+
+      - name: BENCHMARK_SUBMISSION_ID
+        description: >
+          Which benchmark delivery this row was calculated against. Part of the
+          grain, and the reason a quarter can appear more than once.
+        data_tests:
+          - not_null
+
+      - name: IS_LATEST_BENCHMARK_SUBMISSION
+        description: >
+          True on the row built from the most recent benchmark delivery for the
+          performance year. Filter on it for one row per quarter.
+        data_tests:
+          - not_null
+
+      - name: MEAN_PROJECTED_UPDATED_BENCHMARK
+        description: >
+          `[P] = SUMPRODUCT([O], [M])` — the projected updated benchmark
+          expenditures of the four enrollment types, weighted by their share of
+          the assigned population. The number the ACO's actual expenditure is
+          measured against.
+
+          Summed as four named terms added in CMS's own enrollment type order
+          rather than with an aggregate: floating point addition is not
+          associative, and an aggregate would leave the last bit of a
+          dollars-and-cents figure to the query planner.
+
+          NULL unless all four terms are present. A mean over three of four
+          cohorts is not a mean.
+
+      - name: ACO_EXPENDITURE_PER_CAPITA
+        description: >
+          `[Q]` The ACO's own total expenditure per capita for the quarter, from
+          QEXPU Table 1, ACO-Specific column, `Total` row.
+
+      - name: PROJECTED_SAVINGS_PERCENTAGE
+        description: >
+          `[R] = ([P] - [Q]) / [P]` — projected savings as a proportion of the
+          projected updated benchmark. Negative where expenditures exceed it.
+
+      - name: ASSIGNED_BENEFICIARIES
+        description: >
+          `[S]` Total assigned beneficiaries for the quarter, from QEXPU Table 1.
+          The input to the minimum savings rate schedule.
+
+      - name: MSR_TYPE
+        description: >
+          `[T]` `Variable` where the ACO's minimum savings rate comes from the
+          beneficiary-count schedule, `Fixed` where it elected a flat rate.
+
+          `Variable` when the ACO has no row in `mssp_aco_agreement`, which is
+          the documented default and is flagged by `IS_AGREEMENT_DEFAULTED`
+          rather than left to be inferred.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Variable', 'Fixed']
+
+      - name: FIXED_MSR_RATE
+        description: >
+          The flat rate the ACO elected, as a proportion. NULL for a variable
+          ACO, and NULL where none is configured. Carried whether or not it was
+          the rate actually applied — see `MSR_BASIS_APPLIED`.
+
+      - name: ACO_TRACK
+        description: >
+          Participation track and level from the agreement seed, for example
+          `BASIC Level B`.
+
+          Carried but not enforced. In the Shared Savings Program a flat MSR is
+          something only a two-sided ACO can elect, so a `Fixed` row against a
+          one-sided track is a contradiction — but neither this model nor the
+          reference implementation gates on it, and this column deliberately
+          does not become a second condition on `[U]`. The rule the code
+          applies is stated in full on `MSR_BASIS_APPLIED`; what the track is
+          for is being able to see such a contradiction rather than having it
+          silently change a number.
+
+      - name: MSR_BASIS_APPLIED
+        description: >
+          Which schedule actually produced `[U]` on this row: `fixed` or
+          `variable`.
+
+          These are not the same as `MSR_TYPE`, and the difference is the rule
+          rather than an edge case. A flat rate applies only from 5,000 assigned
+          beneficiaries upward; below that threshold an ACO that elected one
+          still gets the variable schedule. A `Fixed` row carrying no rate falls
+          through the same way. NULL where `[S]` is missing and neither schedule
+          can be entered.
+
+          The beneficiary count is the only gate, which mirrors `estimate_msr`
+          in the reference implementation exactly. `ACO_TRACK` is not consulted:
+          see that column for why.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['fixed', 'variable']
+
+      - name: ESTIMATED_MSR
+        description: >
+          `[U]` The estimated minimum savings rate as a proportion — the
+          threshold `[R]` has to clear.
+
+          For a variable ACO it is read from `mssp_msr_lookup` and interpolated
+          linearly between the endpoints of the band the beneficiary count falls
+          in, so a count between two published points gets a rate between the two
+          rather than the nearer one. The bottom and top bands are flat.
+
+      - name: EXPENDITURES_BELOW_BENCHMARK
+        description: >
+          `[V]` True where `[Q] < [P]` — the ACO spent less than its projected
+          updated benchmark. NULL where either is missing.
+
+          Exact equality reads as false. Two computed doubles are equal
+          essentially never, and "not below" is the honest reading of the case.
+
+      - name: SAVINGS_EXCEEDS_MSR
+        description: >
+          `[W]` True where `[R]` is positive and greater than `[U]` — the ACO is
+          projected to earn shared savings. False where savings are positive but
+          under the rate, and false where there are no savings at all; see
+          `SAVINGS_STATUS` to tell those two apart. NULL where `[R]` or `[U]` is
+          missing.
+
+      - name: SAVINGS_STATUS
+        description: >
+          `[W]` as a three-valued enum, which is what the comparison actually
+          is: `above_msr` (savings positive and over the rate), `below_msr`
+          (savings positive but under it), `no_savings` (`[R]` zero or negative,
+          expenditures at or above the benchmark). NULL where undeterminable.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['above_msr', 'below_msr', 'no_savings']
+
+      - name: IS_CALCULABLE
+        description: >
+          True where `[P]` was derived. False rows are pairings that were kept
+          rather than dropped — most often the March preliminary delivery, which
+          carries no Table 6 and so no `[J]`.
+        data_tests:
+          - not_null
+
+      - name: QUARTERLY_SUBMISSION_ID
+        description: Delivery stamp of the QEXPU workbook behind `[Q]` and `[S]`.
+        data_tests:
+          - not_null
+
+      - name: ANNUAL_EXPENDITURE_BENCHMARK_YEAR
+        description: Calendar benchmark year of the AEXPU workbook behind `[A]`.
+
+      - name: ANNUAL_EXPENDITURE_SUBMISSION_ID
+        description: Delivery stamp of that AEXPU workbook.
+
+      - name: ACPT_PERFORMANCE_YEAR_LABEL
+        description: Which BNMRK Table 6 column `[J]` was read from.
+        data_tests:
+          - not_null
+
+      - name: IS_AGREEMENT_DEFAULTED
+        description: >
+          True where the ACO has no row in `mssp_aco_agreement` for this
+          performance year, so `MSR_TYPE` and `ACPT_PERFORMANCE_YEAR_LABEL` are
+          defaults rather than configured values.
+        data_tests:
+          - not_null
+
+# ---------------------------------------------------------------------------
+# Unit tests
+#
+# Everything else in this project tests shape: that rows exist, that NULLs are
+# consistent, that a grain holds, that a seed tiles the number line. None of it
+# constrains a calculated value, and a review demonstrated exactly what that
+# costs — five separate arithmetic defects, each of them a plausible edit, all
+# five surviving a fully green build:
+#
+#   [K]'s weights (2/3, 1/3) rewritten as (0.67, 0.33)
+#   [P]'s SUMPRODUCT replaced by a plain average of the four benchmarks
+#   [C] inverted to [A] / [B]
+#   [O]'s denominator switched from CMS's Total row to a sum of the four parts
+#   [V]'s comparison reversed
+#
+# The first is the very defect the model's own comment cites as the reason the
+# thirds are written as `to_double(2) / to_double(3)`, and nothing would have
+# caught a future edit undoing it.
+#
+# These unit tests pin the arithmetic to hand-checkable inputs. Every fixture
+# value is synthetic and chosen so the algebra is legible — the expected results
+# are then written as the exact doubles that algebra produces, because that is
+# what the models compute and rounding them would defeat the purpose. Where a
+# result is not the decimal you would write by hand, that is the point:
+# [I] for the ESRD row is 1.1375000000000002, not 1.1375, and a model that
+# returned the tidier number would be doing something other than IEEE 754.
+#
+# The fixtures also carry decoys. The national expenditure columns appear in
+# both spellings CMS uses, with a wrong value on the one the reference does not
+# prefer; the ACPT sheet carries both PY1 and PY2 with different values, against
+# an agreement configured for PY2; the regional sheet carries an unflagged
+# quarter with a wrong value. Each one turns a silent selection rule into a
+# failing assertion.
+# ---------------------------------------------------------------------------
+
+unit_tests:
+
+  - name: test_update_factors_blend_and_projected_benchmark
+    model: fct_projected_benchmark_by_enrollment_type
+    description: >
+      Pins [C], [F], [I], [K], [M] and [O] against hand-checkable inputs, and
+      with them the three selection rules that decide which cell each input is
+      read from.
+
+      ESRD:      [A]=100, [B]=125          -> [C] = 125/100          = 1.25
+                 [D]=200, [E]=220          -> [F] = 220/200          = 1.1
+                 [G]=0.25, [H]=0.75        -> [I] = 1.25*0.25 + 1.1*0.75
+                 [J]=1.0625                -> [K] = (2/3)[I] + (1/3)[J]
+                 [L]=1000                  -> [M] = [K] * 1000
+                 [N]=30 of 200             -> [O] = 0.15
+
+      Disabled:  [A]=400, [B]=440          -> [C] = 1.1
+                 [D]=50,  [E]=45           -> [F] = 0.9
+                 [G]=0.5, [H]=0.5          -> [I] = 1.0 exactly
+                 [J]=1.25                  -> [K] = (2/3)(1.0) + (1/3)(1.25)
+                 [L]=2000                  -> [M] = [K] * 2000
+                 [N]=50 of 200             -> [O] = 0.25
+
+      The two rows are deliberately different in kind. ESRD's [I] lands just off
+      1.1375 and its [K] lands exactly on 1.1125; Disabled's [I] is exact and
+      its [K] is a repeating third. Between them they pin both the weights and
+      the arithmetic they are done in.
+
+      [K] under (0.67, 0.33) instead of (2/3, 1/3) would be 1.1127500000000001
+      and 1.0825 — wrong in the fourth decimal, far outside any rounding.
+
+    given:
+
+      - input: ref('mssp_enrollment_type')
+        rows:
+          - {ROW_LABEL_UPPER: 'ESRD',     ENROLLMENT_TYPE: 'esrd',     ENROLLMENT_TYPE_LABEL: 'ESRD',     ENROLLMENT_TYPE_SORT: 1}
+          - {ROW_LABEL_UPPER: 'DISABLED', ENROLLMENT_TYPE: 'disabled', ENROLLMENT_TYPE_LABEL: 'Disabled', ENROLLMENT_TYPE_SORT: 2}
+
+      - input: ref('mssp_aco_agreement')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, MSR_TYPE: 'Variable', FIXED_MSR_RATE: null, ACO_TRACK: 'TEST TRACK', ACPT_PERFORMANCE_YEAR_LABEL: 'PY2'}
+
+      - input: ref('int_benchmark_historical')
+        rows:
+          # [L], and the row that defines the benchmark delivery itself.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB', IS_LATEST_SUBMISSION: true, SECTION_CODE: 'L', BY_LABEL: 'Benchmark', ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: 1000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB', IS_LATEST_SUBMISSION: true, SECTION_CODE: 'L', BY_LABEL: 'Benchmark', ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: 2000}
+          # Decoy: same section, a benchmark-year column rather than the blended one.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB', IS_LATEST_SUBMISSION: true, SECTION_CODE: 'L', BY_LABEL: 'BY3',       ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: -1}
+
+      - input: ref('int_expenditures_annual')
+        rows:
+          # [A] on the 12-Month spelling, which the reference prefers.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB', BENCHMARK_YEAR: 1999, BENCHMARK_YEAR_LABEL: 'BY3', METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'national_assignable_ffs', COLUMN_LABEL: 'National Assignable FFS 12-Month', ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: 100}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB', BENCHMARK_YEAR: 1999, BENCHMARK_YEAR_LABEL: 'BY3', METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'national_assignable_ffs', COLUMN_LABEL: 'National Assignable FFS 12-Month', ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: 400}
+          # Decoy: the plain spelling, present in the same workbook, wrong value.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB', BENCHMARK_YEAR: 1999, BENCHMARK_YEAR_LABEL: 'BY3', METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'national_assignable_ffs', COLUMN_LABEL: 'National Assignable FFS',          ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: -1}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB', BENCHMARK_YEAR: 1999, BENCHMARK_YEAR_LABEL: 'BY3', METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'national_assignable_ffs', COLUMN_LABEL: 'National Assignable FFS',          ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: -1}
+
+      - input: ref('int_benchmark_acpt')
+        rows:
+          # [J] at PY2, which is what the agreement configures.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB', SECTION_CODE: 'F', PY_LABEL: 'PY2', ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: 1.0625}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB', SECTION_CODE: 'F', PY_LABEL: 'PY2', ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: 1.25}
+          # Decoy: the PY1 column, which a model ignoring the agreement would read.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB', SECTION_CODE: 'F', PY_LABEL: 'PY1', ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: -1}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB', SECTION_CODE: 'F', PY_LABEL: 'PY1', ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: -1}
+
+      - input: ref('int_expenditures_regional')
+        rows:
+          # [D] benchmark year 3 column
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB', METRIC: 'regional_expenditure', PERIOD_TYPE: 'benchmark_year_3', IS_LATEST_QUARTER: false, ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: 200}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB', METRIC: 'regional_expenditure', PERIOD_TYPE: 'benchmark_year_3', IS_LATEST_QUARTER: false, ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: 50}
+          # [E] the flagged quarter
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB', METRIC: 'regional_expenditure', PERIOD_TYPE: 'quarter', IS_LATEST_QUARTER: true,  ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: 220}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB', METRIC: 'regional_expenditure', PERIOD_TYPE: 'quarter', IS_LATEST_QUARTER: true,  ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: 45}
+          # Decoy: an earlier, unflagged quarter.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB', METRIC: 'regional_expenditure', PERIOD_TYPE: 'quarter', IS_LATEST_QUARTER: false, ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: -1}
+          # [G] national weight
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB', METRIC: 'national_weight', PERIOD_TYPE: 'quarter', IS_LATEST_QUARTER: true, ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: 0.25}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB', METRIC: 'national_weight', PERIOD_TYPE: 'quarter', IS_LATEST_QUARTER: true, ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: 0.5}
+          # [H] regional weight
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB', METRIC: 'regional_weight', PERIOD_TYPE: 'quarter', IS_LATEST_QUARTER: true, ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: 0.75}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB', METRIC: 'regional_weight', PERIOD_TYPE: 'quarter', IS_LATEST_QUARTER: true, ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: 0.5}
+
+      - input: ref('int_expenditures_quarterly')
+        rows:
+          # [B] on the 12-Month spelling, and the rows that define the quarterly delivery.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, SUBMISSION_ID: 'Q-SUB', IS_LATEST_SUBMISSION: true, METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'national_assignable_ffs', COLUMN_LABEL: 'National Assignable FFS 12-Month', ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: 125}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, SUBMISSION_ID: 'Q-SUB', IS_LATEST_SUBMISSION: true, METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'national_assignable_ffs', COLUMN_LABEL: 'National Assignable FFS 12-Month', ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: 440}
+          # Decoy: the plain spelling.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, SUBMISSION_ID: 'Q-SUB', IS_LATEST_SUBMISSION: true, METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'national_assignable_ffs', COLUMN_LABEL: 'National Assignable FFS', ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: -1}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, SUBMISSION_ID: 'Q-SUB', IS_LATEST_SUBMISSION: true, METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'national_assignable_ffs', COLUMN_LABEL: 'National Assignable FFS', ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: -1}
+          # [N] by type, and the Total row [O] divides by. The four parts here
+          # deliberately do NOT sum to the total: 30 + 50 is not 200, and the
+          # model must still divide by what CMS printed.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, SUBMISSION_ID: 'Q-SUB', IS_LATEST_SUBMISSION: true, METRIC: 'person_years', COLUMN_VARIANT: 'aco_specific', COLUMN_LABEL: 'ACO-Specific', ENROLLMENT_TYPE: 'esrd',     VALUE_NUMERIC: 30}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, SUBMISSION_ID: 'Q-SUB', IS_LATEST_SUBMISSION: true, METRIC: 'person_years', COLUMN_VARIANT: 'aco_specific', COLUMN_LABEL: 'ACO-Specific', ENROLLMENT_TYPE: 'disabled', VALUE_NUMERIC: 50}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, SUBMISSION_ID: 'Q-SUB', IS_LATEST_SUBMISSION: true, METRIC: 'person_years', COLUMN_VARIANT: 'aco_specific', COLUMN_LABEL: 'ACO-Specific', ENROLLMENT_TYPE: 'total',    VALUE_NUMERIC: 200}
+
+    expect:
+      rows:
+        - ENROLLMENT_TYPE: 'esrd'
+          NATIONAL_BASE_EXPENDITURE_PER_CAPITA: 100
+          NATIONAL_CURRENT_EXPENDITURE_PER_CAPITA: 125
+          NATIONAL_EXPENDITURE_UPDATE_FACTOR: 1.25
+          REGIONAL_EXPENDITURE_UPDATE_FACTOR: 1.1
+          NATIONAL_REGIONAL_BLENDED_UPDATE_FACTOR: 1.1375000000000002
+          ACCOUNTABLE_CARE_PROSPECTIVE_TREND: 1.0625
+          THREE_WAY_BLENDED_UPDATE_FACTOR: 1.1125
+          PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 1112.5
+          TOTAL_PERSON_YEARS: 200
+          ENROLLMENT_PROPORTION: 0.15
+          ACPT_PERFORMANCE_YEAR_LABEL: 'PY2'
+          IS_CALCULABLE: true
+        - ENROLLMENT_TYPE: 'disabled'
+          NATIONAL_BASE_EXPENDITURE_PER_CAPITA: 400
+          NATIONAL_CURRENT_EXPENDITURE_PER_CAPITA: 440
+          NATIONAL_EXPENDITURE_UPDATE_FACTOR: 1.1
+          REGIONAL_EXPENDITURE_UPDATE_FACTOR: 0.9
+          NATIONAL_REGIONAL_BLENDED_UPDATE_FACTOR: 1.0
+          ACCOUNTABLE_CARE_PROSPECTIVE_TREND: 1.25
+          THREE_WAY_BLENDED_UPDATE_FACTOR: 1.0833333333333333
+          PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2166.6666666666665
+          TOTAL_PERSON_YEARS: 200
+          ENROLLMENT_PROPORTION: 0.25
+          ACPT_PERFORMANCE_YEAR_LABEL: 'PY2'
+          IS_CALCULABLE: true
+
+  - name: test_mean_benchmark_savings_and_verdicts
+    model: fct_projected_savings
+    description: >
+      Pins [P], [R], [U] and both verdict columns, in two groups that differ
+      only in what the ACO spent.
+
+      Both groups carry the same four enrollment types:
+
+        [O] 0.1, 0.2, 0.3, 0.4   summing to 1
+        [M] 1000, 2000, 3000, 4000
+
+        [P] = SUMPRODUCT([O],[M]) = 100 + 400 + 900 + 1600 = 3000
+
+      The weights are deliberately not equal, and the values they weight rise
+      with them. A plain average of the four benchmarks — the mutation this
+      pins — is 2500, a sixth away from the right answer. Equal-looking
+      fixtures would have let that pass.
+
+      Group 1, PERIOD 2000Q1: [Q]=2700, so [R] = (3000-2700)/3000 = 0.1.
+        [S]=1000 sits on the lower edge of the 1000-2999 band, so [U] = 0.087.
+        [R] > [U] > 0, so savings clear the rate: above_msr.
+        [Q] < [P], so expenditures are below the benchmark.
+
+      Group 2, PERIOD 2000Q2: [Q]=3300, so [R] = -0.1.
+        [S]=1500 sits mid-band, so [U] is interpolated:
+        0.087 + (1500-1000)/(2999-1000) * (0.050-0.087) = 0.07774537268634317.
+        [R] is negative, so no_savings, and expenditures are not below the
+        benchmark.
+
+      Group 3, PERIOD 2000Q3: [Q]=2970, so [R] = 0.01.
+        [S]=1000, so [U] = 0.087 again. Savings are real but do not clear the
+        rate: below_msr, with SAVINGS_EXCEEDS_MSR false.
+
+      Three groups, and each one is load-bearing.
+
+      [V] needs a pair. Reversing its comparison flips a lone true to false,
+      which any single expected value catches, but only a pair proves the column
+      tracks its inputs rather than being a constant — groups 1 and 2 sit either
+      side of the benchmark.
+
+      [W] and SAVINGS_STATUS need all three, and group 3 is the one that was
+      missing. Groups 1 and 2 reach only above_msr and no_savings, so the
+      `else 'below_msr'` arm was never evaluated and could be rewritten to
+      anything without a test noticing — including to 'above_msr', which is
+      what the real delivery in front of this project would then have produced,
+      contradicting its own SAVINGS_EXCEEDS_MSR on the same row. Note also that
+      group 2 cannot stand in for it: with [R] negative the `> 0` guard decides
+      the answer before the comparison against [U] is reached, so reversing that
+      comparison is invisible there. Only group 3, with 0 < [R] <= [U],
+      exercises it.
+
+      accepted_values does not help with any of this — it constrains the values
+      that appear, not the ones that should have.
+
+    given:
+
+      - input: ref('fct_projected_benchmark_by_enrollment_type')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'esrd',          ENROLLMENT_PROPORTION: 0.1, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 1000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_PROPORTION: 0.2, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'aged_dual',     ENROLLMENT_PROPORTION: 0.3, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 3000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_PROPORTION: 0.4, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 4000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'esrd',          ENROLLMENT_PROPORTION: 0.1, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 1000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_PROPORTION: 0.2, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'aged_dual',     ENROLLMENT_PROPORTION: 0.3, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 3000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_PROPORTION: 0.4, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 4000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q3', QUARTER_NUM: 3, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-3', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'esrd',          ENROLLMENT_PROPORTION: 0.1, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 1000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q3', QUARTER_NUM: 3, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-3', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_PROPORTION: 0.2, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q3', QUARTER_NUM: 3, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-3', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'aged_dual',     ENROLLMENT_PROPORTION: 0.3, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 3000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q3', QUARTER_NUM: 3, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-3', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_PROPORTION: 0.4, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 4000}
+
+      - input: ref('int_expenditures_quarterly')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB-1', METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: 'total', VALUE_NUMERIC: 2700}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', SUBMISSION_ID: 'Q-SUB-2', METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: 'total', VALUE_NUMERIC: 3300}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB-1', METRIC: 'total_assigned_beneficiaries', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: null, VALUE_NUMERIC: 1000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', SUBMISSION_ID: 'Q-SUB-2', METRIC: 'total_assigned_beneficiaries', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: null, VALUE_NUMERIC: 1500}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q3', SUBMISSION_ID: 'Q-SUB-3', METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: 'total', VALUE_NUMERIC: 2970}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q3', SUBMISSION_ID: 'Q-SUB-3', METRIC: 'total_assigned_beneficiaries', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: null, VALUE_NUMERIC: 1000}
+
+      - input: ref('mssp_aco_agreement')
+        rows: []
+
+      - input: ref('mssp_msr_lookup')
+        rows:
+          - {ASSIGNED_BENEFICIARIES_LOW: null, ASSIGNED_BENEFICIARIES_HIGH: 999,  MSR_AT_LOW: 0.122, MSR_AT_HIGH: 0.122}
+          - {ASSIGNED_BENEFICIARIES_LOW: 1000, ASSIGNED_BENEFICIARIES_HIGH: 2999, MSR_AT_LOW: 0.087, MSR_AT_HIGH: 0.050}
+          - {ASSIGNED_BENEFICIARIES_LOW: 3000, ASSIGNED_BENEFICIARIES_HIGH: null, MSR_AT_LOW: 0.050, MSR_AT_HIGH: 0.050}
+
+    expect:
+      rows:
+        - PERIOD: '2000Q1'
+          MEAN_PROJECTED_UPDATED_BENCHMARK: 3000.0
+          ACO_EXPENDITURE_PER_CAPITA: 2700
+          PROJECTED_SAVINGS_PERCENTAGE: 0.1
+          ASSIGNED_BENEFICIARIES: 1000
+          MSR_TYPE: 'Variable'
+          MSR_BASIS_APPLIED: 'variable'
+          ESTIMATED_MSR: 0.087
+          EXPENDITURES_BELOW_BENCHMARK: true
+          SAVINGS_EXCEEDS_MSR: true
+          SAVINGS_STATUS: 'above_msr'
+          IS_CALCULABLE: true
+          IS_AGREEMENT_DEFAULTED: true
+        - PERIOD: '2000Q2'
+          MEAN_PROJECTED_UPDATED_BENCHMARK: 3000.0
+          ACO_EXPENDITURE_PER_CAPITA: 3300
+          PROJECTED_SAVINGS_PERCENTAGE: -0.1
+          ASSIGNED_BENEFICIARIES: 1500
+          MSR_TYPE: 'Variable'
+          MSR_BASIS_APPLIED: 'variable'
+          ESTIMATED_MSR: 0.07774537268634317
+          EXPENDITURES_BELOW_BENCHMARK: false
+          SAVINGS_EXCEEDS_MSR: false
+          SAVINGS_STATUS: 'no_savings'
+          IS_CALCULABLE: true
+          IS_AGREEMENT_DEFAULTED: true
+        - PERIOD: '2000Q3'
+          MEAN_PROJECTED_UPDATED_BENCHMARK: 3000.0
+          ACO_EXPENDITURE_PER_CAPITA: 2970
+          PROJECTED_SAVINGS_PERCENTAGE: 0.01
+          ASSIGNED_BENEFICIARIES: 1000
+          MSR_TYPE: 'Variable'
+          MSR_BASIS_APPLIED: 'variable'
+          ESTIMATED_MSR: 0.087
+          EXPENDITURES_BELOW_BENCHMARK: true
+          SAVINGS_EXCEEDS_MSR: false
+          SAVINGS_STATUS: 'below_msr'
+          IS_CALCULABLE: true
+          IS_AGREEMENT_DEFAULTED: true
+
+  - name: test_fixed_msr_applies_only_above_the_beneficiary_threshold
+    model: fct_projected_savings
+    description: >
+      Pins the one rule the documentation calls the only condition the
+      calculation applies: a flat MSR election takes effect from 5,000 assigned
+      beneficiaries upward, and below that the variable schedule governs
+      regardless of what the ACO elected.
+
+      Nothing else exercises it. The shipped agreement seed carries no `Fixed`
+      row, the other unit test passes an empty agreement, and the real
+      deliveries default to `Variable` — so `>= 5000` could be rewritten to
+      `>= 0` and every other test in this project would still pass.
+
+      Both groups have the same ACO, on the same `Fixed` election at 1.5%, and
+      differ only in [S]:
+
+        2000Q1, [S]=4999  -> below the threshold, so the election does not
+                             apply: MSR_BASIS_APPLIED = variable, and [U] comes
+                             from the 3000-4999 band at 0.050.
+        2000Q2, [S]=5000  -> at the threshold, so the election applies:
+                             MSR_BASIS_APPLIED = fixed, [U] = 0.015.
+
+      The bands here are flat by design, so [U] is an endpoint rather than an
+      interpolation and the two answers are separated by the gate alone rather
+      than by arithmetic. They are also chosen so that neither mistake hides:
+      dropping the threshold gives the 4999 row 0.015 instead of 0.050, and
+      raising it gives the 5000 row 0.039 instead of 0.015. Interpolation
+      itself is covered by the other unit test and by the full band sweep.
+
+    given:
+
+      - input: ref('fct_projected_benchmark_by_enrollment_type')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: false, ENROLLMENT_TYPE: 'esrd',          ENROLLMENT_PROPORTION: 0.1, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 1000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: false, ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_PROPORTION: 0.2, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: false, ENROLLMENT_TYPE: 'aged_dual',     ENROLLMENT_PROPORTION: 0.3, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 3000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: false, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_PROPORTION: 0.4, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 4000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: false, ENROLLMENT_TYPE: 'esrd',          ENROLLMENT_PROPORTION: 0.1, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 1000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: false, ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_PROPORTION: 0.2, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: false, ENROLLMENT_TYPE: 'aged_dual',     ENROLLMENT_PROPORTION: 0.3, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 3000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: false, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_PROPORTION: 0.4, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 4000}
+
+      - input: ref('int_expenditures_quarterly')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB-1', METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: 'total', VALUE_NUMERIC: 2700}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', SUBMISSION_ID: 'Q-SUB-2', METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: 'total', VALUE_NUMERIC: 2700}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', SUBMISSION_ID: 'Q-SUB-1', METRIC: 'total_assigned_beneficiaries', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: null, VALUE_NUMERIC: 4999}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', SUBMISSION_ID: 'Q-SUB-2', METRIC: 'total_assigned_beneficiaries', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: null, VALUE_NUMERIC: 5000}
+
+      - input: ref('mssp_aco_agreement')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, MSR_TYPE: 'Fixed', FIXED_MSR_RATE: 0.015, ACO_TRACK: 'ENHANCED', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1'}
+
+      - input: ref('mssp_msr_lookup')
+        rows:
+          - {ASSIGNED_BENEFICIARIES_LOW: null, ASSIGNED_BENEFICIARIES_HIGH: 2999, MSR_AT_LOW: 0.122, MSR_AT_HIGH: 0.122}
+          - {ASSIGNED_BENEFICIARIES_LOW: 3000, ASSIGNED_BENEFICIARIES_HIGH: 4999, MSR_AT_LOW: 0.050, MSR_AT_HIGH: 0.050}
+          - {ASSIGNED_BENEFICIARIES_LOW: 5000, ASSIGNED_BENEFICIARIES_HIGH: null, MSR_AT_LOW: 0.039, MSR_AT_HIGH: 0.039}
+
+    expect:
+      rows:
+        - PERIOD: '2000Q1'
+          ASSIGNED_BENEFICIARIES: 4999
+          MSR_TYPE: 'Fixed'
+          FIXED_MSR_RATE: 0.015
+          MSR_BASIS_APPLIED: 'variable'
+          ESTIMATED_MSR: 0.05
+          IS_AGREEMENT_DEFAULTED: false
+        - PERIOD: '2000Q2'
+          ASSIGNED_BENEFICIARIES: 5000
+          MSR_TYPE: 'Fixed'
+          FIXED_MSR_RATE: 0.015
+          MSR_BASIS_APPLIED: 'fixed'
+          ESTIMATED_MSR: 0.015
+          IS_AGREEMENT_DEFAULTED: false
