@@ -1,0 +1,8 @@
+ROW_LABEL_UPPER,ENROLLMENT_TYPE,ENROLLMENT_TYPE_LABEL,ENROLLMENT_TYPE_SORT
+ESRD,esrd,ESRD,1
+END STAGE RENAL DISEASE,esrd,ESRD,1
+DISABLED,disabled,Disabled,2
+AGED/DUAL,aged_dual,Aged/Dual,3
+AGED/NON-DUAL,aged_non_dual,Aged/Non-Dual,4
+AGED/DISABLED,aged_disabled,Aged/Disabled,5
+TOTAL,total,Total,9

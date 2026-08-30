@@ -1,0 +1,1047 @@
+version: 2
+
+# Typed facts over the three sectioned CMS workbook families.
+#
+# Phase 3 stages every worksheet cell of every sheet into one long/tidy shape.
+# That shape is faithful but untyped: an input to the benchmark calculation is
+# a (SECTION_CODE, COLUMN_LABEL) lookup against a VARCHAR column. These models
+# turn the sheets the benchmark actually depends on into facts with canonical
+# dimensions — enrollment type, benchmark year, report period, comparison
+# column — so a consumer selects a named metric instead of a cell address.
+#
+# What these models deliberately do NOT do is calculate anything. No ratio, no
+# blend, no savings rate. They are the inputs, ranked and labelled; the arithmetic
+# and the choice of which submission or quarter to use belong downstream.
+#
+# Two dimensions carry policy and are documented on every model that has them:
+#
+#   IS_LATEST_SUBMISSION  CMS may deliver the same report up to three times for
+#                         one performance year (March preliminary, June
+#                         preliminary-final, October final), and the deliveries
+#                         carry different numbers. Deliveries are ranked here and
+#                         flagged, never filtered.
+#
+#   IS_LATEST_QUARTER     QEXPU Table 2 ships all four quarter columns from the
+#                         first quarter onward and leaves the unreported ones
+#                         empty, so "the current quarter" has to be derived from
+#                         which column carries data.
+
+models:
+
+  # ---------------------------------------------------------------------------
+  # BNMRK — Historical Benchmark Report
+  # ---------------------------------------------------------------------------
+
+  - name: int_benchmark_historical
+    description: >
+      BNMRK Table 1, typed: the historical benchmark derivation, one row per
+      (delivery, section, enrollment type, benchmark year column).
+
+      Every section code is kept — `A1` and `A2` (assigned beneficiaries and
+      person years), `B` through `H` (the trended expenditure derivation), and
+      `I` through `M` (the adjustment and the resulting benchmark) — so the
+      whole derivation is auditable rather than only its `[L]` result.
+
+      `[L]` — historical benchmark expenditures after applying the adjustment —
+      is `SECTION_CODE = 'L'` and `BY_LABEL = 'Benchmark'`, one row per
+      enrollment type.
+
+    config:
+      schema: _int_input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - FILE_PATH
+              - ROW_NUM
+              - BY_LABEL
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier the delivery belongs to.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: >
+          Performance year the benchmark is being set for, taken from the file
+          store path. Part of the window `IS_LATEST_SUBMISSION` ranks within.
+
+      - name: SUBMISSION_ID
+        description: >
+          Delivery stamp from the file name (`D<YYMMDD>.T<NNNNNNN>`). The only
+          thing separating the March, June and October deliveries of one
+          performance year, which are otherwise identically named.
+        data_tests:
+          - not_null
+
+      - name: FILE_DATE
+        description: >
+          Delivery date parsed from the `D<YYMMDD>` half of the submission
+          stamp. NULL where that stamp is a placeholder, which is the case for
+          CMS sample and anonymised workbooks — see `SUBMISSION_RANK` for what
+          that means for ordering.
+
+      - name: SUBMISSION_RANK
+        description: >
+          Rank of this delivery within `(ACO_ID, PERFORMANCE_YEAR)`, 1 being the
+          most recent.
+
+          Ordered by `FILE_DATE` descending with NULLs last, then
+          `SUBMISSION_ID` descending, then `FILE_PATH` descending. Three
+          consequences worth stating outright.
+
+          An undated delivery never outranks a dated one: a placeholder stamp is
+          treated as "recency unknown", not as "newest". A window holding both
+          dated and undated deliveries cannot be ranked on evidence at all, and
+          `assert_submission_dating_is_not_mixed` fails rather than let that
+          resolve quietly.
+
+          When every delivery in the window is undated — a whole set of
+          anonymised workbooks — the ordering falls through to `SUBMISSION_ID`,
+          which is itself chronological because it embeds the delivery date and
+          time.
+
+          `FILE_PATH` is the last resort and it is what makes the ranking total.
+          It is unique per workbook, so no two workbooks can share rank 1 and
+          this flag cannot fan out. It never decides anything meaningful — if it
+          is reached, two workbooks are claiming one delivery identity, which
+          `assert_exactly_one_latest_submission_per_window` reports.
+        data_tests:
+          - not_null
+
+      - name: IS_LATEST_SUBMISSION
+        description: >
+          True on every row of the most recent delivery for the performance
+          year. Deliberately a flag and not a filter: both the preliminary and
+          the final delivery carry their own `[L]`, and which one a calculation
+          should use is the caller's decision.
+        data_tests:
+          - not_null
+
+      - name: GROUP_LABEL
+        description: >
+          Outer, unbracketed heading the section sits under, verbatim from the
+          worksheet. CMS rewords these between deliveries — the same section can
+          arrive under a group naming the health equity adjustment in one
+          delivery and not in the previous one — so group and section labels are
+          text for display, never keys.
+
+      - name: SECTION_CODE
+        description: >
+          The sheet's own `[X]` code with brackets stripped: `A1`, `A2`, `B`
+          through `M`. This is the stable key for a section; the label attached
+          to it is not.
+        data_tests:
+          - not_null
+
+      - name: SECTION_LABEL
+        description: Section heading text with the `[X]` prefix removed.
+
+      - name: ROW_LABEL
+        description: >
+          Column A of the source worksheet row, verbatim. Kept alongside
+          `ENROLLMENT_TYPE` so a mapping can always be checked against what CMS
+          actually wrote.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          Canonical Medicare enrollment type, resolved case-insensitively
+          against the `mssp_enrollment_type` seed: `esrd`, `disabled`,
+          `aged_dual`, `aged_non_dual`.
+
+          `total` where the row is the section's aggregate rather than one
+          enrollment type. Those rows are recognised structurally — the row
+          label repeats the section label — rather than by enumerating their
+          text, because CMS rewords them between deliveries and an enumeration
+          would go stale silently.
+
+          `unmapped` where neither rule fires. Nothing is dropped: an
+          unrecognised label stays in the model, visibly wrong, and
+          `assert_benchmark_enrollment_types_are_mapped` fails on it.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual', 'aged_disabled', 'total', 'unmapped']
+
+      - name: ENROLLMENT_TYPE_LABEL
+        description: Display form of `ENROLLMENT_TYPE`, from the same seed.
+
+      - name: ENROLLMENT_TYPE_SORT
+        description: >
+          Sort key giving the enrollment types CMS's own presentation order,
+          with aggregates last. 99 for `unmapped`.
+
+      - name: BY_LABEL
+        description: >
+          The benchmark year column this value came from: `BY1`, `BY2`, `BY3`,
+          or `Benchmark` for the blended result. Verbatim from the worksheet
+          header. Part of the model grain.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BY1', 'BY2', 'BY3', 'Benchmark']
+
+      - name: VALUE_TEXT
+        description: >
+          The source cell verbatim, including CMS's `'-'` not-applicable
+          marker. The audit trail behind `VALUE_NUMERIC`.
+
+      - name: VALUE_NUMERIC
+        description: >
+          `VALUE_TEXT` cast to numeric, NULL where the cell is not a number.
+          Carried at the staging model's precision, so full-precision benchmark
+          figures survive unrounded.
+
+      - name: FILE_PATH
+        description: Full path of the source workbook. Part of the model grain.
+        data_tests:
+          - not_null
+
+      - name: DIRECTORY_NAME
+        description: Delivery bundle directory the workbook arrived in.
+
+      - name: FILE_NAME
+        description: File name of the source workbook.
+
+      - name: ROW_NUM
+        description: >
+          1-based worksheet row index. Part of the model grain, but not unique
+          on its own: one worksheet row emits one model row per column.
+        data_tests:
+          - not_null
+
+  - name: int_benchmark_acpt
+    description: >
+      BNMRK Table 6, typed: the Accountable Care Prospective Trend and the
+      modified USPCC growth rates behind it, by enrollment type and performance
+      year.
+
+      `[J]` — ACPT for a chosen performance year — is `SECTION_CODE = 'F'` at
+      the wanted `PY_LABEL`.
+
+      Sections `A` and `B` split their rows two ways (`ESRD` and
+      `Aged/Disabled`) where `C` through `F` use the usual four, which is why
+      the seed carries an `aged_disabled` key that no other model produces.
+
+      CMS omits this sheet from the March preliminary delivery, so this model
+      covers fewer submissions than `int_benchmark_historical` and is empty for
+      an ACO whose only delivery is preliminary. That is absence, not failure.
+
+    config:
+      schema: _int_input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - FILE_PATH
+              - ROW_NUM
+              - COLUMN_LABEL
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier the delivery belongs to.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: >
+          Performance year of the *delivery*, from the file store path — not to
+          be confused with `PY_LABEL`, which is the performance year a given
+          column projects the trend to.
+
+      - name: SUBMISSION_ID
+        description: Delivery stamp from the file name (`D<YYMMDD>.T<NNNNNNN>`).
+        data_tests:
+          - not_null
+
+      - name: FILE_DATE
+        description: Delivery date, NULL where the stamp is a placeholder.
+
+      - name: SUBMISSION_RANK
+        description: >
+          Rank of this delivery within `(ACO_ID, PERFORMANCE_YEAR)`, 1 being the
+          most recent, ranked exactly as in `int_benchmark_historical`. Ranking
+          is scoped to the deliveries that carry this sheet, so the June
+          delivery ranks 1 here even where a March delivery exists.
+        data_tests:
+          - not_null
+
+      - name: IS_LATEST_SUBMISSION
+        description: True on every row of the most recent delivery carrying this sheet.
+        data_tests:
+          - not_null
+
+      - name: SECTION_CODE
+        description: >
+          The sheet's own `[X]` code, brackets stripped: `A` through `F`, where
+          `F` is ACPT itself.
+        data_tests:
+          - not_null
+
+      - name: SECTION_LABEL
+        description: Section heading text with the `[X]` prefix removed.
+
+      - name: ROW_LABEL
+        description: Column A of the source worksheet row, verbatim.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          Canonical Medicare enrollment type. Includes `aged_disabled` on this
+          sheet, which is a genuine two-way split in sections `A` and `B` and
+          not a mapping failure. See `int_benchmark_historical` for the full
+          resolution rule.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual', 'aged_disabled', 'total', 'unmapped']
+
+      - name: ENROLLMENT_TYPE_LABEL
+        description: Display form of `ENROLLMENT_TYPE`.
+
+      - name: ENROLLMENT_TYPE_SORT
+        description: Sort key for `ENROLLMENT_TYPE`.
+
+      - name: COLUMN_LABEL
+        description: >
+          Source column header verbatim: `BY3`, or `PY1` through `PY5`. Part of
+          the model grain.
+        data_tests:
+          - not_null
+
+      - name: PY_LABEL
+        description: >
+          `PY1` through `PY5` where the column is a performance year, NULL for
+          the sheet's `BY3` column. This is the selector for `[J]`.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['PY1', 'PY2', 'PY3', 'PY4', 'PY5']
+
+      - name: PY_NUMBER
+        description: >
+          `PY_LABEL` as an integer, for ordering and for offsetting from an
+          agreement start year. NULL wherever `PY_LABEL` is.
+
+      - name: VALUE_TEXT
+        description: The source cell verbatim.
+
+      - name: VALUE_NUMERIC
+        description: >
+          `VALUE_TEXT` cast to numeric, NULL where the cell is not a number.
+          ACPT values are ratios near 1 carried to full precision; rounding them
+          moves the benchmark.
+
+      - name: FILE_PATH
+        description: Full path of the source workbook. Part of the model grain.
+        data_tests:
+          - not_null
+
+      - name: DIRECTORY_NAME
+        description: Delivery bundle directory the workbook arrived in.
+
+      - name: FILE_NAME
+        description: File name of the source workbook.
+
+      - name: ROW_NUM
+        description: 1-based worksheet row index. Part of the model grain.
+        data_tests:
+          - not_null
+
+  - name: int_benchmark_trend
+    description: >
+      BNMRK Table 2, typed: the trend factor audit trail. National (`A`, `B`)
+      and regional (`C`, `D`) per capita expenditures and trend factors, the
+      weights CMS blends them with (`E`, `F`), and the blended factor (`G`) that
+      Table 1 section `E` carries into the benchmark.
+
+      No section here is a direct input to the performance year calculation.
+      The model exists so that the blended trend factor can be traced back to
+      its components without reopening the workbook.
+
+    config:
+      schema: _int_input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - FILE_PATH
+              - ROW_NUM
+              - BY_LABEL
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier the delivery belongs to.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: Performance year of the delivery, from the file store path.
+
+      - name: SUBMISSION_ID
+        description: Delivery stamp from the file name (`D<YYMMDD>.T<NNNNNNN>`).
+        data_tests:
+          - not_null
+
+      - name: FILE_DATE
+        description: Delivery date, NULL where the stamp is a placeholder.
+
+      - name: SUBMISSION_RANK
+        description: >
+          Rank of this delivery within `(ACO_ID, PERFORMANCE_YEAR)`, ranked
+          exactly as in `int_benchmark_historical`.
+        data_tests:
+          - not_null
+
+      - name: IS_LATEST_SUBMISSION
+        description: True on every row of the most recent delivery.
+        data_tests:
+          - not_null
+
+      - name: SECTION_CODE
+        description: >
+          The sheet's own `[X]` code, brackets stripped: `A` through `G`.
+        data_tests:
+          - not_null
+
+      - name: SECTION_LABEL
+        description: Section heading text with the `[X]` prefix removed.
+
+      - name: ROW_LABEL
+        description: Column A of the source worksheet row, verbatim.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          Canonical Medicare enrollment type; `total` on section `A`'s aggregate
+          row, which repeats the section label. See `int_benchmark_historical`
+          for the full resolution rule.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual', 'aged_disabled', 'total', 'unmapped']
+
+      - name: ENROLLMENT_TYPE_LABEL
+        description: Display form of `ENROLLMENT_TYPE`.
+
+      - name: ENROLLMENT_TYPE_SORT
+        description: Sort key for `ENROLLMENT_TYPE`.
+
+      - name: BY_LABEL
+        description: >
+          Benchmark year column: `BY1`, `BY2` or `BY3`. This sheet has no
+          blended `Benchmark` column. Part of the model grain.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BY1', 'BY2', 'BY3']
+
+      - name: VALUE_TEXT
+        description: The source cell verbatim.
+
+      - name: VALUE_NUMERIC
+        description: >
+          `VALUE_TEXT` cast to numeric, NULL where the cell is not a number.
+          The weights on sections `E` and `F` run to many decimal places and are
+          carried unrounded.
+
+      - name: FILE_PATH
+        description: Full path of the source workbook. Part of the model grain.
+        data_tests:
+          - not_null
+
+      - name: DIRECTORY_NAME
+        description: Delivery bundle directory the workbook arrived in.
+
+      - name: FILE_NAME
+        description: File name of the source workbook.
+
+      - name: ROW_NUM
+        description: 1-based worksheet row index. Part of the model grain.
+        data_tests:
+          - not_null
+
+  # ---------------------------------------------------------------------------
+  # AEXPU — annual Expenditure & Utilization
+  # ---------------------------------------------------------------------------
+
+  - name: int_expenditures_annual
+    description: >
+      AEXPU Table 1, typed: expenditures, person years and utilization for one
+      benchmark year, compared across the ACO, all MSSP ACOs and national
+      assignable fee-for-service.
+
+      `[A]` — national assignable FFS per capita by enrollment type for
+      benchmark year 3 — is `METRIC = 'total_expenditures_per_capita'` and
+      `COLUMN_VARIANT = 'national_assignable_ffs'` at
+      `BENCHMARK_YEAR_LABEL = 'BY3'`.
+
+      CMS ships one workbook per benchmark year inside the benchmark delivery
+      bundle, so a single delivery contributes three benchmark years here.
+
+    config:
+      schema: _int_input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - FILE_PATH
+              - ROW_NUM
+              - COLUMN_LABEL
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier the delivery belongs to.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: Performance year of the delivery, from the file store path.
+
+      - name: BENCHMARK_YEAR
+        description: >
+          Calendar benchmark year the workbook reports, from the `Y<YYYY>` token
+          in its file name.
+        data_tests:
+          - not_null
+
+      - name: BENCHMARK_YEAR_LABEL
+        description: >
+          `BY1`, `BY2` or `BY3` — the workbook's position in the delivery's
+          three-year benchmark window.
+
+          Derived by counting *back* from the most recent benchmark year in the
+          delivery, so the newest workbook is always `BY3`. Ranking forward from
+          the oldest instead would relabel `BY3` as `BY1` in a delivery that
+          shipped only part of its window, and `[A]` is read from `BY3` — the
+          failure would be silent and would land directly on the benchmark.
+
+          A value outside `BY1`/`BY2`/`BY3` means a delivery carried more than
+          three benchmark years, which is not a shape CMS has shipped; the
+          accepted-values test on this column is what would surface it.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['BY1', 'BY2', 'BY3']
+
+      - name: SUBMISSION_ID
+        description: Delivery stamp from the file name (`D<YYMMDD>.T<NNNNNNN>`).
+        data_tests:
+          - not_null
+
+      - name: FILE_DATE
+        description: >
+          Benchmark year end for this family — the last day of `BENCHMARK_YEAR`,
+          not the date CMS delivered the workbook.
+
+      - name: SUBMISSION_RANK
+        description: >
+          Rank of this delivery within `(ACO_ID, PERFORMANCE_YEAR,
+          BENCHMARK_YEAR)`, 1 being the most recent.
+
+          Ordered by `FILE_DATE` descending with NULLs last then `SUBMISSION_ID`
+          descending, the same rule the BNMRK models use — but note that for
+          this family `FILE_DATE` is the benchmark year end, which is fixed by
+          the partition key and therefore always ties. `SUBMISSION_ID` does all
+          the work here. The rule is kept uniform across the six models rather
+          than special-cased, and stating the tie is the point of this note.
+        data_tests:
+          - not_null
+
+      - name: IS_LATEST_SUBMISSION
+        description: >
+          True on every row of the most recent delivery of this benchmark year.
+          The preliminary and final deliveries each ship their own BY1/BY2/BY3
+          workbooks, so a query for `[A]` that does not pin the delivery gets
+          two answers.
+        data_tests:
+          - not_null
+
+      - name: SECTION_LABEL
+        description: >
+          Section heading verbatim. This family letters no sections, so
+          `SECTION_CODE` is NULL throughout and is not carried; `METRIC` is the
+          key.
+
+      - name: METRIC
+        description: >
+          Canonical name for the section: `total_expenditures_per_capita`,
+          `person_years`, `component_expenditures_per_beneficiary`,
+          `additional_utilization_rates`, `non_claims_based_payments`,
+          `declined_data_sharing`, plus `total_assigned_beneficiaries` and
+          `number_of_acos` for the two header rows that sit above the first
+          section.
+
+          `unmapped` for a section heading this model does not recognise. Note
+          that `non_claims_based_payments` and `declined_data_sharing` each
+          carry their own `Person Years` row, distinct from the `person_years`
+          metric — the metric, not the row label, is what separates them.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - total_assigned_beneficiaries
+                  - number_of_acos
+                  - total_expenditures_per_capita
+                  - person_years
+                  - component_expenditures_per_beneficiary
+                  - additional_utilization_rates
+                  - non_claims_based_payments
+                  - declined_data_sharing
+                  - unmapped
+
+      - name: ROW_LABEL
+        description: >
+          Column A of the source worksheet row, verbatim. Outside the two
+          enrollment type sections this names a service category or utilization
+          measure, and it is the only key those rows have.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          Canonical Medicare enrollment type — but only inside the sections CMS
+          names for enrollment type, which is where the four-way split and its
+          `Total` row live. NULL everywhere else, by design: a row labelled
+          `Ambulance` is a service category, not an unmapped cohort, and
+          conflating the two would make the mapping test meaningless.
+
+          This family writes `End Stage Renal Disease`, `Aged/Dual` and
+          `Aged/Non-Dual` where BNMRK writes `ESRD`, `Aged/dual` and
+          `Aged/non-dual`; matching is case-insensitive and the seed carries
+          both spellings of ESRD.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual', 'aged_disabled', 'total', 'unmapped']
+
+      - name: ENROLLMENT_TYPE_LABEL
+        description: Display form of `ENROLLMENT_TYPE`; NULL on the same rows.
+
+      - name: ENROLLMENT_TYPE_SORT
+        description: Sort key for `ENROLLMENT_TYPE`; NULL on the same rows.
+
+      - name: COLUMN_LABEL
+        description: Source column header verbatim. Part of the model grain.
+        data_tests:
+          - not_null
+
+      - name: COLUMN_VARIANT
+        description: >
+          Canonical name for the comparison column: `aco_specific`,
+          `all_mssp_acos` or `national_assignable_ffs`.
+
+          The national column is matched on prefix, not equality, because CMS
+          heads it `National Assignable FFS` on Table 1 and `National Assignable
+          FFS 12-Month` on Table 4 of the same workbook. Only Table 1 is
+          modelled here, but the prefix match means a consumer never has to
+          guess which spelling a sheet used.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['aco_specific', 'all_mssp_acos', 'national_assignable_ffs', 'unmapped']
+
+      - name: VALUE_TEXT
+        description: The source cell verbatim, including CMS's `'-'` marker.
+
+      - name: VALUE_NUMERIC
+        description: >
+          `VALUE_TEXT` cast to numeric, NULL where the cell is not a number.
+
+      - name: FILE_PATH
+        description: Full path of the source workbook. Part of the model grain.
+        data_tests:
+          - not_null
+
+      - name: DIRECTORY_NAME
+        description: Delivery bundle directory the workbook arrived in.
+
+      - name: FILE_NAME
+        description: File name of the source workbook.
+
+      - name: ROW_NUM
+        description: 1-based worksheet row index. Part of the model grain.
+        data_tests:
+          - not_null
+
+  # ---------------------------------------------------------------------------
+  # QEXPU — quarterly Expenditure & Utilization
+  # ---------------------------------------------------------------------------
+
+  - name: int_expenditures_quarterly
+    description: >
+      QEXPU Table 1, typed: the quarterly counterpart of
+      `int_expenditures_annual`, and the source of four benchmark inputs.
+
+      `[B]` — national assignable FFS per capita by enrollment type — is
+      `METRIC = 'total_expenditures_per_capita'` with
+      `COLUMN_VARIANT = 'national_assignable_ffs'`.
+
+      `[N]` — person years, ACO-specific, total plus the four enrollment types —
+      is `METRIC = 'person_years'` with `COLUMN_VARIANT = 'aco_specific'`.
+
+      `[Q]` — the ACO's total per capita expenditure — is
+      `METRIC = 'total_expenditures_per_capita'`,
+      `COLUMN_VARIANT = 'aco_specific'`, `ENROLLMENT_TYPE = 'total'`.
+
+      `[S]` — total assigned beneficiaries — is
+      `METRIC = 'total_assigned_beneficiaries'` with
+      `COLUMN_VARIANT = 'aco_specific'`.
+
+    config:
+      schema: _int_input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - FILE_PATH
+              - ROW_NUM
+              - COLUMN_LABEL
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier the delivery belongs to.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: Performance year of the delivery, from the file store path.
+
+      - name: PERIOD
+        description: >
+          Quarter the workbook reports, `<YYYY>Q<N>`, from the file name. Unlike
+          QEXPU Table 2, this sheet reports a single period, so the quarter is a
+          property of the delivery rather than of a column.
+        data_tests:
+          - not_null
+
+      - name: QUARTER_NUM
+        description: >
+          Quarter number 1-4 parsed out of `PERIOD`, for ordering. NULL if
+          `PERIOD` is not shaped like a quarter label, which no correctly named
+          QEXPU workbook is.
+
+      - name: SUBMISSION_ID
+        description: Delivery stamp from the file name (`D<YYMMDD>.T<NNNNNNN>`).
+        data_tests:
+          - not_null
+
+      - name: FILE_DATE
+        description: >
+          Quarter end for this family — the last day of `PERIOD`, not the date
+          CMS delivered the workbook.
+
+      - name: SUBMISSION_RANK
+        description: >
+          Rank of this delivery within `(ACO_ID, PERFORMANCE_YEAR, PERIOD)`, 1
+          being the most recent. As in `int_expenditures_annual`, `FILE_DATE` is
+          fixed by the partition key and always ties, so `SUBMISSION_ID` decides.
+        data_tests:
+          - not_null
+
+      - name: IS_LATEST_SUBMISSION
+        description: True on every row of the most recent delivery of this quarter.
+        data_tests:
+          - not_null
+
+      - name: SECTION_LABEL
+        description: Section heading verbatim; this family letters no sections.
+
+      - name: METRIC
+        description: >
+          Canonical name for the section, identical in meaning to
+          `int_expenditures_annual.METRIC`.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - total_assigned_beneficiaries
+                  - number_of_acos
+                  - total_expenditures_per_capita
+                  - person_years
+                  - component_expenditures_per_beneficiary
+                  - additional_utilization_rates
+                  - non_claims_based_payments
+                  - declined_data_sharing
+                  - unmapped
+
+      - name: ROW_LABEL
+        description: Column A of the source worksheet row, verbatim.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          Canonical Medicare enrollment type inside the enrollment type
+          sections, NULL elsewhere — see `int_expenditures_annual` for the rule
+          and for why the distinction matters.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual', 'aged_disabled', 'total', 'unmapped']
+
+      - name: ENROLLMENT_TYPE_LABEL
+        description: Display form of `ENROLLMENT_TYPE`; NULL on the same rows.
+
+      - name: ENROLLMENT_TYPE_SORT
+        description: Sort key for `ENROLLMENT_TYPE`; NULL on the same rows.
+
+      - name: COLUMN_LABEL
+        description: Source column header verbatim. Part of the model grain.
+        data_tests:
+          - not_null
+
+      - name: COLUMN_VARIANT
+        description: >
+          Canonical name for the comparison column, matched exactly as in
+          `int_expenditures_annual`.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['aco_specific', 'all_mssp_acos', 'national_assignable_ffs', 'unmapped']
+
+      - name: VALUE_TEXT
+        description: The source cell verbatim, including CMS's `'-'` marker.
+
+      - name: VALUE_NUMERIC
+        description: >
+          `VALUE_TEXT` cast to numeric, NULL where the cell is not a number.
+
+      - name: FILE_PATH
+        description: Full path of the source workbook. Part of the model grain.
+        data_tests:
+          - not_null
+
+      - name: DIRECTORY_NAME
+        description: Delivery bundle directory the workbook arrived in.
+
+      - name: FILE_NAME
+        description: File name of the source workbook.
+
+      - name: ROW_NUM
+        description: 1-based worksheet row index. Part of the model grain.
+        data_tests:
+          - not_null
+
+  - name: int_expenditures_regional
+    description: >
+      QEXPU Table 2, typed: regional expenditures and the national and regional
+      weights, by enrollment type, for benchmark year 3 and for each quarter of
+      the performance year.
+
+      `[D]` — regional expenditures for benchmark year 3 — is
+      `METRIC = 'regional_expenditure'` with `PERIOD_TYPE = 'benchmark_year_3'`.
+
+      `[E]` — regional expenditures for the latest reported quarter — is
+      `METRIC = 'regional_expenditure'` with `IS_LATEST_QUARTER`.
+
+      `[G]` and `[H]` — national and regional weight for that same quarter — are
+      `METRIC = 'national_weight'` and `METRIC = 'regional_weight'` with
+      `IS_LATEST_QUARTER`.
+
+      This is the one sheet in the three families where the reporting period is
+      a column rather than a property of the workbook, which is why it gets its
+      own model rather than joining `int_expenditures_quarterly`.
+
+      There is one latest quarter per workbook, read off the regional
+      expenditure section and applied to all three metrics. The three sections
+      are three headings inside one sheet of one delivery, written by CMS in one
+      pass, and `[I]` blends `[E]`, `[G]` and `[H]` into a single factor — so a
+      quarter is a property of the workbook here, not of a section. Letting each
+      section pick its own would let `[I]` combine one quarter's regional factor
+      with another quarter's weights, silently.
+      `assert_regional_metrics_agree_on_the_latest_quarter` warns if the
+      sections ever stop advancing together.
+
+    config:
+      schema: _int_input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - FILE_PATH
+              - ROW_NUM
+              - COLUMN_LABEL
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier the delivery belongs to.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: Performance year of the delivery, from the file store path.
+
+      - name: PERIOD
+        description: >
+          Quarter the workbook was delivered for, `<YYYY>Q<N>`. Distinct from
+          the quarter a *column* reports: a first-quarter delivery carries `Q1`
+          through `Q4` columns, of which only `Q1` is populated.
+        data_tests:
+          - not_null
+
+      - name: SUBMISSION_ID
+        description: Delivery stamp from the file name (`D<YYMMDD>.T<NNNNNNN>`).
+        data_tests:
+          - not_null
+
+      - name: FILE_DATE
+        description: Quarter end for this family, not the delivery date.
+
+      - name: SUBMISSION_RANK
+        description: >
+          Rank of this delivery within `(ACO_ID, PERFORMANCE_YEAR, PERIOD)`, 1
+          being the most recent.
+        data_tests:
+          - not_null
+
+      - name: IS_LATEST_SUBMISSION
+        description: True on every row of the most recent delivery of this quarter.
+        data_tests:
+          - not_null
+
+      - name: SECTION_LABEL
+        description: Section heading verbatim; this sheet letters no sections.
+
+      - name: METRIC
+        description: >
+          Canonical name for the section: `regional_expenditure`,
+          `national_weight` or `regional_weight`. `unmapped` for a heading this
+          model does not recognise.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['regional_expenditure', 'national_weight', 'regional_weight', 'unmapped']
+
+      - name: ROW_LABEL
+        description: Column A of the source worksheet row, verbatim.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          Canonical Medicare enrollment type. This sheet uses BNMRK's spelling
+          (`ESRD`, `Aged/dual`) rather than the QEXPU Table 1 spelling
+          (`End Stage Renal Disease`, `Aged/Dual`) in the same workbook, which is
+          the reason matching is case-insensitive and seeded rather than
+          hardcoded per family.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual', 'aged_disabled', 'total', 'unmapped']
+
+      - name: ENROLLMENT_TYPE_LABEL
+        description: Display form of `ENROLLMENT_TYPE`.
+
+      - name: ENROLLMENT_TYPE_SORT
+        description: Sort key for `ENROLLMENT_TYPE`.
+
+      - name: COLUMN_LABEL
+        description: >
+          Source column header verbatim: `Benchmark Year 3`, or `Q1` through
+          `Q4`. Part of the model grain.
+        data_tests:
+          - not_null
+
+      - name: PERIOD_TYPE
+        description: >
+          What the column reports: `benchmark_year_3` or `quarter`. `unmapped`
+          for a header this model does not recognise.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['benchmark_year_3', 'quarter', 'unmapped']
+
+      - name: QUARTER_NUM
+        description: >
+          Quarter number 1-4 for a quarter column, NULL for the benchmark year
+          column.
+
+      - name: IS_LATEST_QUARTER
+        description: >
+          True on the quarter column the workbook reports as current, false
+          everywhere else — including on the benchmark year column and on every
+          quarter CMS has not reported yet.
+
+          That quarter is the highest-numbered one carrying a number in the
+          **regional expenditure** section, and it is applied to all three
+          metrics. "Carries a number" means `VALUE_NUMERIC is not null`, which
+          also excludes CMS's `'-'` not-applicable marker.
+
+          The scope is `FILE_PATH`: one workbook is one delivery of one quarter,
+          so a later delivery must not decide which quarter is current inside an
+          earlier one. Within the workbook the quarter is not decided per
+          section, because the sections are not independent — `[I]` blends
+          `[E]`, `[G]` and `[H]` into one number, and a per-section quarter
+          would let it combine a Q1 regional factor with Q2 weights without
+          anything saying so.
+
+          Anchoring on the regional expenditure section rather than taking the
+          highest quarter any section reached also avoids the opposite failure:
+          a section running ahead cannot drag the others onto a quarter they
+          hold no data for, because whatever has run ahead necessarily has data
+          for the anchor quarter too.
+
+          That the three sections advance together is an assumption about how
+          CMS writes the sheet.
+          `assert_regional_metrics_agree_on_the_latest_quarter` makes it
+          checkable and warns if it is ever violated.
+
+          The quarter is taken from the highest-numbered column carrying a
+          number anywhere in the anchor section. The reference implementation
+          reads the ESRD row specifically; the two agree unless ESRD is blank
+          where another enrollment type is populated, where the broader rule
+          keeps data the narrower one would discard.
+
+          False, never NULL, so a filter on it is safe.
+        data_tests:
+          - not_null
+
+      - name: VALUE_TEXT
+        description: >
+          The source cell verbatim. Empty for the quarters CMS has not reported.
+
+      - name: VALUE_NUMERIC
+        description: >
+          `VALUE_TEXT` cast to numeric, NULL where the cell is not a number.
+          The weights here run to sixteen decimal places and are carried
+          unrounded.
+
+      - name: FILE_PATH
+        description: Full path of the source workbook. Part of the model grain.
+        data_tests:
+          - not_null
+
+      - name: DIRECTORY_NAME
+        description: Delivery bundle directory the workbook arrived in.
+
+      - name: FILE_NAME
+        description: File name of the source workbook.
+
+      - name: ROW_NUM
+        description: 1-based worksheet row index. Part of the model grain.
+        data_tests:
+          - not_null
