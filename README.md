@@ -158,7 +158,7 @@ dbt deps
 ## Setup
 
 1. Configure your dbt profile so the project can connect to your warehouse.
-2. Ensure the profile name used by this project is available as `default` or update `profile:` in `dbt_project.yml`.
+2. Ensure the profile name used by this project is available as `cms_mssp_connector` or update `profile:` in `dbt_project.yml`.
 3. Load the MSSP raw tables into the configured `input_database` and `input_schema`.
 4. Install dependencies with `dbt deps`.
 
