@@ -1,0 +1,9 @@
+.git
+.github
+.venv
+__pycache__
+dbt_packages
+logs
+target
+tests
+config/.user.yml
