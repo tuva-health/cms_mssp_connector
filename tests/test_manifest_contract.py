@@ -33,6 +33,37 @@ MSSP_OUTPUTS = (
     "stg_mcqm_dep_134ssp",
     "stg_mcqm_dm_001ssp",
 )
+# The benchmark staging tier: twenty long/tidy views over the sectioned CMS
+# workbook families (BNMRK / AEXPU / QEXPU), materialised alongside the other
+# MSSP staging outputs in _stg_input_layer.
+BENCHMARK_STAGING_OUTPUTS = (
+    "stg_bnmrk_table_1",
+    "stg_bnmrk_table_1a",
+    "stg_bnmrk_table_1b",
+    "stg_bnmrk_table_1c",
+    "stg_bnmrk_table_2",
+    "stg_bnmrk_table_3",
+    "stg_bnmrk_table_4",
+    "stg_bnmrk_table_5",
+    "stg_bnmrk_table_6",
+    "stg_bnmrk_parameters",
+    "stg_aexpu_table_1",
+    "stg_aexpu_table_1a",
+    "stg_aexpu_table_3",
+    "stg_aexpu_table_4",
+    "stg_aexpu_table_4a",
+    "stg_aexpu_parameters",
+    "stg_qexpu_table_1",
+    "stg_qexpu_table_2",
+    "stg_qexpu_table_3",
+    "stg_qexpu_parameters",
+)
+# The two final benchmark facts: the calculated three-way blended benchmark
+# update and projected savings, placed in the input_layer boundary schema.
+BENCHMARK_FACT_OUTPUTS = (
+    "fct_projected_benchmark_by_enrollment_type",
+    "fct_projected_savings",
+)
 BOUNDARY_OUTPUTS = {
     "model.cms_aalr_connector.enrollment": ("cms_aalr_connector", "enrollment", "raw_data"),
     "model.cms_aalr_connector.provider_attribution": (
@@ -78,6 +109,14 @@ def valid_manifest() -> dict:
         )
         for name in MSSP_OUTPUTS
     }
+    for name in BENCHMARK_STAGING_OUTPUTS:
+        nodes[f"model.cms_mssp_connector.{name}"] = model(
+            "cms_mssp_connector", name, "_stg_input_layer"
+        )
+    for name in BENCHMARK_FACT_OUTPUTS:
+        nodes[f"model.cms_mssp_connector.{name}"] = model(
+            "cms_mssp_connector", name, "input_layer"
+        )
     for unique_id, (package, name, schema) in BOUNDARY_OUTPUTS.items():
         nodes[unique_id] = model(package, name, schema)
     nodes["model.medicare_cclf_connector.eligibility"]["depends_on"]["nodes"] = [
@@ -135,6 +174,41 @@ class ManifestContractTests(unittest.TestCase):
         self.assertTrue(any("stg_participants_list" in error for error in missing_errors))
         self.assertTrue(any("medical_claim" in error for error in disabled_errors))
 
+    def test_rejects_missing_or_misplaced_benchmark_staging_relation(self) -> None:
+        missing = valid_manifest()
+        del missing["nodes"]["model.cms_mssp_connector.stg_bnmrk_table_1"]
+        misplaced = valid_manifest()
+        misplaced["nodes"]["model.cms_mssp_connector.stg_qexpu_parameters"][
+            "schema"
+        ] = "input_layer"
+
+        missing_errors = self.verify(missing)
+        misplaced_errors = self.verify(misplaced)
+
+        self.assertTrue(any("stg_bnmrk_table_1" in error for error in missing_errors))
+        self.assertTrue(
+            any("stg_qexpu_parameters" in error for error in misplaced_errors)
+        )
+
+    def test_rejects_missing_or_misplaced_benchmark_fact(self) -> None:
+        missing = valid_manifest()
+        del missing["nodes"]["model.cms_mssp_connector.fct_projected_savings"]
+        misplaced = valid_manifest()
+        misplaced["nodes"][
+            "model.cms_mssp_connector.fct_projected_benchmark_by_enrollment_type"
+        ]["schema"] = "_stg_input_layer"
+
+        missing_errors = self.verify(missing)
+        misplaced_errors = self.verify(misplaced)
+
+        self.assertTrue(any("fct_projected_savings" in error for error in missing_errors))
+        self.assertTrue(
+            any(
+                "fct_projected_benchmark_by_enrollment_type" in error
+                for error in misplaced_errors
+            )
+        )
+
     def test_rejects_wrong_version_relation_placement_and_dependency_path(self) -> None:
         manifest = valid_manifest()
         manifest["metadata"]["dbt_version"] = "1.11.13"
@@ -154,6 +228,24 @@ class ManifestContractTests(unittest.TestCase):
         errors = self.verify(valid_manifest(), lock.replace("0.17.2", "0.17.1", 1))
 
         self.assertTrue(any("the_tuva_project" in error for error in errors))
+
+    def test_dbt_version_is_parsed_from_the_pin(self) -> None:
+        # The expected dbt version is read from the dbt-core pin, not baked in:
+        # a synthetic pin with a distinct version parses to that version.
+        pin = "duckdb==1.4.3\ndbt-core==9.9.9\ndbt-duckdb==1.10.1\n"
+        self.assertEqual(verify_manifest.dbt_version_pin(pin), "9.9.9")
+
+    def test_version_and_package_fields_are_sourced_not_hardcoded(self) -> None:
+        # The module constants track the repo pin + lock rather than a hand-kept
+        # copy, so the verifier cannot silently drift from what the repo pins.
+        requirements = (REPOSITORY_ROOT / "requirements.txt").read_text(encoding="ascii")
+        lock = (REPOSITORY_ROOT / "package-lock.yml").read_text(encoding="ascii")
+        self.assertEqual(
+            verify_manifest.DBT_VERSION, verify_manifest.dbt_version_pin(requirements)
+        )
+        self.assertEqual(
+            verify_manifest.PACKAGE_REVISIONS, verify_manifest.package_revisions(lock)
+        )
 
 
 if __name__ == "__main__":

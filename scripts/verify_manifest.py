@@ -7,7 +7,15 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 
-DBT_VERSION = "1.11.14"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+# The dbt-core version pin (requirements.txt) and the package lock
+# (package-lock.yml) are the single sources of truth for the runtime version
+# and dependency revisions the released manifest must match. They are read from
+# those files rather than duplicated as literals here so the verifier cannot
+# drift from what the repository actually pins.
+PIN_FILE = REPOSITORY_ROOT / "requirements.txt"
+LOCK_FILE = REPOSITORY_ROOT / "package-lock.yml"
+
 MSSP_OUTPUTS = (
     "stg_participants_list",
     "stg_provider_and_supplier_list",
@@ -32,6 +40,38 @@ MSSP_OUTPUTS = (
     "stg_mcqm_dep_134ssp",
     "stg_mcqm_dm_001ssp",
 )
+# Benchmark staging tier: the twenty long/tidy views over the sectioned CMS
+# workbook families (BNMRK / AEXPU / QEXPU), materialised in _stg_input_layer
+# alongside the other MSSP staging outputs. Enumerated from the connector's own
+# benchmark dbt models, not driven by an external contract.
+BENCHMARK_STAGING_OUTPUTS = (
+    "stg_bnmrk_table_1",
+    "stg_bnmrk_table_1a",
+    "stg_bnmrk_table_1b",
+    "stg_bnmrk_table_1c",
+    "stg_bnmrk_table_2",
+    "stg_bnmrk_table_3",
+    "stg_bnmrk_table_4",
+    "stg_bnmrk_table_5",
+    "stg_bnmrk_table_6",
+    "stg_bnmrk_parameters",
+    "stg_aexpu_table_1",
+    "stg_aexpu_table_1a",
+    "stg_aexpu_table_3",
+    "stg_aexpu_table_4",
+    "stg_aexpu_table_4a",
+    "stg_aexpu_parameters",
+    "stg_qexpu_table_1",
+    "stg_qexpu_table_2",
+    "stg_qexpu_table_3",
+    "stg_qexpu_parameters",
+)
+# The two final benchmark facts: the three-way blended benchmark update and the
+# projected-savings verdict, placed in the input_layer boundary schema.
+BENCHMARK_FACT_OUTPUTS = (
+    "fct_projected_benchmark_by_enrollment_type",
+    "fct_projected_savings",
+)
 BOUNDARY_OUTPUTS = {
     "model.cms_aalr_connector.enrollment": ("enrollment", "raw_data"),
     "model.cms_aalr_connector.provider_attribution": ("provider_attribution", "input_layer"),
@@ -39,15 +79,12 @@ BOUNDARY_OUTPUTS = {
     "model.medicare_cclf_connector.medical_claim": ("medical_claim", "input_layer"),
     "model.medicare_cclf_connector.pharmacy_claim": ("pharmacy_claim", "input_layer"),
 }
-PACKAGE_REVISIONS = {
-    "dbt_utils": "1.3.3",
-    "cms_aalr_connector": "b10d6b6cd54af91b2ca04050d73bad5cb56cc5b0",
-    "medicare_cclf_connector": "603a258e3c649d6a4eb7d0835e8efc7d79371204",
-    "the_tuva_project": "0.17.2",
-    "dbt_expectations": "0.10.10",
-    "elementary": "382c570ccf4f8733e5323ae21aa4aa9fa849fedd",
-    "dbt_date": "0.17.2",
-}
+
+
+def dbt_version_pin(requirements: str) -> Optional[str]:
+    """Extract the pinned dbt-core version from a requirements pin file."""
+    match = re.search(r"^dbt-core==(.+)$", requirements, re.MULTILINE)
+    return match.group(1).strip() if match else None
 
 
 def package_revisions(lock: str) -> Dict[str, str]:
@@ -59,6 +96,12 @@ def package_revisions(lock: str) -> Dict[str, str]:
         if name and revision:
             revisions[name.group(1)] = revision.group(1).strip('"')
     return revisions
+
+
+# Sourced from the pin + lock, not hardcoded (TUVA-26): the released manifest
+# must record this dbt version and the released lock must carry these revisions.
+DBT_VERSION = dbt_version_pin(PIN_FILE.read_text(encoding="utf-8"))
+PACKAGE_REVISIONS = package_revisions(LOCK_FILE.read_text(encoding="utf-8"))
 
 
 def enabled_model(nodes: dict, unique_id: str) -> Optional[dict]:
@@ -138,13 +181,24 @@ def verify(manifest: dict, lock: str, database: Optional[str] = None) -> List[st
     if database is None:
         return errors
 
-    for name in MSSP_OUTPUTS:
+    for name in MSSP_OUTPUTS + BENCHMARK_STAGING_OUTPUTS:
         unique_id = f"model.cms_mssp_connector.{name}"
         node = enabled_model(nodes, unique_id)
         if node is None:
             errors.append(f"required enabled MSSP relation is missing: {name}")
             continue
         expected = (database, "_stg_input_layer", name)
+        actual = (node.get("database"), node.get("schema"), node.get("alias"))
+        if actual != expected:
+            errors.append(f"{name} relation placement must be {expected}, found {actual}")
+
+    for name in BENCHMARK_FACT_OUTPUTS:
+        unique_id = f"model.cms_mssp_connector.{name}"
+        node = enabled_model(nodes, unique_id)
+        if node is None:
+            errors.append(f"required enabled benchmark fact is missing: {name}")
+            continue
+        expected = (database, "input_layer", name)
         actual = (node.get("database"), node.get("schema"), node.get("alias"))
         if actual != expected:
             errors.append(f"{name} relation placement must be {expected}, found {actual}")
@@ -188,8 +242,11 @@ def main() -> int:
             print("ERROR: " + error, file=sys.stderr)
         return 1
     print(
-        "manifest contract passed: 22 MSSP outputs, 5 package outputs, "
-        "5 Tuva boundary paths"
+        f"manifest contract passed: {len(MSSP_OUTPUTS)} MSSP outputs, "
+        f"{len(BENCHMARK_STAGING_OUTPUTS)} benchmark staging outputs, "
+        f"{len(BENCHMARK_FACT_OUTPUTS)} benchmark facts, "
+        f"{len(BOUNDARY_OUTPUTS)} package outputs, "
+        f"{len(BOUNDARY_OUTPUTS)} Tuva boundary paths"
     )
     return 0
 
