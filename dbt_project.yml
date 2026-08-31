@@ -6,7 +6,9 @@ name: 'cms_mssp_connector'
 version: '1.0.0'
 
 # This setting configures which "profile" dbt uses for this project.
-profile: 'default'
+# The runtime resolves this profile from an operator-provided config/profiles.yml
+# overlay (git-ignored); see config/profiles.example.yml for the env-var contract.
+profile: 'cms_mssp_connector'
 
 vars:
   input_database: tuva
