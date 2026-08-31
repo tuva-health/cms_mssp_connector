@@ -1,5 +1,6 @@
-duckdb
-dbt-core
-dbt-duckdb
-dbt-snowflake
-urllib3<2
+duckdb==1.4.3
+dbt-core==1.11.14
+dbt-duckdb==1.10.1
+dbt-snowflake==1.10.7
+sqlparse>=0.6.0
+urllib3>=2.5.0
