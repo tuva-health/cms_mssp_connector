@@ -6,6 +6,8 @@ logs/
 CLAUDE.md
 .venv/
 .claude
+.pi/
+release-metadata/
 .DS_Store
 .pytest_cache/
 __pycache__/

@@ -207,6 +207,30 @@ dbt docs generate
 dbt docs serve
 ```
 
+## Release Image
+
+A release is one immutable image built from a clean clone whose `HEAD` is the
+agreed release commit. `scripts/build_release_image.sh` builds it for
+`linux/amd64`, pushes it under the release ID as its tag, resolves the pushed
+`repository@sha256:` digest from ECR and binds that digest to the metadata baked
+into the image:
+
+```bash
+uv run --frozen scripts/build_release_image.sh <registry>/<repository> <release-id>
+```
+
+- The clone must be clean (git-ignored tooling and `release-metadata/` do not
+  count) and `HEAD` must equal `RELEASE_REF`, which defaults to `origin/main`.
+  When convergence is local-only and no published `main` exists, point it at the
+  ref you actually release from instead — a local branch such as
+  `RELEASE_REF=main`, the remote-tracking ref of a local canonical clone such as
+  `canonical-local/main`, or a full commit ID — no ref rewriting is needed.
+- The ECR repository must enforce `IMMUTABLE` tags; `AWS_REGION` defaults to the
+  region encoded in the registry host name.
+- The script writes `release-metadata/<release-id>.json` (git-ignored) whose
+  `image_reference` is the `repository@sha256:` digest. Pin task definitions to
+  that digest, never to the tag.
+
 ## Project Notes
 
 - Staging models are configured as views in `dbt_project.yml`.
