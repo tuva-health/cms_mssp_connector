@@ -38,7 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carrying the MSSP enrollment type and the CMS prospective HCC risk score
   from the assignment list, with the source of each, the new-enrollee and
   assigned flags, and the MBI crosswalk step that joined the assignment list
-  to the Tuva person id (TUVA-74).
+  to the Tuva person id. Assignment is pinned to one delivery per calendar
+  year, the earliest package that reports the year, so a later package's
+  prospective-assignment window and benchmark-year re-deliveries never count
+  as assignment for those months (TUVA-74).
 - `fact_member_month_benchmark` in `semantic_layer`: the benchmark applied to
   every member-month, keyed on the same `MEMBER_MONTH_SK` as the Tuva
   `fact_member_months` for a one-to-one join. Three rates per member per
