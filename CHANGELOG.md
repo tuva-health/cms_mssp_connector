@@ -65,10 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   estimated MSR and basis, savings status, and the risk adjustment block —
   the per-type PY-to-BY3 risk ratio (assignment-list PY mean over BY3
   `[C]`), the aggregate ratio weighted by person years times historical
-  benchmark expenditure per 42 CFR 425.605(a)(1)(ii)(C), the cap bounds
-  `1 ± mssp_risk_score_cap` (new project variable, default `0.03`), the cap
-  factor `bound / R` where the aggregate lies outside the bounds and 1
-  otherwise, an `IS_CAP_BINDING` flag, and the risk-adjusted ACO benchmark
+  benchmark expenditure per 42 CFR 425.605(a)(1)(ii)(C), the cap bound
+  `1 + mssp_risk_score_cap` (new project variable, default `0.03`), the cap
+  factor `bound / R` where the aggregate exceeds the bound and 1 otherwise
+  — one-sided per 42 CFR 425.605(a)(1)(ii), so a decrease in the aggregate
+  ratio passes through uncapped — an `IS_CAP_BINDING` flag, and the risk-adjusted ACO benchmark
   (`Σ enrollment proportion x [M] x ratio x factor`, annual and PMPM). The
   cap is applied at the aggregate and rescales every type by the one
   factor, so relative risk between members is preserved and the capped
@@ -82,10 +83,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   figures are NULL-safe: a type without scored members leaves the aggregate,
   factor and capped columns NULL. The model docs cite the regulation and the
   CY 2023 PFS final rule (87 FR 69934-69946, 70238) and record where the
-  model departs from them: the symmetric lower bound and the single-factor
-  rescaling are project conventions. The manifest verifier requires the fact
-  in `semantic_layer`; a unit test pins the aggregate, both cap directions,
-  the no-cap case, the NULL cascade and the scenario; singular tests assert
+  model departs from them: the single-factor rescaling is a project
+  convention. The manifest verifier requires the fact in `semantic_layer`; a
+  unit test pins the aggregate, the cap above the bound, the pass-through
+  below it, the no-cap case, the NULL cascade and the scenario; singular tests assert
   the capped member reconciliation and the projection agreement (TUVA-76).
 - `fact_member_month_benchmark` gains `CAP_FACTOR`,
   `RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED` (the uncapped risk-adjusted rate

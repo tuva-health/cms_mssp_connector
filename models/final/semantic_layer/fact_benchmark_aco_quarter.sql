@@ -26,24 +26,24 @@
        not dollars alone.
 
     3. The cap. 425.605(a)(1)(ii)(A) caps positive growth at the ACO's
-       aggregate demographic risk score growth plus 3 percentage points. The
-       demographic growth term needs BY3 demographic scores the workbook does
-       not carry, so the default here is the flat cap: CAP_UPPER_BOUND =
-       1 + mssp_risk_score_cap (0.03 unless overridden). CAP_LOWER_BOUND =
-       1 - the cap is this project's symmetric convention, not the
-       regulation's: the rule caps positive adjustments only, and at 87 FR
-       69942 CMS declined a floor on decreases. The scenario columns beside
-       the flat cap project the missing growth term from the BNMRK Table 4
-       national mean scores instead: per type, the BY1-to-BY3 growth
-       annualised over two years and compounded from the BY3 calendar year
-       (the parameters sheet's "Benchmark Year 3 (BY3)" expenditure and risk
-       score period) to the performance year, then aggregated with the same
-       weights, and added to the cap. It is a projection and is labelled so.
+       aggregate demographic risk score growth plus 3 percentage points, and
+       it is one-sided: nothing in the rule limits a decrease, and at 87 FR
+       69942 CMS declined a floor on decreases, so a fall in the aggregate
+       ratio passes through uncapped. The demographic growth term needs BY3
+       demographic scores the workbook does not carry, so the default here
+       is the flat cap: CAP_UPPER_BOUND = 1 + mssp_risk_score_cap (0.03
+       unless overridden). The scenario columns beside it project the
+       missing growth term from the BNMRK Table 4 national mean scores
+       instead: per type, the BY1-to-BY3 growth annualised over two years
+       and compounded from the BY3 calendar year (the parameters sheet's
+       "Benchmark Year 3 (BY3)" expenditure and risk score period) to the
+       performance year, then aggregated with the same weights, and added to
+       the cap. It is a projection and is labelled so.
 
-    4. When R lies outside the bounds the cap factor c = bound / R rescales
-       every type's ratio by the one number, so the aggregate lands on the
-       bound and the relative risk between members is preserved; inside the
-       bounds c = 1. The risk-adjusted benchmark is then
+    4. When R exceeds the bound the cap factor c = bound / R rescales every
+       type's ratio by the one number, so the aggregate lands on the bound
+       and the relative risk between members is preserved; at or below the
+       bound c = 1. The risk-adjusted benchmark is then
        sum_t ENROLLMENT_PROPORTION_t x [M]_t x r_t x c, an annual per capita
        figure, with its PMPM. fact_member_month_benchmark reads c off the
        IS_CURRENT_PROJECTION row of each year, so the capped member rates
@@ -363,8 +363,7 @@ ratios as (
         end                                                 as NATIONAL_GROWTH_PROJECTED,
 
         {{ to_double(cap) }}                                as RISK_SCORE_CAP,
-        {{ to_double(1) }} + {{ to_double(cap) }}           as CAP_UPPER_BOUND,
-        {{ to_double(1) }} - {{ to_double(cap) }}           as CAP_LOWER_BOUND
+        {{ to_double(1) }} + {{ to_double(cap) }}           as CAP_UPPER_BOUND
 
     from aggregated
 
@@ -378,19 +377,17 @@ capped as (
         {#- 1 + cap + growth - 1 -#}
         RISK_SCORE_CAP + NATIONAL_GROWTH_PROJECTED          as CAP_UPPER_BOUND_SCENARIO,
 
+        {#- one-sided: bound / R above the bound, 1 at or below it -#}
         case
             when AGGREGATE_RISK_RATIO is null then {{ to_double('null') }}
             when AGGREGATE_RISK_RATIO > CAP_UPPER_BOUND
                 then {{ safe_divide('CAP_UPPER_BOUND', 'AGGREGATE_RISK_RATIO') }}
-            when AGGREGATE_RISK_RATIO < CAP_LOWER_BOUND
-                then {{ safe_divide('CAP_LOWER_BOUND', 'AGGREGATE_RISK_RATIO') }}
             else {{ to_double(1) }}
         end                                                 as CAP_FACTOR,
 
         case
             when AGGREGATE_RISK_RATIO is null then null
             else AGGREGATE_RISK_RATIO > CAP_UPPER_BOUND
-                or AGGREGATE_RISK_RATIO < CAP_LOWER_BOUND
         end                                                 as IS_CAP_BINDING
 
     from ratios
@@ -407,8 +404,6 @@ scenario as (
                  or CAP_UPPER_BOUND_SCENARIO is null then {{ to_double('null') }}
             when AGGREGATE_RISK_RATIO > CAP_UPPER_BOUND_SCENARIO
                 then {{ safe_divide('CAP_UPPER_BOUND_SCENARIO', 'AGGREGATE_RISK_RATIO') }}
-            when AGGREGATE_RISK_RATIO < CAP_LOWER_BOUND
-                then {{ safe_divide('CAP_LOWER_BOUND', 'AGGREGATE_RISK_RATIO') }}
             else {{ to_double(1) }}
         end                                                 as CAP_FACTOR_SCENARIO,
 
@@ -416,7 +411,6 @@ scenario as (
             when AGGREGATE_RISK_RATIO is null
                  or CAP_UPPER_BOUND_SCENARIO is null then null
             else AGGREGATE_RISK_RATIO > CAP_UPPER_BOUND_SCENARIO
-                or AGGREGATE_RISK_RATIO < CAP_LOWER_BOUND
         end                                                 as IS_CAP_BINDING_SCENARIO,
 
         case
@@ -467,11 +461,10 @@ select
 
     scenario.AGGREGATE_RISK_RATIO                           as AGGREGATE_RISK_RATIO,
 
-    {#- the cap and its bounds are constants of the run, carried on every
+    {#- the cap and its bound are constants of the run, carried on every
         row — including a quarter with no enrollment-type rows -#}
     {{ to_double(cap) }}                                    as RISK_SCORE_CAP,
     {{ to_double(1) }} + {{ to_double(cap) }}               as CAP_UPPER_BOUND,
-    {{ to_double(1) }} - {{ to_double(cap) }}               as CAP_LOWER_BOUND,
     scenario.CAP_FACTOR                                     as CAP_FACTOR,
     scenario.IS_CAP_BINDING                                 as IS_CAP_BINDING,
 
