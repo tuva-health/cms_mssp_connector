@@ -8,7 +8,8 @@
     meaning rather than to its shape. A model that read [C] into the ratio
     column, or paired [D] with the wrong benchmark year column, would still
     produce a full grid of plausible numbers near 1; none of the schema tests
-    could tell. This one can, because 1.0117 is not 1.
+    could tell. This one can, because a renormalised score such as 1.0342
+    is not 1.
 
     NULL counts as a failure. The ratio comes from Table 1, which every
     delivery carries, so a BY3 row with no ratio means the [D] row was not
