@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   there. Before this the connector never set the var, so the schema was a
   stale artifact of an earlier run with an empty member-months fact
   (TUVA-71).
+- Current-projection models `fct_projected_benchmark_by_enrollment_type_current`
+  and `fct_projected_savings_current` in `input_layer`: the two benchmark facts
+  filtered to the latest calculable benchmark delivery, one row per ACO,
+  performance year, quarter (and enrollment type), with the projected updated
+  benchmark and the ACO's expenditure also expressed per member per month.
+  They are the default read path; the full-grain facts remain for
+  reconciliation against a particular delivery. The manifest verifier checks
+  their placement, and unit tests pin the filter and the division (TUVA-72).
 
 ## [0.2.0] - 2026-09-04
 

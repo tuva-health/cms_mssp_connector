@@ -91,6 +91,14 @@ SEMANTIC_LAYER_OUTPUTS = (
     "fact_risk_factors",
     "fact_risk_scores",
 )
+
+# The two current-projection models over those facts: the same figures
+# filtered to the latest calculable benchmark delivery and carrying PMPM
+# columns, placed beside the facts in input_layer (TUVA-72).
+BENCHMARK_CURRENT_OUTPUTS = (
+    "fct_projected_benchmark_by_enrollment_type_current",
+    "fct_projected_savings_current",
+)
 BOUNDARY_OUTPUTS = {
     "model.cms_aalr_connector.enrollment": ("cms_aalr_connector", "enrollment", "raw_data"),
     "model.cms_aalr_connector.provider_attribution": (
@@ -141,6 +149,10 @@ def valid_manifest() -> dict:
             "cms_mssp_connector", name, "_stg_input_layer"
         )
     for name in BENCHMARK_FACT_OUTPUTS:
+        nodes[f"model.cms_mssp_connector.{name}"] = model(
+            "cms_mssp_connector", name, "input_layer"
+        )
+    for name in BENCHMARK_CURRENT_OUTPUTS:
         nodes[f"model.cms_mssp_connector.{name}"] = model(
             "cms_mssp_connector", name, "input_layer"
         )
@@ -266,6 +278,27 @@ class ManifestContractTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "fact_claims" in error and "semantic_layer" in error
+                for error in misplaced_errors
+            )
+        )
+
+    def test_rejects_missing_or_misplaced_current_projection(self) -> None:
+        missing = valid_manifest()
+        del missing["nodes"]["model.cms_mssp_connector.fct_projected_savings_current"]
+        misplaced = valid_manifest()
+        misplaced["nodes"][
+            "model.cms_mssp_connector.fct_projected_benchmark_by_enrollment_type_current"
+        ]["schema"] = "_stg_input_layer"
+
+        missing_errors = self.verify(missing)
+        misplaced_errors = self.verify(misplaced)
+
+        self.assertTrue(
+            any("fct_projected_savings_current" in error for error in missing_errors)
+        )
+        self.assertTrue(
+            any(
+                "fct_projected_benchmark_by_enrollment_type_current" in error
                 for error in misplaced_errors
             )
         )
