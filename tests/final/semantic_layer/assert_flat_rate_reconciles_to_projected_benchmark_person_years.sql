@@ -14,11 +14,11 @@
     its members would each show up here as a ratio far from one.
 
     Two facts about the report shape the comparison. First, the quarterly
-    person years are annualised: on the PY2025 Q4 delivery TOTAL_PERSON_YEARS
-    times twelve is 67,484.0, exactly the member-months of the Q4 assignment
-    list for the twelve months of 2025, and on the PY2026 Q2 delivery it is
-    within one percent of the Q2 list's six months of 2026 times two. So the
-    expected side is [P] x TOTAL_PERSON_YEARS x (months covered / 12), with
+    person years are annualised: a Q4 delivery's TOTAL_PERSON_YEARS times
+    twelve equals the assignment list's member-months for the twelve months
+    of that year, and a Q2 delivery's TOTAL_PERSON_YEARS times six lands within
+    a percent of the list's six months (verified on a client deployment). So
+    the expected side is [P] x TOTAL_PERSON_YEARS x (months covered / 12), with
     the months covered being three times the projection's quarter, and the
     observed side counts only assigned member-months in those months.
 
