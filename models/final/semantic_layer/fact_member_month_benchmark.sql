@@ -7,10 +7,14 @@
     last: [P]/12, the ACO mean projected updated benchmark, the same number
     on every row of a performance year; [M]/12 for the member's enrollment
     type; and that type rate scaled by the member's CMS prospective HCC score
-    over the BY3 CMS-HCC score [C] for the type. The last is uncapped: CMS
-    limits how far the risk ratio may move over an agreement period, and that
-    cap is a later model's concern. The contract in _models.yml says so on
-    the column.
+    over the BY3 CMS-HCC score [C] for the type. The last is uncapped, and a
+    fourth column caps it: CMS limits how far the ACO's aggregate risk ratio
+    may move between BY3 and the performance year, and fact_benchmark_aco_quarter
+    computes that cap once per year as a single factor. It is read here off
+    the IS_CURRENT_PROJECTION row of the same ACO and year and multiplied
+    into every member's rate, so relative risk between members is kept and
+    the capped rates sum to the capped ACO benchmark applied to the member
+    mix. The contract in _models.yml says so on the columns.
 
     One projection serves a performance year. The two _current models have
     already reduced the benchmark facts to the latest calculable delivery, so
@@ -148,6 +152,20 @@ by3_scores as (
 
 ),
 
+-- The year's cap factor, from the ACO-quarter fact's row for the same
+-- projection. The factor is NULL where a type had no scored members, and
+-- the capped rate is then NULL rather than uncapped.
+cap_factors as (
+
+    select
+        ACO_ID,
+        PERFORMANCE_YEAR,
+        CAP_FACTOR
+    from {{ ref('fact_benchmark_aco_quarter') }}
+    where IS_CURRENT_PROJECTION
+
+),
+
 rates as (
 
     select
@@ -172,6 +190,8 @@ rates as (
                                                             as FLAT_BENCHMARK_PMPM,
         {{ to_double('enrollment_type_rates.PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM') }}
                                                             as ENROLLMENT_TYPE_BENCHMARK_PMPM,
+
+        cap_factors.CAP_FACTOR                              as CAP_FACTOR,
 
         member_months.TOTAL_PAID                            as TOTAL_PAID,
         projection.PERFORMANCE_YEAR is not null             as HAS_BENCHMARK,
@@ -201,6 +221,10 @@ rates as (
         and by3_scores.PERFORMANCE_YEAR = projection.PERFORMANCE_YEAR
         and by3_scores.ENROLLMENT_TYPE = member_risk.ENROLLMENT_TYPE
 
+    left join cap_factors
+        on cap_factors.ACO_ID = projection.ACO_ID
+        and cap_factors.PERFORMANCE_YEAR = projection.PERFORMANCE_YEAR
+
 ),
 
 adjusted as (
@@ -212,6 +236,18 @@ adjusted as (
         ENROLLMENT_TYPE_BENCHMARK_PMPM * RISK_RATIO         as RISK_ADJUSTED_BENCHMARK_PMPM
 
     from rates
+
+),
+
+capped as (
+
+    select
+        adjusted.*,
+
+        {#- the uncapped rate x the year's cap factor -#}
+        RISK_ADJUSTED_BENCHMARK_PMPM * CAP_FACTOR           as RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED
+
+    from adjusted
 
 )
 
@@ -233,6 +269,8 @@ select
     FLAT_BENCHMARK_PMPM,
     ENROLLMENT_TYPE_BENCHMARK_PMPM,
     RISK_ADJUSTED_BENCHMARK_PMPM,
+    CAP_FACTOR,
+    RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED,
     TOTAL_PAID,
 
     {#- actual minus benchmark -#}
@@ -241,6 +279,8 @@ select
                                                             as VARIANCE_TO_ENROLLMENT_TYPE,
     {{ to_double('TOTAL_PAID') }} - RISK_ADJUSTED_BENCHMARK_PMPM
                                                             as VARIANCE_TO_RISK_ADJUSTED,
+    {{ to_double('TOTAL_PAID') }} - RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED
+                                                            as VARIANCE_TO_RISK_ADJUSTED_CAPPED,
 
     HAS_BENCHMARK,
     BENCHMARK_PERIOD,
@@ -249,4 +289,4 @@ select
     QUARTERLY_SUBMISSION_ID,
     IS_AGREEMENT_DEFAULTED
 
-from adjusted
+from capped

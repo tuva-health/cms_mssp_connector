@@ -16,8 +16,11 @@ version: 2
 #   RISK_ADJUSTED_BENCHMARK_PMPM     the enrollment-type rate scaled by the
 #                                    member's CMS prospective HCC score over
 #                                    the BY3 CMS-HCC score [C] for that type;
-#                                    uncapped — the 3 percent cap is not
-#                                    applied here
+#                                    uncapped
+#   RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED
+#                                    the same times CAP_FACTOR, the year's
+#                                    aggregate cap factor from
+#                                    fact_benchmark_aco_quarter
 #
 # One projection serves each performance year: the latest calculable quarter
 # on the latest benchmark delivery, which the two _current models have already
@@ -35,10 +38,10 @@ models:
   - name: fact_member_month_benchmark
     description: >
       One row per member-month of the Tuva semantic layer's
-      `fact_member_months`, keyed on the same `MEMBER_MONTH_SK`, carrying three
-      benchmark rates per member per month — flat, by enrollment type, and
-      risk-adjusted (uncapped) — with the member's actual total paid and the
-      variance to each rate.
+      `fact_member_months`, keyed on the same `MEMBER_MONTH_SK`, carrying four
+      benchmark rates per member per month — flat, by enrollment type,
+      risk-adjusted (uncapped), and risk-adjusted under the ACO's aggregate
+      cap — with the member's actual total paid and the variance to each rate.
 
       The member-month's performance year is the calendar year of
       `YEAR_MONTH`. Each performance year is served by one projection: the row
@@ -188,10 +191,30 @@ models:
         description: >
           `ENROLLMENT_TYPE_BENCHMARK_PMPM x RISK_RATIO`, uncapped. NULL where
           either is NULL — in particular for every member-month without a CMS
-          score, which `RISK_SCORE_SOURCE` flags. CMS caps the risk ratio's
-          growth at 3 percent over the agreement period; that cap is not
-          applied here and this column must not be read as the capped
-          benchmark.
+          score, which `RISK_SCORE_SOURCE` flags. CMS caps the growth of the
+          ACO's aggregate risk ratio between BY3 and the performance year;
+          that cap is not applied here and this column must not be read as
+          the capped benchmark — `RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED` is.
+
+      - name: CAP_FACTOR
+        description: >
+          The performance year's aggregate cap factor from
+          `fact_benchmark_aco_quarter`, read off its `IS_CURRENT_PROJECTION`
+          row for the same ACO and year: the bound over the ACO's aggregate
+          PY-to-BY3 risk ratio where that ratio lies outside the cap, exactly
+          1 where it does not. One number for every member-month of the
+          year. NULL where the year has no projection, or where a type had no
+          scored members and the aggregate could not be formed.
+
+      - name: RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED
+        description: >
+          `RISK_ADJUSTED_BENCHMARK_PMPM x CAP_FACTOR` — the risk-adjusted
+          rate under the flat aggregate cap. Every member is rescaled by the
+          same factor, so relative risk between members is preserved and the
+          capped rates summed over the year's assigned, scored member-months
+          equal the capped ACO benchmark applied to their mix
+          (`assert_capped_member_rate_reconciles_to_aco_benchmark`). NULL
+          where the uncapped rate or the factor is NULL.
 
       - name: TOTAL_PAID
         description: >
@@ -212,6 +235,11 @@ models:
         description: >
           `TOTAL_PAID - RISK_ADJUSTED_BENCHMARK_PMPM`. NULL where the rate is
           NULL, so for every member-month without a score.
+
+      - name: VARIANCE_TO_RISK_ADJUSTED_CAPPED
+        description: >
+          `TOTAL_PAID - RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED`. NULL where the
+          capped rate is NULL.
 
       - name: HAS_BENCHMARK
         description: >
@@ -257,6 +285,11 @@ models:
             expression: >
               RISK_ADJUSTED_BENCHMARK_PMPM is null
               or (RISK_SCORE is not null and ENROLLMENT_TYPE_BENCHMARK_PMPM is not null)
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              (RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED is null)
+              = (RISK_ADJUSTED_BENCHMARK_PMPM is null or CAP_FACTOR is null)
 
 # ---------------------------------------------------------------------------
 # Unit test
@@ -288,6 +321,10 @@ unit_tests:
           projection (flat 1500, type 3500), ratio 1.5, risk-adjusted 5250.
       M6  2026, enrollment type unresolved. Flat only; type rate, BY3, ratio
           and risk-adjusted NULL, HAS_BENCHMARK true.
+      The cap factor comes from the ACO-quarter fact's current row: 0.5 for
+      2026 (not the 0.1 of its non-current Q1 row), 1 for 2025. M1's capped
+      rate is 2400, M5's stays 5250; the factor is carried on every 2026 and
+      2025 row, and the capped rate is NULL wherever the uncapped one is.
 
     given:
 
@@ -324,6 +361,13 @@ unit_tests:
           - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, PERIOD: '2026Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B26', ENROLLMENT_TYPE: 'disabled',  PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 2500, TOTAL_PERSON_YEARS: 10}
           - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, PERIOD: '2025Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B25', ENROLLMENT_TYPE: 'aged_dual', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 3500, TOTAL_PERSON_YEARS: 10}
 
+      - input: ref('fact_benchmark_aco_quarter')
+        rows:
+          # Decoy: the non-current quarter's factor.
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, PERIOD: '2026Q1', IS_CURRENT_PROJECTION: false, CAP_FACTOR: 0.1}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, PERIOD: '2026Q2', IS_CURRENT_PROJECTION: true,  CAP_FACTOR: 0.5}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, PERIOD: '2025Q4', IS_CURRENT_PROJECTION: true,  CAP_FACTOR: 1.0}
+
       - input: ref('int_benchmark_risk_scores')
         rows:
           - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, SUBMISSION_ID: 'B26',     IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'aged_dual', BY_LABEL: 'BY3', ACO_RISK_SCORE: 1.25, FILE_DATE: '2026-06-30', FILE_PATH: 'bnmrk-26'}
@@ -339,9 +383,9 @@ unit_tests:
 
     expect:
       rows:
-        - {MEMBER_MONTH_SK: 'M1|202603', PERSON_ID: 'M1', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M1|medicare', YEAR_MONTH: '202603', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: 1.2,  FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 4000, RISK_ADJUSTED_BENCHMARK_PMPM: 4800, TOTAL_PAID: 5000, VARIANCE_TO_FLAT: 3000,  VARIANCE_TO_ENROLLMENT_TYPE: 1000,  VARIANCE_TO_RISK_ADJUSTED: 200,  HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
-        - {MEMBER_MONTH_SK: 'M2|202605', PERSON_ID: 'M2', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M2|medicare', YEAR_MONTH: '202605', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 4000, RISK_ADJUSTED_BENCHMARK_PMPM: null, TOTAL_PAID: 0,    VARIANCE_TO_FLAT: -2000, VARIANCE_TO_ENROLLMENT_TYPE: -4000, VARIANCE_TO_RISK_ADJUSTED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
-        - {MEMBER_MONTH_SK: 'M3|202402', PERSON_ID: 'M3', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M3|medicare', YEAR_MONTH: '202402', PERFORMANCE_YEAR: 2024, ACO_ID: null, IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'disabled',  RISK_SCORE: 0.9,  RISK_SCORE_SOURCE: 'assignment_list_monthly_score', BY3_ENROLLMENT_TYPE_RISK_SCORE: null, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: null, ENROLLMENT_TYPE_BENCHMARK_PMPM: null, RISK_ADJUSTED_BENCHMARK_PMPM: null, TOTAL_PAID: 100,  VARIANCE_TO_FLAT: null,  VARIANCE_TO_ENROLLMENT_TYPE: null,  VARIANCE_TO_RISK_ADJUSTED: null, HAS_BENCHMARK: false, BENCHMARK_PERIOD: null,     BENCHMARK_QUARTER_NUM: null, BENCHMARK_SUBMISSION_ID: null,  QUARTERLY_SUBMISSION_ID: null,    IS_AGREEMENT_DEFAULTED: null}
-        - {MEMBER_MONTH_SK: 'M4|202601', PERSON_ID: 'M4', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M4|medicare', YEAR_MONTH: '202601', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: false, ENROLLMENT_TYPE: 'disabled',  RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.2,  RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 2500, RISK_ADJUSTED_BENCHMARK_PMPM: null, TOTAL_PAID: 2600, VARIANCE_TO_FLAT: 600,   VARIANCE_TO_ENROLLMENT_TYPE: 100,   VARIANCE_TO_RISK_ADJUSTED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
-        - {MEMBER_MONTH_SK: 'M5|202512', PERSON_ID: 'M5', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M5|medicare', YEAR_MONTH: '202512', PERFORMANCE_YEAR: 2025, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.0,  RISK_RATIO: 1.5,  FLAT_BENCHMARK_PMPM: 1500, ENROLLMENT_TYPE_BENCHMARK_PMPM: 3500, RISK_ADJUSTED_BENCHMARK_PMPM: 5250, TOTAL_PAID: 6000, VARIANCE_TO_FLAT: 4500,  VARIANCE_TO_ENROLLMENT_TYPE: 2500,  VARIANCE_TO_RISK_ADJUSTED: 750,  HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2025Q4', BENCHMARK_QUARTER_NUM: 4,    BENCHMARK_SUBMISSION_ID: 'B25', QUARTERLY_SUBMISSION_ID: 'Q25-4', IS_AGREEMENT_DEFAULTED: true}
-        - {MEMBER_MONTH_SK: 'M6|202606', PERSON_ID: 'M6', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M6|medicare', YEAR_MONTH: '202606', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: null,        RISK_SCORE: 1.1,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: null, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: null, RISK_ADJUSTED_BENCHMARK_PMPM: null, TOTAL_PAID: 10,   VARIANCE_TO_FLAT: -1990, VARIANCE_TO_ENROLLMENT_TYPE: null,  VARIANCE_TO_RISK_ADJUSTED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+        - {MEMBER_MONTH_SK: 'M1|202603', PERSON_ID: 'M1', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M1|medicare', YEAR_MONTH: '202603', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: 1.2,  FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 4000, RISK_ADJUSTED_BENCHMARK_PMPM: 4800, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 2400, TOTAL_PAID: 5000, VARIANCE_TO_FLAT: 3000,  VARIANCE_TO_ENROLLMENT_TYPE: 1000,  VARIANCE_TO_RISK_ADJUSTED: 200,  VARIANCE_TO_RISK_ADJUSTED_CAPPED: 2600, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+        - {MEMBER_MONTH_SK: 'M2|202605', PERSON_ID: 'M2', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M2|medicare', YEAR_MONTH: '202605', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 4000, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 0,    VARIANCE_TO_FLAT: -2000, VARIANCE_TO_ENROLLMENT_TYPE: -4000, VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+        - {MEMBER_MONTH_SK: 'M3|202402', PERSON_ID: 'M3', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M3|medicare', YEAR_MONTH: '202402', PERFORMANCE_YEAR: 2024, ACO_ID: null, IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'disabled',  RISK_SCORE: 0.9,  RISK_SCORE_SOURCE: 'assignment_list_monthly_score', BY3_ENROLLMENT_TYPE_RISK_SCORE: null, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: null, ENROLLMENT_TYPE_BENCHMARK_PMPM: null, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: null, RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 100,  VARIANCE_TO_FLAT: null,  VARIANCE_TO_ENROLLMENT_TYPE: null,  VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: false, BENCHMARK_PERIOD: null,     BENCHMARK_QUARTER_NUM: null, BENCHMARK_SUBMISSION_ID: null,  QUARTERLY_SUBMISSION_ID: null,    IS_AGREEMENT_DEFAULTED: null}
+        - {MEMBER_MONTH_SK: 'M4|202601', PERSON_ID: 'M4', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M4|medicare', YEAR_MONTH: '202601', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: false, ENROLLMENT_TYPE: 'disabled',  RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.2,  RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 2500, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 2600, VARIANCE_TO_FLAT: 600,   VARIANCE_TO_ENROLLMENT_TYPE: 100,   VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+        - {MEMBER_MONTH_SK: 'M5|202512', PERSON_ID: 'M5', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M5|medicare', YEAR_MONTH: '202512', PERFORMANCE_YEAR: 2025, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.0,  RISK_RATIO: 1.5,  FLAT_BENCHMARK_PMPM: 1500, ENROLLMENT_TYPE_BENCHMARK_PMPM: 3500, RISK_ADJUSTED_BENCHMARK_PMPM: 5250, CAP_FACTOR: 1.0,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 5250, TOTAL_PAID: 6000, VARIANCE_TO_FLAT: 4500,  VARIANCE_TO_ENROLLMENT_TYPE: 2500,  VARIANCE_TO_RISK_ADJUSTED: 750,  VARIANCE_TO_RISK_ADJUSTED_CAPPED: 750,  HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2025Q4', BENCHMARK_QUARTER_NUM: 4,    BENCHMARK_SUBMISSION_ID: 'B25', QUARTERLY_SUBMISSION_ID: 'Q25-4', IS_AGREEMENT_DEFAULTED: true}
+        - {MEMBER_MONTH_SK: 'M6|202606', PERSON_ID: 'M6', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M6|medicare', YEAR_MONTH: '202606', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: null,        RISK_SCORE: 1.1,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: null, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: null, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 10,   VARIANCE_TO_FLAT: -1990, VARIANCE_TO_ENROLLMENT_TYPE: null,  VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
