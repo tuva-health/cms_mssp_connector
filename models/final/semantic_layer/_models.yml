@@ -200,10 +200,10 @@ models:
         description: >
           The performance year's aggregate cap factor from
           `fact_benchmark_aco_quarter`, read off its `IS_CURRENT_PROJECTION`
-          row for the same ACO and year: the bound over the ACO's aggregate
-          PY-to-BY3 risk ratio where that ratio lies outside the cap, exactly
-          1 where it does not. One number for every member-month of the
-          year. NULL where the year has no projection, or where a type had no
+          row for the same ACO and year: the cap bound over the ACO's
+          aggregate PY-to-BY3 risk ratio where that ratio exceeds the bound,
+          exactly 1 where it does not — the cap is one-sided, so a decrease
+          passes through. One number for every member-month of the year. NULL where the year has no projection, or where a type had no
           scored members and the aggregate could not be formed.
 
       - name: RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED

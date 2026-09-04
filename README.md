@@ -167,16 +167,17 @@ The connector adds two facts of its own to that schema, under
   years times historical benchmark expenditure per type, 425.605(a)(1)(ii)(C)
   as finalised at 87 FR 69946. The cap is applied at the aggregate: with
   `mssp_risk_score_cap` (default `0.03`, the regulation's 3 percentage
-  points) the bounds are `1 ± cap`; where `R` lies outside them the cap
-  factor is `bound / R`, otherwise exactly 1; and every enrollment type — and
-  through the member fact every member — is rescaled by that one factor, so
-  relative risk between members is preserved and the capped member rates sum
-  to the risk-adjusted ACO benchmark (`Σ enrollment proportion x [M] x ratio
-  x factor`, exposed annual and PMPM) applied to the member mix. Two places
-  where this departs from the regulation are recorded in the model docs: the
-  lower bound is a project convention (the rule caps positive adjustments
-  only, and CMS declined a floor at 87 FR 69942), and CMS clips each type to
-  the cap value rather than rescaling (87 FR 69935, Step 7).
+  points) the bound is `1 + cap`; where `R` exceeds it the cap factor is
+  `bound / R`, otherwise exactly 1 — the cap is one-sided, as the regulation
+  is (positive adjustments only; CMS declined a floor at 87 FR 69942), so a
+  decrease in the aggregate ratio passes through uncapped. Every enrollment
+  type — and through the member fact every member — is rescaled by that one
+  factor, so relative risk between members is preserved and the capped
+  member rates sum to the risk-adjusted ACO benchmark (`Σ enrollment
+  proportion x [M] x ratio x factor`, exposed annual and PMPM) applied to
+  the member mix. One place where this departs from the regulation is
+  recorded in the model docs: CMS clips each type to the cap value rather
+  than rescaling (87 FR 69935, Step 7).
 
   The regulation's upper bound is the ACO's demographic risk score growth
   plus 3 points; that growth term is not in the delivery, so the default is
@@ -193,8 +194,8 @@ The connector adds two facts of its own to that schema, under
   Everything is NULL-safe and nothing is defaulted: a type with no assigned,
   scored member-months leaves the aggregate, the factor and the capped
   columns NULL for the year rather than treating the type as unchanged. A
-  unit test pins the aggregate ratio, both cap directions, the no-cap case,
-  the NULL cascade and the scenario; singular tests assert that the capped
+  unit test pins the aggregate ratio, the cap above the bound, the pass-
+  through below it, the no-cap case, the NULL cascade and the scenario; singular tests assert that the capped
   member rates reconcile to the ACO fact's ratios and factor (an error, and
   one that fails if the factor is dropped) and that the two facts agree on
   the projection; and the verifier requires the fact in `semantic_layer`.
