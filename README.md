@@ -256,6 +256,14 @@ are the checks to require on `main`:
 Live `dbt build` and `dbt test` runs against a warehouse remain in the client
 repositories; this workflow never runs them.
 
+## Releases
+
+Releases are semver tags `vX.Y.Z` on `main`. Each one has an entry in
+[`CHANGELOG.md`](CHANGELOG.md) and a GitHub Release carrying the immutable
+image digest and the release metadata produced by
+`scripts/build_release_image.sh`. A release stays marked pre-release until a
+client deployment has validated it end to end.
+
 ## Project Notes
 
 - Staging models are configured as views in `dbt_project.yml`.
