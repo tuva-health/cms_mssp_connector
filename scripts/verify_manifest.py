@@ -72,6 +72,35 @@ BENCHMARK_FACT_OUTPUTS = (
     "fct_projected_benchmark_by_enrollment_type",
     "fct_projected_savings",
 )
+# The Tuva semantic layer: the facts and dimensions the connector build
+# materialises in the semantic_layer schema because dbt_project.yml sets
+# semantic_layer_enabled. Package model names are semantic_layer__<name> with
+# alias <name>; the semantic_layer__stg_* staging models feed these and are not
+# part of the contract.
+SEMANTIC_LAYER_OUTPUTS = (
+    "dim_condition",
+    "dim_data_source",
+    "dim_date",
+    "dim_encounter_group",
+    "dim_encounter_provider",
+    "dim_encounter_type",
+    "dim_member",
+    "dim_member_months",
+    "dim_service_category",
+    "fact_admissions",
+    "fact_claims",
+    "fact_ed_visits",
+    "fact_encounter_service_bridge",
+    "fact_encounters",
+    "fact_expected_values",
+    "fact_hcc_gaps",
+    "fact_member_condition_bridge",
+    "fact_member_months",
+    "fact_pharmacy_claims",
+    "fact_quality_measures",
+    "fact_risk_factors",
+    "fact_risk_scores",
+)
 BOUNDARY_OUTPUTS = {
     "model.cms_aalr_connector.enrollment": ("enrollment", "raw_data"),
     "model.cms_aalr_connector.provider_attribution": ("provider_attribution", "input_layer"),
@@ -215,6 +244,17 @@ def verify(manifest: dict, lock: str, database: Optional[str] = None) -> List[st
         if not reaches_enabled_tuva(nodes, unique_id):
             errors.append(f"enabled Tuva dependency path is missing from {unique_id}")
 
+    for name in SEMANTIC_LAYER_OUTPUTS:
+        unique_id = f"model.the_tuva_project.semantic_layer__{name}"
+        node = enabled_model(nodes, unique_id)
+        if node is None:
+            errors.append(f"required enabled semantic layer relation is missing: {name}")
+            continue
+        expected = (database, "semantic_layer", name)
+        actual = (node.get("database"), node.get("schema"), node.get("alias"))
+        if actual != expected:
+            errors.append(f"{name} relation placement must be {expected}, found {actual}")
+
     return errors
 
 
@@ -246,7 +286,8 @@ def main() -> int:
         f"{len(BENCHMARK_STAGING_OUTPUTS)} benchmark staging outputs, "
         f"{len(BENCHMARK_FACT_OUTPUTS)} benchmark facts, "
         f"{len(BOUNDARY_OUTPUTS)} package outputs, "
-        f"{len(BOUNDARY_OUTPUTS)} Tuva boundary paths"
+        f"{len(BOUNDARY_OUTPUTS)} Tuva boundary paths, "
+        f"{len(SEMANTIC_LAYER_OUTPUTS)} semantic layer outputs"
     )
     return 0
 

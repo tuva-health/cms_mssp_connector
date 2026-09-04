@@ -64,6 +64,33 @@ BENCHMARK_FACT_OUTPUTS = (
     "fct_projected_benchmark_by_enrollment_type",
     "fct_projected_savings",
 )
+# The Tuva semantic layer: the facts and dimensions the connector build
+# materialises in the semantic_layer schema once semantic_layer_enabled is set.
+# Model names are semantic_layer__<name> with alias <name>.
+SEMANTIC_LAYER_OUTPUTS = (
+    "dim_condition",
+    "dim_data_source",
+    "dim_date",
+    "dim_encounter_group",
+    "dim_encounter_provider",
+    "dim_encounter_type",
+    "dim_member",
+    "dim_member_months",
+    "dim_service_category",
+    "fact_admissions",
+    "fact_claims",
+    "fact_ed_visits",
+    "fact_encounter_service_bridge",
+    "fact_encounters",
+    "fact_expected_values",
+    "fact_hcc_gaps",
+    "fact_member_condition_bridge",
+    "fact_member_months",
+    "fact_pharmacy_claims",
+    "fact_quality_measures",
+    "fact_risk_factors",
+    "fact_risk_scores",
+)
 BOUNDARY_OUTPUTS = {
     "model.cms_aalr_connector.enrollment": ("cms_aalr_connector", "enrollment", "raw_data"),
     "model.cms_aalr_connector.provider_attribution": (
@@ -119,6 +146,10 @@ def valid_manifest() -> dict:
         )
     for unique_id, (package, name, schema) in BOUNDARY_OUTPUTS.items():
         nodes[unique_id] = model(package, name, schema)
+    for name in SEMANTIC_LAYER_OUTPUTS:
+        node = model("the_tuva_project", f"semantic_layer__{name}", "semantic_layer")
+        node["alias"] = name
+        nodes[f"model.the_tuva_project.semantic_layer__{name}"] = node
     nodes["model.medicare_cclf_connector.eligibility"]["depends_on"]["nodes"] = [
         "model.cms_aalr_connector.enrollment"
     ]
@@ -205,6 +236,36 @@ class ManifestContractTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "fct_projected_benchmark_by_enrollment_type" in error
+                for error in misplaced_errors
+            )
+        )
+
+    def test_rejects_missing_disabled_or_misplaced_semantic_layer_relation(self) -> None:
+        missing = valid_manifest()
+        del missing["nodes"]["model.the_tuva_project.semantic_layer__fact_member_months"]
+        disabled = valid_manifest()
+        disabled["nodes"]["model.the_tuva_project.semantic_layer__dim_member"]["config"][
+            "enabled"
+        ] = False
+        misplaced = valid_manifest()
+        misplaced["nodes"]["model.the_tuva_project.semantic_layer__fact_claims"][
+            "schema"
+        ] = "input_layer"
+
+        missing_errors = self.verify(missing)
+        disabled_errors = self.verify(disabled)
+        misplaced_errors = self.verify(misplaced)
+
+        self.assertTrue(
+            any(
+                "semantic layer" in error and "fact_member_months" in error
+                for error in missing_errors
+            )
+        )
+        self.assertTrue(any(error.endswith(": dim_member") for error in disabled_errors))
+        self.assertTrue(
+            any(
+                "fact_claims" in error and "semantic_layer" in error
                 for error in misplaced_errors
             )
         )

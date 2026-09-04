@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The Tuva semantic layer is part of the build contract. `dbt_project.yml`
+  sets `semantic_layer_enabled: true`, so the `build` phase materialises the
+  22 semantic layer facts and dimensions (with their staging models and
+  value-set seeds) in the `semantic_layer` schema, and
+  `scripts/verify_manifest.py` requires each of them to be enabled and placed
+  there. Before this the connector never set the var, so the schema was a
+  stale artifact of an earlier run with an empty member-months fact
+  (TUVA-71).
+
 ## [0.2.0] - 2026-09-04
 
 First formal release of the converged baseline. Validated end to end in a

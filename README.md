@@ -73,6 +73,20 @@ per-ACO minimum savings rate election and agreement performance year. The second
 ships with a synthetic example row only; an ACO with no row takes documented
 defaults and every output row it produces is flagged `IS_AGREEMENT_DEFAULTED`.
 
+### Tuva semantic layer
+
+`dbt_project.yml` sets `semantic_layer_enabled: true`, so the same `build`
+phase that populates the Tuva marts also builds the Tuva semantic layer: 22
+facts and dimensions (`fact_member_months`, `fact_claims`, `fact_risk_scores`,
+`dim_member`, `dim_date`, and the rest) plus their `semantic_layer__stg_*`
+staging models and three value-set seeds, all placed in the `semantic_layer`
+schema. The 22 facts and dimensions are part of the build contract:
+`scripts/verify_manifest.py` requires every one of them to be enabled and
+placed in `semantic_layer`, so a manifest that drops the semantic layer fails
+the verifier before anything is released. After a run, `fact_member_months`
+carries one row per person, data source, and month with the paid amounts and
+risk scores populated.
+
 ## Expected Source Data
 
 Sources are defined against a single source named `mssp_raw` and are read from:
