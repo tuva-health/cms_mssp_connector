@@ -186,7 +186,7 @@ models:
           The calendar year of benchmark year 3, read from the delivery's
           parameters sheet: the `Benchmark Year 3 (BY3)` row of the
           `Expenditure & Risk Score Period` group, whose value is a date
-          range such as `01/01/2024 - 12/31/2024`; the last four characters
+          range such as `01/01/2021 - 12/31/2021`; the last four characters
           are the year. The number of years the national growth scenario
           compounds over is `PERFORMANCE_YEAR - BY3_CALENDAR_YEAR`. NULL where
           the sheet carries no such row, which also makes the scenario NULL.

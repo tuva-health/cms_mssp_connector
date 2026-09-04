@@ -204,7 +204,7 @@ risk_scores as (
 
 -- The BY3 calendar year, from the parameters sheet of the same delivery:
 -- the "Benchmark Year 3 (BY3)" row of the expenditure and risk score period
--- group, whose value is a date range like "01/01/2024 - 12/31/2024".
+-- group, whose value is a date range like "01/01/2021 - 12/31/2021".
 by3_calendar_year_ranked as (
 
     select
