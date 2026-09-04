@@ -109,13 +109,16 @@ BENCHMARK_CURRENT_OUTPUTS = (
     "fct_projected_benchmark_by_enrollment_type_current",
     "fct_projected_savings_current",
 )
-# The connector's own semantic layer fact: the member-month benchmark rates,
+# The connector's own semantic layer facts: the member-month benchmark rates,
 # keyed like the Tuva member-months fact and placed in semantic_layer beside it
-# (TUVA-75). A connector model, so its unique id is model.cms_mssp_connector.*
-# and its alias is its name; the SEMANTIC_LAYER_OUTPUTS set above is the Tuva
-# package's and cannot carry it.
+# (TUVA-75), and the ACO-quarter benchmark fact with the aggregate risk ratio
+# cap the member fact reads its factor from (TUVA-76). Connector models, so
+# their unique ids are model.cms_mssp_connector.* and their aliases are their
+# names; the SEMANTIC_LAYER_OUTPUTS set above is the Tuva package's and cannot
+# carry them.
 CONNECTOR_SEMANTIC_LAYER_OUTPUTS = (
     "fact_member_month_benchmark",
+    "fact_benchmark_aco_quarter",
 )
 BOUNDARY_OUTPUTS = {
     "model.cms_aalr_connector.enrollment": ("enrollment", "raw_data"),

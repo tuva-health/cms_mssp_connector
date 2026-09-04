@@ -59,6 +59,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   join, the per-year-per-type reconciliation of the risk-adjusted rate, and
   (warn) the flat rate against the quarterly report's person years and one
   ACO per performance year (TUVA-75).
+- `fact_benchmark_aco_quarter` in `semantic_layer`: one row per ACO,
+  performance year and reported quarter on the latest calculable delivery,
+  with the benchmark and expenditure PMPM, projected savings percentage,
+  estimated MSR and basis, savings status, and the risk adjustment block —
+  the per-type PY-to-BY3 risk ratio (assignment-list PY mean over BY3
+  `[C]`), the aggregate ratio weighted by person years times historical
+  benchmark expenditure per 42 CFR 425.605(a)(1)(ii)(C), the cap bounds
+  `1 ± mssp_risk_score_cap` (new project variable, default `0.03`), the cap
+  factor `bound / R` where the aggregate lies outside the bounds and 1
+  otherwise, an `IS_CAP_BINDING` flag, and the risk-adjusted ACO benchmark
+  (`Σ enrollment proportion x [M] x ratio x factor`, annual and PMPM). The
+  cap is applied at the aggregate and rescales every type by the one
+  factor, so relative risk between members is preserved and the capped
+  member total reconciles to the capped ACO benchmark. A scenario column set
+  (`NATIONAL_GROWTH_PROJECTED`, `CAP_UPPER_BOUND_SCENARIO`,
+  `CAP_FACTOR_SCENARIO`, `IS_CAP_BINDING_SCENARIO`) projects the growth term
+  the regulation adds to the cap from the BNMRK Table 4 BY1-to-BY3 trend,
+  compounded from the parameters sheet's BY3 calendar year; the flat cap is
+  the default and the scenario is labelled a projection. The row serving
+  `fact_member_month_benchmark` is flagged `IS_CURRENT_PROJECTION`. All
+  figures are NULL-safe: a type without scored members leaves the aggregate,
+  factor and capped columns NULL. The model docs cite the regulation and the
+  CY 2023 PFS final rule (87 FR 69934-69946, 70238) and record where the
+  model departs from them: the symmetric lower bound and the single-factor
+  rescaling are project conventions. The manifest verifier requires the fact
+  in `semantic_layer`; a unit test pins the aggregate, both cap directions,
+  the no-cap case, the NULL cascade and the scenario; singular tests assert
+  the capped member reconciliation and the projection agreement (TUVA-76).
+- `fact_member_month_benchmark` gains `CAP_FACTOR`,
+  `RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED` (the uncapped risk-adjusted rate
+  times the year's factor) and `VARIANCE_TO_RISK_ADJUSTED_CAPPED`, read off
+  the ACO-quarter fact's current row for the same ACO and year (TUVA-76).
 
 ## [0.2.0] - 2026-09-04
 

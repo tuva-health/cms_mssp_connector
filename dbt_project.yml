@@ -20,6 +20,11 @@ vars:
   provider_attribution_enabled: true
   semantic_layer_enabled: true
 
+  # Cap on the ACO's aggregate PY-to-BY3 prospective HCC risk ratio applied
+  # by fact_benchmark_aco_quarter: 0.03 is the 3 percentage points of
+  # 42 CFR 425.605(a)(1)(ii)(A). Swap in a published factor by overriding it.
+  mssp_risk_score_cap: 0.03
+
 # These configurations specify where dbt should look for different types of files.
 # The `model-paths` config, for example, states that models in this project can be
 # found in the "models/" directory. You probably won't need to change these!

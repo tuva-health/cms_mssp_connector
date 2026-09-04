@@ -99,10 +99,13 @@ BENCHMARK_CURRENT_OUTPUTS = (
     "fct_projected_benchmark_by_enrollment_type_current",
     "fct_projected_savings_current",
 )
-# The connector's own semantic layer fact: the member-month benchmark rates,
-# placed in semantic_layer beside the Tuva facts it joins to (TUVA-75).
+# The connector's own semantic layer facts: the member-month benchmark rates,
+# placed in semantic_layer beside the Tuva facts it joins to (TUVA-75), and the
+# ACO-quarter benchmark fact the member fact reads its cap factor from
+# (TUVA-76).
 CONNECTOR_SEMANTIC_LAYER_OUTPUTS = (
     "fact_member_month_benchmark",
+    "fact_benchmark_aco_quarter",
 )
 BOUNDARY_OUTPUTS = {
     "model.cms_aalr_connector.enrollment": ("cms_aalr_connector", "enrollment", "raw_data"),
@@ -340,6 +343,38 @@ class ManifestContractTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "fact_member_month_benchmark" in error and "semantic_layer" in error
+                for error in misplaced_errors
+            )
+        )
+
+    def test_rejects_missing_disabled_or_misplaced_aco_quarter_fact(self) -> None:
+        missing = valid_manifest()
+        del missing["nodes"]["model.cms_mssp_connector.fact_benchmark_aco_quarter"]
+        disabled = valid_manifest()
+        disabled["nodes"]["model.cms_mssp_connector.fact_benchmark_aco_quarter"][
+            "config"
+        ]["enabled"] = False
+        misplaced = valid_manifest()
+        misplaced["nodes"]["model.cms_mssp_connector.fact_benchmark_aco_quarter"][
+            "schema"
+        ] = "input_layer"
+
+        missing_errors = self.verify(missing)
+        disabled_errors = self.verify(disabled)
+        misplaced_errors = self.verify(misplaced)
+
+        self.assertTrue(
+            any(
+                "semantic layer" in error and "fact_benchmark_aco_quarter" in error
+                for error in missing_errors
+            )
+        )
+        self.assertTrue(
+            any(error.endswith(": fact_benchmark_aco_quarter") for error in disabled_errors)
+        )
+        self.assertTrue(
+            any(
+                "fact_benchmark_aco_quarter" in error and "semantic_layer" in error
                 for error in misplaced_errors
             )
         )

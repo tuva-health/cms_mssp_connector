@@ -111,7 +111,7 @@ the verifier before anything is released. After a run, `fact_member_months`
 carries one row per person, data source, and month with the paid amounts and
 risk scores populated.
 
-The connector adds one fact of its own to that schema, under
+The connector adds two facts of its own to that schema, under
 `models/final/semantic_layer`:
 
 - `fact_member_month_benchmark` — the benchmark applied to every member-month,
@@ -121,9 +121,12 @@ The connector adds one fact of its own to that schema, under
   every member), the enrollment-type rate (`[M] / 12` for the member's type),
   and the risk-adjusted rate (the enrollment-type rate times the member's CMS
   prospective HCC score over the BY3 CMS-HCC score `[C]` for that type,
-  uncapped — the 3 percent cap is not applied). Each row also carries the
+  uncapped), plus that rate under the ACO's aggregate cap
+  (`RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED`, the uncapped rate times the year's
+  `CAP_FACTOR` from `fact_benchmark_aco_quarter`). Each row also carries the
   enrollment type, the member's score and its source, the BY3 type score, the
-  risk ratio, the actual total paid, and the variance to each rate.
+  risk ratio, the cap factor, the actual total paid, and the variance to each
+  rate.
 
   One projection serves each performance year — the calendar year of the
   member-month — by default the latest calculable quarter of that year on the
@@ -145,6 +148,56 @@ The connector adds one fact of its own to that schema, under
   report's person years, where the difference is assignment timing (the next
   performance year's assignment lists reach back into this year's second
   half). The test header documents the observed gap and the band it accepts.
+
+- `fact_benchmark_aco_quarter` — the ACO-level view a dashboard opens with:
+  one row per ACO, performance year and reported quarter on the latest
+  calculable delivery, with the benchmark and expenditure per member per
+  month (`[P] / 12`, `[Q] / 12`), the projected savings percentage, the
+  estimated MSR and its basis, the savings status, and the risk adjustment
+  block. The quarter that serves `fact_member_month_benchmark` for the year
+  is flagged `IS_CURRENT_PROJECTION`, chosen by the same rule (highest
+  quarter, lowest ACO on ties), and a singular test holds the two facts to
+  the same choice.
+
+  The risk adjustment block reproduces the cap of 42 CFR 425.605(a)(1)(ii)
+  as far as the delivery allows. Per enrollment type, the PY-to-BY3 risk
+  ratio is the mean CMS prospective HCC score over the year's assigned,
+  scored member-months divided by the BY3 `[C]` for the type. The aggregate
+  ratio `R` is their weighted mean with the regulation's weights — person
+  years times historical benchmark expenditure per type, 425.605(a)(1)(ii)(C)
+  as finalised at 87 FR 69946. The cap is applied at the aggregate: with
+  `mssp_risk_score_cap` (default `0.03`, the regulation's 3 percentage
+  points) the bounds are `1 ± cap`; where `R` lies outside them the cap
+  factor is `bound / R`, otherwise exactly 1; and every enrollment type — and
+  through the member fact every member — is rescaled by that one factor, so
+  relative risk between members is preserved and the capped member rates sum
+  to the risk-adjusted ACO benchmark (`Σ enrollment proportion x [M] x ratio
+  x factor`, exposed annual and PMPM) applied to the member mix. Two places
+  where this departs from the regulation are recorded in the model docs: the
+  lower bound is a project convention (the rule caps positive adjustments
+  only, and CMS declined a floor at 87 FR 69942), and CMS clips each type to
+  the cap value rather than rescaling (87 FR 69935, Step 7).
+
+  The regulation's upper bound is the ACO's demographic risk score growth
+  plus 3 points; that growth term is not in the delivery, so the default is
+  the flat cap and a labelled scenario projects a stand-in from the BNMRK
+  Table 4 national mean scores instead: per type, the BY1-to-BY3 growth
+  annualised over two years and compounded from the BY3 calendar year (the
+  parameters sheet's `Benchmark Year 3 (BY3)` expenditure and risk score
+  period) to the performance year, aggregated with the same weights.
+  `NATIONAL_GROWTH_PROJECTED`, `CAP_UPPER_BOUND_SCENARIO`,
+  `CAP_FACTOR_SCENARIO` and `IS_CAP_BINDING_SCENARIO` sit beside the flat-cap
+  columns and are informational. Swapping in a factor CMS publishes is a
+  change to the variable, not the model.
+
+  Everything is NULL-safe and nothing is defaulted: a type with no assigned,
+  scored member-months leaves the aggregate, the factor and the capped
+  columns NULL for the year rather than treating the type as unchanged. A
+  unit test pins the aggregate ratio, both cap directions, the no-cap case,
+  the NULL cascade and the scenario; singular tests assert that the capped
+  member rates reconcile to the ACO fact's ratios and factor (an error, and
+  one that fails if the factor is dropped) and that the two facts agree on
+  the projection; and the verifier requires the fact in `semantic_layer`.
 
 ## Expected Source Data
 
