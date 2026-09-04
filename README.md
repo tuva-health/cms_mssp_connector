@@ -37,6 +37,8 @@ deliveries without choosing between them:
 - `int_benchmark_historical` — BNMRK Table 1, every section of the benchmark derivation
 - `int_benchmark_acpt` — BNMRK Table 6, the Accountable Care Prospective Trend
 - `int_benchmark_trend` — BNMRK Table 2, the trend factor audit trail
+- `int_benchmark_risk_scores` — BNMRK Table 1 sections [C] and [D] with Table 4,
+  the CMS-HCC risk score inputs by enrollment type and benchmark year
 - `int_expenditures_annual` — AEXPU Table 1, by benchmark year
 - `int_expenditures_quarterly` — QEXPU Table 1
 - `int_expenditures_regional` — QEXPU Table 2, regional expenditures and weights

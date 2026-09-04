@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   They are the default read path; the full-grain facts remain for
   reconciliation against a particular delivery. The manifest verifier checks
   their placement, and unit tests pin the filter and the division (TUVA-72).
+- `int_benchmark_risk_scores`: the benchmark-year half of the risk adjustment
+  story, typed. BNMRK Table 1 sections [C] (the ACO's renormalised CMS-HCC
+  risk score) and [D] (its ratio to BY3) joined to BNMRK Table 4 (the
+  national assignable FFS mean score the renormalisation divides by), one row
+  per delivery, enrollment type and benchmark year, ranked and flagged like
+  the other intermediate benchmark models. Tests assert the full four-by-three
+  grid on every latest delivery, that [D] is 1 at BY3, and that Table 4 is
+  bound to its own sheet by magnitude; a warning reports a workbook carrying
+  only one of the two sheets (TUVA-73).
 
 ## [0.2.0] - 2026-09-04
 
