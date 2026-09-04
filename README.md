@@ -231,6 +231,31 @@ uv run --frozen scripts/build_release_image.sh <registry>/<repository> <release-
   `image_reference` is the `repository@sha256:` digest. Pin task definitions to
   that digest, never to the tag.
 
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs on every pull request to `main` and on every
+push to `main`, with no warehouse access and no client secrets. Its five jobs
+are the checks to require on `main`:
+
+- `test` — `uv sync --frozen` then the contract tests under `tests/`
+  (runtime, manifest, release and dependency contracts).
+- `lock` — `uv lock --check`: `uv.lock` agrees with `pyproject.toml`.
+- `dbt-parse` — `dbt deps`, then `dbt parse` for the `dev` and `prod` targets
+  against a placeholder Snowflake profile rendered from
+  `config/profiles.example.yml` by `scripts/render_placeholder_profile.sh`,
+  followed by `scripts/verify_manifest.py` on each manifest with that target's
+  placeholder database. `dbt parse` opens no connection, so this proves the
+  project parses under the pinned dbt and that the accepted output set and its
+  placement hold, without a warehouse.
+- `shell` — `shellcheck` on `scripts/*.sh`.
+- `image` — `docker build` of the release image for `linux/amd64` with the
+  same build arguments as `scripts/build_release_image.sh`, without a push.
+  The Dockerfile copies `config/profiles.yml` into the image, so the job
+  renders the same placeholder profile into the build context first.
+
+Live `dbt build` and `dbt test` runs against a warehouse remain in the client
+repositories; this workflow never runs them.
+
 ## Releases
 
 Releases are semver tags `vX.Y.Z` on `main`. Each one has an entry in
