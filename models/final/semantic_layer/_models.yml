@@ -1,0 +1,347 @@
+version: 2
+
+# The member-month benchmark fact.
+#
+# The benchmark facts in models/final/benchmark answer the ACO-level question:
+# what is the projected updated benchmark, and is the ACO under it. This fact
+# takes those answers to the member-month, on the surrogate key of the Tuva
+# semantic layer's fact_member_months, so a Power BI or Dash model joins it
+# one to one and can put a benchmark beside every member's actual spend.
+#
+# Three per-member-per-month rates are carried, in increasing specificity:
+#
+#   FLAT_BENCHMARK_PMPM              [P] / 12 — the ACO mean projected updated
+#                                    benchmark, identical for every member
+#   ENROLLMENT_TYPE_BENCHMARK_PMPM   [M] / 12 for the member's enrollment type
+#   RISK_ADJUSTED_BENCHMARK_PMPM     the enrollment-type rate scaled by the
+#                                    member's CMS prospective HCC score over
+#                                    the BY3 CMS-HCC score [C] for that type;
+#                                    uncapped — the 3 percent cap is not
+#                                    applied here
+#
+# One projection serves each performance year: the latest calculable quarter
+# on the latest benchmark delivery, which the two _current models have already
+# reduced to. Its period, quarter and submission ids are carried on every row
+# so a consumer can see which CMS delivery the rates came from. A member-month
+# in a year with no calculable projection keeps its row with NULL rates and a
+# NULL benchmark period, so the one-to-one join holds across the whole spine.
+#
+# The rates are applied, not derived: nothing here reads a workbook. The
+# divisions and products go through to_double and safe_divide like every other
+# calculation in the project, for the reasons those macros give.
+
+models:
+
+  - name: fact_member_month_benchmark
+    description: >
+      One row per member-month of the Tuva semantic layer's
+      `fact_member_months`, keyed on the same `MEMBER_MONTH_SK`, carrying three
+      benchmark rates per member per month — flat, by enrollment type, and
+      risk-adjusted (uncapped) — with the member's actual total paid and the
+      variance to each rate.
+
+      The member-month's performance year is the calendar year of
+      `YEAR_MONTH`. Each performance year is served by one projection: the row
+      of `fct_projected_savings_current` with the highest quarter for that
+      year, which by construction is on the latest benchmark delivery and
+      calculable. The enrollment-type rates come from
+      `fct_projected_benchmark_by_enrollment_type_current` at the same ACO,
+      year, period and benchmark delivery, and the BY3 type scores from
+      `int_benchmark_risk_scores` at the same ACO, year and benchmark
+      submission. Every rate on a row therefore traces to one CMS delivery,
+      named by `BENCHMARK_SUBMISSION_ID` and `QUARTERLY_SUBMISSION_ID`.
+
+      Enrollment type and the member's score come from `int_member_month_risk`
+      as they are: never defaulted, never imputed. A member with no score gets
+      a NULL risk-adjusted rate and a NULL `RISK_SCORE_SOURCE`; the flat and
+      enrollment-type rates are still filled. A member with no resolved
+      enrollment type gets the flat rate only.
+
+      The ACO is taken from the projection rows, not the member-month spine,
+      which carries no ACO. The connector is deployed one ACO at a time, and
+      the join is on performance year alone; should the benchmark inputs ever
+      carry more than one ACO for a year the fact keeps one projection per
+      year (lowest `ACO_ID` on ties) so it stays one to one, and
+      `assert_one_aco_projection_per_performance_year` warns.
+
+    config:
+      schema: semantic_layer
+
+    columns:
+      - name: MEMBER_MONTH_SK
+        description: >
+          Surrogate key of the member-month, `person_id || '|' || year_month`,
+          exactly as `fact_member_months` builds it. The join key for the
+          semantic layer.
+        data_tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('the_tuva_project', 'semantic_layer__fact_member_months')
+                field: member_month_sk
+
+      - name: PERSON_ID
+        description: Tuva person identifier.
+        data_tests:
+          - not_null
+
+      - name: DATA_SOURCE
+        description: Tuva data source.
+        data_tests:
+          - not_null
+
+      - name: PATIENT_SOURCE_KEY
+        description: >
+          `person_id || '|' || data_source`, as `fact_member_months` builds
+          it, for joins to `dim_member`.
+
+      - name: YEAR_MONTH
+        description: Calendar month as `YYYYMM`.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: >
+          The calendar year of `YEAR_MONTH` as an integer — the MSSP
+          performance year whose benchmark applies to the month, and the key
+          the projection is chosen on.
+        data_tests:
+          - not_null
+
+      - name: ACO_ID
+        description: >
+          The ACO whose projection supplied the rates. NULL where no projection
+          exists for the performance year.
+
+      - name: IS_ASSIGNED
+        description: >
+          True when the assignment list carries a row for this member-month,
+          from `int_member_month_risk`. The rates are filled whether or not
+          the month is assigned; the reconciliation tests restrict to assigned
+          member-months because that is the population the benchmark report
+          counts.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          MSSP enrollment type from `int_member_month_risk`, never defaulted:
+          `esrd`, `disabled`, `aged_dual`, `aged_non_dual`, or NULL where none
+          resolved. Selects the enrollment-type rate and the BY3 type score.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual']
+
+      - name: ENROLLMENT_TYPE_SOURCE
+        description: Which step of `int_member_month_risk` resolved the type.
+
+      - name: RISK_SCORE
+        description: >
+          The member's CMS prospective HCC risk score from the assignment
+          list, on the national mean of 1.0 basis — the same basis as `[C]`.
+          NULL where the assignment list carries no score for the month.
+
+      - name: RISK_SCORE_SOURCE
+        description: >
+          Which assignment-list column supplied `RISK_SCORE`. NULL exactly
+          when the score is NULL, which is the flag for a member-month whose
+          risk-adjusted rate could not be computed for want of a score.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['assignment_list_type_score', 'assignment_list_monthly_score']
+
+      - name: BY3_ENROLLMENT_TYPE_RISK_SCORE
+        description: >
+          `[C]` at BY3 for the member's enrollment type, from
+          `int_benchmark_risk_scores` on the same performance year and
+          benchmark submission as the projection: the ACO's CMS-HCC risk score
+          for benchmark year 3, renormalised to the national mean of 1.0. The
+          denominator of the risk ratio, divided by as printed — the
+          assignment-list scores are already on that basis, so the Table 4
+          national mean is not applied. NULL where there is no projection or
+          no resolved enrollment type.
+
+      - name: RISK_RATIO
+        description: >
+          `RISK_SCORE / BY3_ENROLLMENT_TYPE_RISK_SCORE` through `safe_divide`:
+          how the member's prospective score compares to the base-year score
+          the enrollment-type benchmark was set at. NULL where either side is
+          NULL or the BY3 score is zero.
+
+      - name: FLAT_BENCHMARK_PMPM
+        description: >
+          `[P] / 12` — `MEAN_PROJECTED_UPDATED_BENCHMARK_PMPM` of the
+          performance year's projection. Identical for every member-month of
+          the year. NULL where the year has no calculable projection.
+
+      - name: ENROLLMENT_TYPE_BENCHMARK_PMPM
+        description: >
+          `[M] / 12` for the member's enrollment type —
+          `PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM` at the projection's
+          ACO, year, period and delivery. NULL where the year has no
+          projection or the enrollment type is NULL.
+
+      - name: RISK_ADJUSTED_BENCHMARK_PMPM
+        description: >
+          `ENROLLMENT_TYPE_BENCHMARK_PMPM x RISK_RATIO`, uncapped. NULL where
+          either is NULL — in particular for every member-month without a CMS
+          score, which `RISK_SCORE_SOURCE` flags. CMS caps the risk ratio's
+          growth at 3 percent over the agreement period; that cap is not
+          applied here and this column must not be read as the capped
+          benchmark.
+
+      - name: TOTAL_PAID
+        description: >
+          `total_paid` from `fact_member_months` — the member's actual paid
+          amount for the month, medical and pharmacy.
+
+      - name: VARIANCE_TO_FLAT
+        description: >
+          `TOTAL_PAID - FLAT_BENCHMARK_PMPM`. Positive where the member cost
+          more than the flat benchmark. NULL where the rate is NULL.
+
+      - name: VARIANCE_TO_ENROLLMENT_TYPE
+        description: >
+          `TOTAL_PAID - ENROLLMENT_TYPE_BENCHMARK_PMPM`. NULL where the rate
+          is NULL.
+
+      - name: VARIANCE_TO_RISK_ADJUSTED
+        description: >
+          `TOTAL_PAID - RISK_ADJUSTED_BENCHMARK_PMPM`. NULL where the rate is
+          NULL, so for every member-month without a score.
+
+      - name: HAS_BENCHMARK
+        description: >
+          True where a projection exists for the performance year, which is
+          exactly when `FLAT_BENCHMARK_PMPM` is populated. False rows are
+          member-months of years with no calculable projection; they are kept
+          so the join to `fact_member_months` stays one to one.
+        data_tests:
+          - not_null
+
+      - name: BENCHMARK_PERIOD
+        description: >
+          `PERIOD` of the projection serving the performance year,
+          `<YYYY>Q<N>` — by default the latest calculable quarter of that
+          year. NULL where there is none.
+
+      - name: BENCHMARK_QUARTER_NUM
+        description: Quarter number 1-4 of `BENCHMARK_PERIOD`.
+
+      - name: BENCHMARK_SUBMISSION_ID
+        description: >
+          The benchmark delivery the projection and the BY3 type scores were
+          read from. NULL where there is no projection.
+
+      - name: QUARTERLY_SUBMISSION_ID
+        description: >
+          Delivery stamp of the QEXPU workbook behind the projection's
+          quarter. With `BENCHMARK_SUBMISSION_ID`, every rate on the row
+          traces to a named workbook.
+
+      - name: IS_AGREEMENT_DEFAULTED
+        description: >
+          Carried from the projection: true where the ACO's agreement row was
+          missing and the prospective trend column was defaulted, so `[M]` and
+          `[P]` — and every rate here — rest on a guess.
+
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "HAS_BENCHMARK = (FLAT_BENCHMARK_PMPM is not null)"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              RISK_ADJUSTED_BENCHMARK_PMPM is null
+              or (RISK_SCORE is not null and ENROLLMENT_TYPE_BENCHMARK_PMPM is not null)
+
+# ---------------------------------------------------------------------------
+# Unit test
+#
+# One member per scenario. The projection inputs carry two quarters for 2026 so
+# the later one must win, a 2025 projection so a 2025 member pairs with its own
+# year, and a second 2026 delivery in the risk-score input — one the projection
+# was not computed against — whose BY3 score would produce a visibly wrong
+# ratio if it were picked.
+# ---------------------------------------------------------------------------
+
+unit_tests:
+
+  - name: test_three_rates_per_member_month
+    model: fact_member_month_benchmark
+    description: >
+      M1  2026, aged/dual, score 1.5. Flat 2000 ([P]/12 of the Q2 projection,
+          not the 1000 of Q1), type 4000 (the Q2 aged/dual rate, not Q1's
+          3000), BY3 1.25 from delivery B26 (not the 9.9 of B26-OTHER),
+          ratio 1.2, risk-adjusted 4800. Variances against 5000 paid.
+      M2  2026, aged/dual, no score. Flat and type filled, BY3 carried,
+          ratio and risk-adjusted NULL, RISK_SCORE_SOURCE NULL.
+      M3  2024, outside any projection. Every rate NULL, HAS_BENCHMARK false,
+          ACO and benchmark provenance NULL; the member's own type and score
+          are still carried.
+      M4  2026, not assigned, disabled, no score. Still gets flat 2000 and
+          the disabled type rate 2500; risk-adjusted NULL.
+      M5  2025, aged/dual, score 1.5 against BY3 1.0: pairs with the 2025
+          projection (flat 1500, type 3500), ratio 1.5, risk-adjusted 5250.
+      M6  2026, enrollment type unresolved. Flat only; type rate, BY3, ratio
+          and risk-adjusted NULL, HAS_BENCHMARK true.
+
+    given:
+
+      - input: ref('the_tuva_project', 'semantic_layer__fact_member_months')
+        rows:
+          - {person_id: 'M1', data_source: 'medicare', year_month: '202603', year_nbr: '2026', member_month_sk: 'M1|202603', patient_source_key: 'M1|medicare', total_paid: 5000}
+          - {person_id: 'M2', data_source: 'medicare', year_month: '202605', year_nbr: '2026', member_month_sk: 'M2|202605', patient_source_key: 'M2|medicare', total_paid: 0}
+          - {person_id: 'M3', data_source: 'medicare', year_month: '202402', year_nbr: '2024', member_month_sk: 'M3|202402', patient_source_key: 'M3|medicare', total_paid: 100}
+          - {person_id: 'M4', data_source: 'medicare', year_month: '202601', year_nbr: '2026', member_month_sk: 'M4|202601', patient_source_key: 'M4|medicare', total_paid: 2600}
+          - {person_id: 'M5', data_source: 'medicare', year_month: '202512', year_nbr: '2025', member_month_sk: 'M5|202512', patient_source_key: 'M5|medicare', total_paid: 6000}
+          - {person_id: 'M6', data_source: 'medicare', year_month: '202606', year_nbr: '2026', member_month_sk: 'M6|202606', patient_source_key: 'M6|medicare', total_paid: 10}
+
+      - input: ref('int_member_month_risk')
+        rows:
+          - {PERSON_ID: 'M1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202603', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score'}
+          - {PERSON_ID: 'M2', DATA_SOURCE: 'medicare', YEAR_MONTH: '202605', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', ENROLLMENT_TYPE_SOURCE: 'beur_person_year_fraction',    RISK_SCORE: null, RISK_SCORE_SOURCE: null}
+          - {PERSON_ID: 'M3', DATA_SOURCE: 'medicare', YEAR_MONTH: '202402', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'disabled',  ENROLLMENT_TYPE_SOURCE: 'beur_person_year_fraction',    RISK_SCORE: 0.9,  RISK_SCORE_SOURCE: 'assignment_list_monthly_score'}
+          - {PERSON_ID: 'M4', DATA_SOURCE: 'medicare', YEAR_MONTH: '202601', IS_ASSIGNED: false, ENROLLMENT_TYPE: 'disabled',  ENROLLMENT_TYPE_SOURCE: 'eligibility_codes',            RISK_SCORE: null, RISK_SCORE_SOURCE: null}
+          - {PERSON_ID: 'M5', DATA_SOURCE: 'medicare', YEAR_MONTH: '202512', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score'}
+          - {PERSON_ID: 'M6', DATA_SOURCE: 'medicare', YEAR_MONTH: '202606', IS_ASSIGNED: true,  ENROLLMENT_TYPE: null,        ENROLLMENT_TYPE_SOURCE: null,                          RISK_SCORE: 1.1,  RISK_SCORE_SOURCE: 'assignment_list_type_score'}
+
+      - input: ref('fct_projected_savings_current')
+        rows:
+          # Decoy: the earlier 2026 quarter.
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, PERIOD: '2026Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-1', IS_AGREEMENT_DEFAULTED: false, MEAN_PROJECTED_UPDATED_BENCHMARK_PMPM: 1000}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, PERIOD: '2026Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false, MEAN_PROJECTED_UPDATED_BENCHMARK_PMPM: 2000}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, PERIOD: '2025Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B25', QUARTERLY_SUBMISSION_ID: 'Q25-4', IS_AGREEMENT_DEFAULTED: true,  MEAN_PROJECTED_UPDATED_BENCHMARK_PMPM: 1500}
+
+      - input: ref('fct_projected_benchmark_by_enrollment_type_current')
+        rows:
+          # Decoy: the earlier 2026 quarter's aged/dual rate.
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, PERIOD: '2026Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B26', ENROLLMENT_TYPE: 'aged_dual', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 3000, TOTAL_PERSON_YEARS: 10}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, PERIOD: '2026Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B26', ENROLLMENT_TYPE: 'aged_dual', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 4000, TOTAL_PERSON_YEARS: 10}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, PERIOD: '2026Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B26', ENROLLMENT_TYPE: 'disabled',  PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 2500, TOTAL_PERSON_YEARS: 10}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, PERIOD: '2025Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B25', ENROLLMENT_TYPE: 'aged_dual', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 3500, TOTAL_PERSON_YEARS: 10}
+
+      - input: ref('int_benchmark_risk_scores')
+        rows:
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, SUBMISSION_ID: 'B26',     IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'aged_dual', BY_LABEL: 'BY3', ACO_RISK_SCORE: 1.25, FILE_DATE: '2026-06-30', FILE_PATH: 'bnmrk-26'}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, SUBMISSION_ID: 'B26',     IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'disabled',  BY_LABEL: 'BY3', ACO_RISK_SCORE: 1.2,  FILE_DATE: '2026-06-30', FILE_PATH: 'bnmrk-26'}
+          # Decoy: BY2 of the same delivery.
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, SUBMISSION_ID: 'B26',     IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'aged_dual', BY_LABEL: 'BY2', ACO_RISK_SCORE: 1.1,  FILE_DATE: '2026-06-30', FILE_PATH: 'bnmrk-26'}
+          # Decoy: a 2026 delivery the projection was not computed against. Same
+          # file date as B26 and a higher file path, so the rank inside a
+          # submission would prefer it; only the pin to the projection's
+          # BENCHMARK_SUBMISSION_ID rejects it.
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, SUBMISSION_ID: 'B26-OTHER', IS_LATEST_SUBMISSION: false, ENROLLMENT_TYPE: 'aged_dual', BY_LABEL: 'BY3', ACO_RISK_SCORE: 9.9,  FILE_DATE: '2026-06-30', FILE_PATH: 'bnmrk-26-other'}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, SUBMISSION_ID: 'B25',     IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'aged_dual', BY_LABEL: 'BY3', ACO_RISK_SCORE: 1.0,  FILE_DATE: '2025-10-31', FILE_PATH: 'bnmrk-25'}
+
+    expect:
+      rows:
+        - {MEMBER_MONTH_SK: 'M1|202603', PERSON_ID: 'M1', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M1|medicare', YEAR_MONTH: '202603', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: 1.2,  FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 4000, RISK_ADJUSTED_BENCHMARK_PMPM: 4800, TOTAL_PAID: 5000, VARIANCE_TO_FLAT: 3000,  VARIANCE_TO_ENROLLMENT_TYPE: 1000,  VARIANCE_TO_RISK_ADJUSTED: 200,  HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+        - {MEMBER_MONTH_SK: 'M2|202605', PERSON_ID: 'M2', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M2|medicare', YEAR_MONTH: '202605', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 4000, RISK_ADJUSTED_BENCHMARK_PMPM: null, TOTAL_PAID: 0,    VARIANCE_TO_FLAT: -2000, VARIANCE_TO_ENROLLMENT_TYPE: -4000, VARIANCE_TO_RISK_ADJUSTED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+        - {MEMBER_MONTH_SK: 'M3|202402', PERSON_ID: 'M3', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M3|medicare', YEAR_MONTH: '202402', PERFORMANCE_YEAR: 2024, ACO_ID: null, IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'disabled',  RISK_SCORE: 0.9,  RISK_SCORE_SOURCE: 'assignment_list_monthly_score', BY3_ENROLLMENT_TYPE_RISK_SCORE: null, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: null, ENROLLMENT_TYPE_BENCHMARK_PMPM: null, RISK_ADJUSTED_BENCHMARK_PMPM: null, TOTAL_PAID: 100,  VARIANCE_TO_FLAT: null,  VARIANCE_TO_ENROLLMENT_TYPE: null,  VARIANCE_TO_RISK_ADJUSTED: null, HAS_BENCHMARK: false, BENCHMARK_PERIOD: null,     BENCHMARK_QUARTER_NUM: null, BENCHMARK_SUBMISSION_ID: null,  QUARTERLY_SUBMISSION_ID: null,    IS_AGREEMENT_DEFAULTED: null}
+        - {MEMBER_MONTH_SK: 'M4|202601', PERSON_ID: 'M4', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M4|medicare', YEAR_MONTH: '202601', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: false, ENROLLMENT_TYPE: 'disabled',  RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.2,  RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 2500, RISK_ADJUSTED_BENCHMARK_PMPM: null, TOTAL_PAID: 2600, VARIANCE_TO_FLAT: 600,   VARIANCE_TO_ENROLLMENT_TYPE: 100,   VARIANCE_TO_RISK_ADJUSTED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+        - {MEMBER_MONTH_SK: 'M5|202512', PERSON_ID: 'M5', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M5|medicare', YEAR_MONTH: '202512', PERFORMANCE_YEAR: 2025, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.0,  RISK_RATIO: 1.5,  FLAT_BENCHMARK_PMPM: 1500, ENROLLMENT_TYPE_BENCHMARK_PMPM: 3500, RISK_ADJUSTED_BENCHMARK_PMPM: 5250, TOTAL_PAID: 6000, VARIANCE_TO_FLAT: 4500,  VARIANCE_TO_ENROLLMENT_TYPE: 2500,  VARIANCE_TO_RISK_ADJUSTED: 750,  HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2025Q4', BENCHMARK_QUARTER_NUM: 4,    BENCHMARK_SUBMISSION_ID: 'B25', QUARTERLY_SUBMISSION_ID: 'Q25-4', IS_AGREEMENT_DEFAULTED: true}
+        - {MEMBER_MONTH_SK: 'M6|202606', PERSON_ID: 'M6', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M6|medicare', YEAR_MONTH: '202606', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: null,        RISK_SCORE: 1.1,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: null, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: null, RISK_ADJUSTED_BENCHMARK_PMPM: null, TOTAL_PAID: 10,   VARIANCE_TO_FLAT: -1990, VARIANCE_TO_ENROLLMENT_TYPE: null,  VARIANCE_TO_RISK_ADJUSTED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}

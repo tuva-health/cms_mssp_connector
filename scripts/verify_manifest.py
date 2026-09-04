@@ -109,6 +109,14 @@ BENCHMARK_CURRENT_OUTPUTS = (
     "fct_projected_benchmark_by_enrollment_type_current",
     "fct_projected_savings_current",
 )
+# The connector's own semantic layer fact: the member-month benchmark rates,
+# keyed like the Tuva member-months fact and placed in semantic_layer beside it
+# (TUVA-75). A connector model, so its unique id is model.cms_mssp_connector.*
+# and its alias is its name; the SEMANTIC_LAYER_OUTPUTS set above is the Tuva
+# package's and cannot carry it.
+CONNECTOR_SEMANTIC_LAYER_OUTPUTS = (
+    "fact_member_month_benchmark",
+)
 BOUNDARY_OUTPUTS = {
     "model.cms_aalr_connector.enrollment": ("enrollment", "raw_data"),
     "model.cms_aalr_connector.provider_attribution": ("provider_attribution", "input_layer"),
@@ -240,6 +248,17 @@ def verify(manifest: dict, lock: str, database: Optional[str] = None) -> List[st
         if actual != expected:
             errors.append(f"{name} relation placement must be {expected}, found {actual}")
 
+    for name in CONNECTOR_SEMANTIC_LAYER_OUTPUTS:
+        unique_id = f"model.cms_mssp_connector.{name}"
+        node = enabled_model(nodes, unique_id)
+        if node is None:
+            errors.append(f"required enabled semantic layer fact is missing: {name}")
+            continue
+        expected = (database, "semantic_layer", name)
+        actual = (node.get("database"), node.get("schema"), node.get("alias"))
+        if actual != expected:
+            errors.append(f"{name} relation placement must be {expected}, found {actual}")
+
     for unique_id, (alias, schema) in BOUNDARY_OUTPUTS.items():
         node = enabled_model(nodes, unique_id)
         if node is None:
@@ -296,7 +315,8 @@ def main() -> int:
         f"{len(BENCHMARK_CURRENT_OUTPUTS)} current projections, "
         f"{len(BOUNDARY_OUTPUTS)} package outputs, "
         f"{len(BOUNDARY_OUTPUTS)} Tuva boundary paths, "
-        f"{len(SEMANTIC_LAYER_OUTPUTS)} semantic layer outputs"
+        f"{len(SEMANTIC_LAYER_OUTPUTS)} semantic layer outputs, "
+        f"{len(CONNECTOR_SEMANTIC_LAYER_OUTPUTS)} connector semantic layer facts"
     )
     return 0
 
