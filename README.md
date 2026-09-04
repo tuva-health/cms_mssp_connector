@@ -231,6 +231,14 @@ uv run --frozen scripts/build_release_image.sh <registry>/<repository> <release-
   `image_reference` is the `repository@sha256:` digest. Pin task definitions to
   that digest, never to the tag.
 
+## Releases
+
+Releases are semver tags `vX.Y.Z` on `main`. Each one has an entry in
+[`CHANGELOG.md`](CHANGELOG.md) and a GitHub Release carrying the immutable
+image digest and the release metadata produced by
+`scripts/build_release_image.sh`. A release stays marked pre-release until a
+client deployment has validated it end to end.
+
 ## Project Notes
 
 - Staging models are configured as views in `dbt_project.yml`.

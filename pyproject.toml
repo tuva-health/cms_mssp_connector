@@ -1,6 +1,6 @@
 [project]
 name = "cms-mssp_connector"
-version = "0.1.0"
+version = "0.2.0"
 description = "Portable dbt connector for CMS MSSP source data"
 readme = "README.md"
 requires-python = ">=3.10"
