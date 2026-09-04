@@ -35,6 +35,7 @@
     'int_benchmark_historical':   ['ACO_ID', 'PERFORMANCE_YEAR'],
     'int_benchmark_acpt':         ['ACO_ID', 'PERFORMANCE_YEAR'],
     'int_benchmark_trend':        ['ACO_ID', 'PERFORMANCE_YEAR'],
+    'int_benchmark_risk_scores':  ['ACO_ID', 'PERFORMANCE_YEAR'],
     'int_expenditures_annual':    ['ACO_ID', 'PERFORMANCE_YEAR', 'BENCHMARK_YEAR'],
     'int_expenditures_quarterly': ['ACO_ID', 'PERFORMANCE_YEAR', 'PERIOD'],
     'int_expenditures_regional':  ['ACO_ID', 'PERFORMANCE_YEAR', 'PERIOD']
