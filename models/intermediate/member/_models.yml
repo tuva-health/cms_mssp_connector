@@ -275,21 +275,21 @@ unit_tests:
 
       - input: ref('cms_aalr_connector', 'enrollment')
         rows:
-          - {current_bene_mbi_id: 'P1',   bene_member_month: '202501', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agdu_score: 1.1, dem_agdu_score: 1.9, file_name: 'P.A5495.ACO.QALR.2025Q4.D259999.T0400000_1-1.csv', file_date: '2025-12-31'}
+          - {current_bene_mbi_id: 'P1',   bene_member_month: '202501', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agdu_score: 1.1, dem_agdu_score: 1.9, file_name: 'P.A0001.ACO.QALR.2025Q4.D251001.T0400000_1-1.csv', file_date: '2025-12-31'}
           # Decoy: the PY2026 package's view of the same month, delivered later.
-          - {current_bene_mbi_id: 'P1',   bene_member_month: '202501', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agdu_score: 9.9, dem_agdu_score: 9.9, file_name: 'P.A5495.ACO.QALR.2026Q1.D269999.T0100000_1-1.csv', file_date: '2026-03-31'}
-          - {current_bene_mbi_id: 'P2',   bene_member_month: '202502', assignment_type: 1, new_enrollee: 1, hcc_version: 'V28', dis_score: 0.7,  dem_dis_score: 0.95, file_name: 'P.A5495.ACO.QALR.2025Q4.D259999.T0400000_1-1.csv', file_date: '2025-12-31'}
-          - {current_bene_mbi_id: 'P3',   bene_member_month: '202303', assignment_type: 1, new_enrollee: 0, hcc_version: 'V24', bene_rsk_r_scre_01: 9.9, bene_rsk_r_scre_03: 1.3, bene_rsk_r_scre_12: 8.8, file_name: 'P.A5495.ACO.AALR.Y2023.D259999.T1111111_1-1.csv', file_date: '2023-12-31'}
+          - {current_bene_mbi_id: 'P1',   bene_member_month: '202501', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agdu_score: 9.9, dem_agdu_score: 9.9, file_name: 'P.A0001.ACO.QALR.2026Q1.D261001.T0100000_1-1.csv', file_date: '2026-03-31'}
+          - {current_bene_mbi_id: 'P2',   bene_member_month: '202502', assignment_type: 1, new_enrollee: 1, hcc_version: 'V28', dis_score: 0.7,  dem_dis_score: 0.95, file_name: 'P.A0001.ACO.QALR.2025Q4.D251001.T0400000_1-1.csv', file_date: '2025-12-31'}
+          - {current_bene_mbi_id: 'P3',   bene_member_month: '202303', assignment_type: 1, new_enrollee: 0, hcc_version: 'V24', bene_rsk_r_scre_01: 9.9, bene_rsk_r_scre_03: 1.3, bene_rsk_r_scre_12: 8.8, file_name: 'P.A0001.ACO.AALR.Y2023.D251001.T1111111_1-1.csv', file_date: '2023-12-31'}
           # Decoy: 2023 re-delivered in the PY2026 package, on that package's basis.
-          - {current_bene_mbi_id: 'P3',   bene_member_month: '202303', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', bene_rsk_r_scre_03: 7.7, file_name: 'P.A5495.ACO.AALR.Y2023.D269999.T0000000_1-1.csv', file_date: '2023-12-31'}
-          - {current_bene_mbi_id: 'OLD5', bene_member_month: '202506', assignment_type: 2, new_enrollee: 0, hcc_version: 'V28', esrd_score: 1.5, dem_esrd_score: 1.0, file_name: 'P.A5495.ACO.QALR.2025Q4.D259999.T0400000_1-1.csv', file_date: '2025-12-31'}
-          - {current_bene_mbi_id: 'OLD6', bene_member_month: '202507', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 0.9, dem_agnd_score: 1.0, file_name: 'P.A5495.ACO.QALR.2025Q4.D259999.T0400000_1-1.csv', file_date: '2025-12-31'}
+          - {current_bene_mbi_id: 'P3',   bene_member_month: '202303', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', bene_rsk_r_scre_03: 7.7, file_name: 'P.A0001.ACO.AALR.Y2023.D261001.T0000000_1-1.csv', file_date: '2023-12-31'}
+          - {current_bene_mbi_id: 'OLD5', bene_member_month: '202506', assignment_type: 2, new_enrollee: 0, hcc_version: 'V28', esrd_score: 1.5, dem_esrd_score: 1.0, file_name: 'P.A0001.ACO.QALR.2025Q4.D251001.T0400000_1-1.csv', file_date: '2025-12-31'}
+          - {current_bene_mbi_id: 'OLD6', bene_member_month: '202507', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 0.9, dem_agnd_score: 1.0, file_name: 'P.A0001.ACO.QALR.2025Q4.D251001.T0400000_1-1.csv', file_date: '2025-12-31'}
           # P10: only the PY2026 quarterly list knows this 2025 month.
-          - {current_bene_mbi_id: 'P10',  bene_member_month: '202508', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 0.8, file_name: 'P.A5495.ACO.QALR.2026Q2.D269999.T0200000_1-1.csv', file_date: '2026-06-30'}
+          - {current_bene_mbi_id: 'P10',  bene_member_month: '202508', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 0.8, file_name: 'P.A0001.ACO.QALR.2026Q2.D261001.T0200000_1-1.csv', file_date: '2026-06-30'}
           # P11: the same list is 2026's own delivery.
-          - {current_bene_mbi_id: 'P11',  bene_member_month: '202601', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 1.0, file_name: 'P.A5495.ACO.QALR.2026Q2.D269999.T0200000_1-1.csv', file_date: '2026-06-30'}
+          - {current_bene_mbi_id: 'P11',  bene_member_month: '202601', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 1.0, file_name: 'P.A0001.ACO.QALR.2026Q2.D261001.T0200000_1-1.csv', file_date: '2026-06-30'}
           # Decoy: a month the spine does not carry.
-          - {current_bene_mbi_id: 'P1',   bene_member_month: '202512', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agdu_score: 1.2, file_name: 'P.A5495.ACO.QALR.2025Q4.D259999.T0400000_1-1.csv', file_date: '2025-12-31'}
+          - {current_bene_mbi_id: 'P1',   bene_member_month: '202512', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agdu_score: 1.2, file_name: 'P.A0001.ACO.QALR.2025Q4.D251001.T0400000_1-1.csv', file_date: '2025-12-31'}
 
       - input: ref('medicare_cclf_connector', 'int_beneficiary_xref_deduped')
         rows:
