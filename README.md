@@ -111,6 +111,41 @@ the verifier before anything is released. After a run, `fact_member_months`
 carries one row per person, data source, and month with the paid amounts and
 risk scores populated.
 
+The connector adds one fact of its own to that schema, under
+`models/final/semantic_layer`:
+
+- `fact_member_month_benchmark` — the benchmark applied to every member-month,
+  keyed on the same `MEMBER_MONTH_SK` as `fact_member_months` so Power BI and
+  Dash join the two one to one. Three per-member-per-month rates: the flat
+  rate (`[P] / 12`, the ACO mean projected updated benchmark, identical for
+  every member), the enrollment-type rate (`[M] / 12` for the member's type),
+  and the risk-adjusted rate (the enrollment-type rate times the member's CMS
+  prospective HCC score over the BY3 CMS-HCC score `[C]` for that type,
+  uncapped — the 3 percent cap is not applied). Each row also carries the
+  enrollment type, the member's score and its source, the BY3 type score, the
+  risk ratio, the actual total paid, and the variance to each rate.
+
+  One projection serves each performance year — the calendar year of the
+  member-month — by default the latest calculable quarter of that year on the
+  latest benchmark delivery, and its period, quarter and submission ids are
+  carried on every row so a consumer can see which CMS delivery it is reading.
+  A member with no CMS score gets a NULL risk-adjusted rate and a NULL
+  `RISK_SCORE_SOURCE` while the flat and type rates are still filled; a
+  member-month in a year with no calculable projection keeps its row with
+  NULL rates and `HAS_BENCHMARK = false`, so the one-to-one join holds across
+  the whole spine. The spine has no ACO on it and the connector is deployed
+  one ACO at a time, so the projection joins on performance year alone; a
+  warn-level test reports a year with more than one ACO. The verifier
+  requires the fact to be enabled and placed in `semantic_layer`.
+
+  Two singular tests reconcile the rates: the risk-adjusted rate summed over
+  assigned member-months must equal the type rate times the sum of the risk
+  ratios for every year and type, and — at warn severity — the flat rate
+  times assigned member-months should reconcile to `[P]` times the quarterly
+  report's person years, where the difference is assignment timing (the next
+  performance year's assignment lists reach back into this year's second
+  half). The test header documents the observed gap and the band it accepts.
+
 ## Expected Source Data
 
 Sources are defined against a single source named `mssp_raw` and are read from:
@@ -325,7 +360,8 @@ client deployment has validated it end to end.
 .
 |-- models/
 |   |-- final/
-|   |   `-- benchmark/
+|   |   |-- benchmark/
+|   |   `-- semantic_layer/
 |   |-- intermediate/
 |   |   |-- benchmark/
 |   |   `-- member/

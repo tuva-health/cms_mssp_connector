@@ -39,6 +39,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the assignment list, with the source of each, the new-enrollee and
   assigned flags, and the MBI crosswalk step that joined the assignment list
   to the Tuva person id (TUVA-74).
+- `fact_member_month_benchmark` in `semantic_layer`: the benchmark applied to
+  every member-month, keyed on the same `MEMBER_MONTH_SK` as the Tuva
+  `fact_member_months` for a one-to-one join. Three rates per member per
+  month — flat (`[P] / 12`), by enrollment type (`[M] / 12` for the member's
+  type) and risk-adjusted, uncapped (the type rate times the member's CMS
+  prospective HCC score over the BY3 `[C]` for the type) — with the
+  enrollment type, score and source, the BY3 score, the risk ratio, actual
+  total paid and the variance to each rate. One projection serves each
+  performance year, by default its latest calculable quarter on the latest
+  delivery, and its period and submission ids are carried on every row. A
+  member with no score gets a NULL risk-adjusted rate and a populated flag;
+  a member-month in a year with no calculable projection keeps its row with
+  NULL rates. The manifest verifier requires the fact in `semantic_layer`; a
+  unit test pins the three rates, and singular tests assert the one-to-one
+  join, the per-year-per-type reconciliation of the risk-adjusted rate, and
+  (warn) the flat rate against the quarterly report's person years and one
+  ACO per performance year (TUVA-75).
 
 ## [0.2.0] - 2026-09-04
 
