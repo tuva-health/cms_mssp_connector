@@ -53,6 +53,12 @@ models:
 - `fct_projected_savings` — the ACO-level mean projected benchmark, the
   projected savings percentage, the estimated minimum savings rate, and the two
   comparisons between them
+- `fct_projected_benchmark_by_enrollment_type_current` and
+  `fct_projected_savings_current` — the default read path over the two facts
+  above: the same figures filtered to the latest calculable benchmark delivery,
+  one row per ACO, performance year, quarter (and enrollment type), with the
+  projected updated benchmark and the ACO's expenditure also expressed per
+  member per month (`*_PMPM`, the annual figure divided by twelve)
 
 Two things about their grain govern how they must be queried, and both are
 documented at length in `models/final/benchmark/_models.yml`:
@@ -66,6 +72,10 @@ documented at length in `models/final/benchmark/_models.yml`:
   `IS_CALCULABLE = false`. The March preliminary delivery ships no Table 6, so
   the prospective trend and everything below it cannot be derived for anything
   paired with it. Dropping the row would be tidier and much harder to notice.
+
+The two `_current` models apply both predicates once, so a consumer that wants
+one answer per quarter reads them and never sees the multiplicity. Read the
+full-grain facts for reconciliation against a particular delivery.
 
 Two seeds supply what the workbooks do not carry: `seeds/mssp_msr_lookup.csv`,
 the minimum savings rate band schedule, and `seeds/mssp_aco_agreement.csv`, the

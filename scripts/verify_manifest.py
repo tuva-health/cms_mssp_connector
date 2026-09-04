@@ -72,6 +72,13 @@ BENCHMARK_FACT_OUTPUTS = (
     "fct_projected_benchmark_by_enrollment_type",
     "fct_projected_savings",
 )
+# The two current-projection models over those facts: the same figures
+# filtered to the latest calculable benchmark delivery and carrying PMPM
+# columns. Placed beside the facts in input_layer (TUVA-72).
+BENCHMARK_CURRENT_OUTPUTS = (
+    "fct_projected_benchmark_by_enrollment_type_current",
+    "fct_projected_savings_current",
+)
 BOUNDARY_OUTPUTS = {
     "model.cms_aalr_connector.enrollment": ("enrollment", "raw_data"),
     "model.cms_aalr_connector.provider_attribution": ("provider_attribution", "input_layer"),
@@ -192,7 +199,7 @@ def verify(manifest: dict, lock: str, database: Optional[str] = None) -> List[st
         if actual != expected:
             errors.append(f"{name} relation placement must be {expected}, found {actual}")
 
-    for name in BENCHMARK_FACT_OUTPUTS:
+    for name in BENCHMARK_FACT_OUTPUTS + BENCHMARK_CURRENT_OUTPUTS:
         unique_id = f"model.cms_mssp_connector.{name}"
         node = enabled_model(nodes, unique_id)
         if node is None:
@@ -245,6 +252,7 @@ def main() -> int:
         f"manifest contract passed: {len(MSSP_OUTPUTS)} MSSP outputs, "
         f"{len(BENCHMARK_STAGING_OUTPUTS)} benchmark staging outputs, "
         f"{len(BENCHMARK_FACT_OUTPUTS)} benchmark facts, "
+        f"{len(BENCHMARK_CURRENT_OUTPUTS)} current projections, "
         f"{len(BOUNDARY_OUTPUTS)} package outputs, "
         f"{len(BOUNDARY_OUTPUTS)} Tuva boundary paths"
     )
