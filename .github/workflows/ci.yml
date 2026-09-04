@@ -1,0 +1,120 @@
+# PR gate for the canonical connector. Everything here runs without warehouse
+# access: the Snowflake profile is a placeholder rendered from
+# config/profiles.example.yml, `dbt parse` never opens a connection, and the
+# image is built but not pushed. Live dbt runs stay in the client repositories.
+#
+# The five job names are the checks to require on `main`; keep them stable.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Superseded PR pushes are cancelled; every push to main runs to completion.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Same uv release as the Dockerfile's uv stage; tests/test_release_contract.py
+  # asserts the two agree.
+  UV_VERSION: "0.10.9"
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --frozen
+      - run: uv run --frozen python -m unittest discover -s tests
+
+  lock:
+    name: lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv lock --check
+
+  # The Dockerfile parses and verifies both targets too; this job is the fast
+  # signal that does not wait for an image build, and it fixes the placement
+  # database per target so the verifier checks each manifest against it.
+  dbt-parse:
+    name: dbt-parse
+    runs-on: ubuntu-latest
+    env:
+      DBT_PROFILES_DIR: config
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+      # Neutral placement databases; the same values the contract tests use.
+      DEV_DATABASE: ANALYTICS_DEV
+      PROD_DATABASE: ANALYTICS_PROD
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --frozen
+      - name: Render a placeholder profile from the example
+        # config/profiles.yml is git-ignored; it exists only on this runner.
+        run: scripts/render_placeholder_profile.sh > config/profiles.yml
+      - run: uv run --frozen dbt deps
+      - name: Parse and verify the dev manifest
+        env:
+          SNOWFLAKE_DATABASE: ${{ env.DEV_DATABASE }}
+        run: |
+          uv run --frozen dbt parse --target dev
+          uv run --frozen python scripts/verify_manifest.py \
+            --manifest target/manifest.json \
+            --package-lock package-lock.yml \
+            --database "$DEV_DATABASE"
+      - name: Parse and verify the prod manifest
+        env:
+          SNOWFLAKE_DATABASE: ${{ env.PROD_DATABASE }}
+        run: |
+          uv run --frozen dbt parse --target prod --target-path target/prod
+          uv run --frozen python scripts/verify_manifest.py \
+            --manifest target/prod/manifest.json \
+            --package-lock package-lock.yml \
+            --database "$PROD_DATABASE"
+
+  shell:
+    name: shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uvx --from shellcheck-py==0.11.0.1 shellcheck scripts/*.sh
+
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Render a placeholder profile from the example
+        # The Dockerfile copies config/profiles.yml into the image and parses
+        # with it, so the build context needs one.
+        run: scripts/render_placeholder_profile.sh > config/profiles.yml
+      - name: Build the release image without pushing
+        # Same build arguments as scripts/build_release_image.sh. SOURCE_COMMIT
+        # is the checked-out commit (on a pull request, the merge commit that is
+        # being tested); the release ID is a CI marker, never a real release.
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            --build-arg "SOURCE_COMMIT=$(git rev-parse HEAD)" \
+            --build-arg "RELEASE_ID=ci-${GITHUB_RUN_ID}" \
+            --tag cms-mssp-connector:ci \
+            .

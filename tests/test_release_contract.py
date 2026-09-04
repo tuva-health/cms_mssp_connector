@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -238,6 +239,18 @@ class ReleaseContractTests(unittest.TestCase):
         for path in ("analyses", "macros", "models", "scripts", "seeds", "snapshots"):
             self.assertIn(f"COPY --from=build /app/{path} /app/{path}", runtime)
             self.assertNotIn(f"COPY --from=build --chown=dbt:dbt /app/{path}", runtime)
+
+    def test_ci_workflow_pins_the_dockerfile_uv_release(self) -> None:
+        dockerfile = (REPOSITORY_ROOT / "Dockerfile").read_text(encoding="ascii")
+        workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="ascii"
+        )
+        uv_image = re.search(r"^FROM ghcr\.io/astral-sh/uv:([0-9.]+)@sha256:", dockerfile, re.MULTILINE)
+        uv_workflow = re.search(r'^  UV_VERSION: "([0-9.]+)"$', workflow, re.MULTILINE)
+
+        self.assertIsNotNone(uv_image)
+        self.assertIsNotNone(uv_workflow)
+        self.assertEqual(uv_workflow.group(1), uv_image.group(1))
 
     def test_release_evidence_and_agent_tooling_do_not_dirty_the_clone(self) -> None:
         ignored = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="ascii").splitlines()
