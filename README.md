@@ -26,6 +26,7 @@ Intermediate models live under `models/intermediate` and are materialized as
 tables, configured into the `_int_input_layer` schema:
 
 - `benchmark`: typed facts over the BNMRK / AEXPU / QEXPU workbooks
+- `member`: enrollment type and CMS prospective risk score per member-month
 
 The staging models are faithful but untyped — one row per worksheet cell, every
 value in a text column — so an input to the historical benchmark is a
@@ -43,6 +44,17 @@ deliveries without choosing between them:
 
 They calculate nothing. Deriving the benchmark from these inputs is the job of
 the final layer.
+
+`int_member_month_risk` sits alongside them on the `core__member_months` grain
+(person, data source, month). It states which MSSP enrollment type the member
+is in — from the populated score column on the 2025+ assignment list, else the
+BEUR person-year fractions, else the Tuva eligibility codes, with
+`ENROLLMENT_TYPE_SOURCE` saying which — and the CMS prospective HCC risk score
+the assignment list supplies, read from the per-type column or the monthly
+column depending on the file's layout. Assignment-list MBIs are mapped to the
+Tuva person id the way the CCLF connector maps them, then through the
+excluded-beneficiary crosswalk. Nothing is defaulted: a member-month with no
+score keeps its type and a NULL score.
 
 Final models live under `models/final`, are materialized as tables and are
 configured into the `input_layer` schema alongside the other connectors' final
@@ -289,7 +301,8 @@ client deployment has validated it end to end.
 |   |-- final/
 |   |   `-- benchmark/
 |   |-- intermediate/
-|   |   `-- benchmark/
+|   |   |-- benchmark/
+|   |   `-- member/
 |   `-- staging/
 |       |-- benchmark/
 |       |-- bnex/

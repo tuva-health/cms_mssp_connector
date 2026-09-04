@@ -1,0 +1,283 @@
+version: 2
+
+# Member-month enrollment type and CMS prospective risk score.
+#
+# The benchmark is set per enrollment type — ESRD, disabled, aged/dual,
+# aged/non-dual — and CMS assigns every beneficiary a prospective HCC risk
+# score under the model for that type. Applying the benchmark to a member
+# therefore needs, for every month, which type the member is in and which
+# score CMS gave them. This model states both on the core__member_months
+# grain, and says where each answer came from.
+#
+# The enrollment type resolves in a fixed priority order, and the score comes
+# from the assignment list only. Neither is ever defaulted: a member-month the
+# assignment list does not cover, whose BEUR fractions are absent and whose
+# eligibility span carries no codes, ends with a NULL type and a NULL score
+# rather than a guessed one.
+
+models:
+
+  - name: int_member_month_risk
+    description: >
+      One row per Tuva person, data source and month, carrying the MSSP
+      enrollment type the member is in and the CMS prospective HCC risk score
+      the assignment list supplies for them.
+
+      The spine is `core__member_months`; every member-month has a row whether
+      or not the assignment list covers it, and `IS_ASSIGNED` says which.
+
+      The assignment list is keyed on MBI and Tuva on `person_id`, and the two
+      are the same key space once the assignment-list MBI is mapped the way the
+      CCLF connector maps it: directly where the MBI is a Tuva person, through
+      the CCLF beneficiary crosswalk where the MBI has since been replaced, and
+      through the MSSP excluded-beneficiary crosswalk as a last resort.
+      `MBI_CROSSWALK_SOURCE` records which step matched.
+
+    config:
+      schema: _int_input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - PERSON_ID
+              - DATA_SOURCE
+              - YEAR_MONTH
+
+    columns:
+      - name: PERSON_ID
+        description: Tuva person identifier from `core__member_months`.
+        data_tests:
+          - not_null
+
+      - name: DATA_SOURCE
+        description: Tuva data source from `core__member_months`.
+        data_tests:
+          - not_null
+
+      - name: YEAR_MONTH
+        description: Calendar month as `YYYYMM`, from `core__member_months`.
+        data_tests:
+          - not_null
+
+      - name: ALR_BENE_MBI_ID
+        description: >
+          The MBI as it appears on the assignment-list row this member-month
+          resolved to, before any crosswalk. NULL when the assignment list does
+          not cover the month.
+
+      - name: MBI_CROSSWALK_SOURCE
+        description: >
+          How the assignment-list MBI was mapped to `PERSON_ID`, in the order
+          the mapping is attempted: `direct` when the MBI is itself a Tuva
+          person; `cclf_beneficiary_xref` when the CCLF beneficiary crosswalk
+          maps it to one, which is the mapping the CCLF connector applies when
+          it derives `person_id`; `excluded_beneficiary_mbi_xref` when only the
+          MSSP excluded-beneficiary crosswalk does. NULL when unassigned.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['direct', 'cclf_beneficiary_xref', 'excluded_beneficiary_mbi_xref']
+
+      - name: IS_ASSIGNED
+        description: >
+          True when the assignment list carries a row for this member-month.
+          The `enrollment` model keeps only months with a positive enrollment
+          flag, so presence is assignment.
+        data_tests:
+          - not_null
+
+      - name: IS_NEW_ENROLLEE
+        description: >
+          The assignment list's `NEW_ENROLLEE` flag as a boolean. NULL when
+          unassigned or when CMS left the flag empty. A new enrollee keeps
+          their actual enrollment type and the score CMS supplies for it; the
+          flag is carried so a consumer can see which scores came from the
+          new-enrollee model, not so that anything here treats them
+          differently.
+
+      - name: ASSIGNMENT_TYPE
+        description: The assignment list's `ASSIGNMENT_TYPE`, passed through.
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          MSSP enrollment type, on the canonical keys of the
+          `mssp_enrollment_type` seed: `esrd`, `disabled`, `aged_dual`,
+          `aged_non_dual`. Resolved in priority order, first answer wins:
+
+          1. The populated score column on the 2025+ assignment-list layout,
+             where exactly one of `ESRD_SCORE`, `DIS_SCORE`, `AGDU_SCORE` and
+             `AGND_SCORE` is filled. Should more than one ever be, ESRD wins
+             over disabled over aged/dual over aged/non-dual.
+          2. The BEUR person-year fractions for the member's calendar year,
+             latest report quarter of the latest performance year that reports
+             it, taking the type with the largest fraction and breaking ties in
+             the same order.
+          3. The Tuva eligibility codes on the span covering the month:
+             `medicare_status_code` first (11, 21, 31 ESRD; 20 disabled; 10
+             aged), `original_reason_entitlement_code` only when the status is
+             missing (2, 3 ESRD; 1 disabled), then dual status to split aged —
+             a code of 01-08, or a person-year dual fraction of at least 0.5,
+             is dual. A covering span with no usable code is aged/non-dual, the
+             residual category.
+
+          NULL when none of the three resolves. Never defaulted.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual']
+
+      - name: ENROLLMENT_TYPE_SOURCE
+        description: >
+          Which step of the priority order resolved `ENROLLMENT_TYPE`:
+          `assignment_list_score_column`, `beur_person_year_fraction` or
+          `eligibility_codes`. NULL when the type is NULL. Group by this to
+          report the share resolved by each fallback.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['assignment_list_score_column', 'beur_person_year_fraction', 'eligibility_codes']
+
+      - name: RISK_SCORE
+        description: >
+          CMS prospective HCC risk score for the member-month, from the
+          assignment list across both of its layouts: the populated per-type
+          score column on 2025+ files, or the monthly `BENE_RSK_R_SCRE_NN`
+          column for the row's own month on 2022-2024 files, where NN is the
+          month of the performance year. The demographic-only `DEM_*` scores
+          are never used, including for new enrollees, for whom CMS supplies a
+          distinct score in their actual type column. NULL when the assignment
+          list carries no score for the month.
+
+          The score is on the same basis as `[C]` of the historical benchmark
+          report, verified on the Y2024 assignment list of the PY2025
+          delivery: the person-month weighted mean per type lands within one
+          percent of BY3 `[C]` in the PY2025 report, and nowhere near `[C]`
+          times the Table 4 national mean. A risk-adjusted rate therefore
+          divides by `[C]` as printed.
+
+      - name: RISK_SCORE_SOURCE
+        description: >
+          Which assignment-list column supplied `RISK_SCORE`:
+          `assignment_list_type_score` or `assignment_list_monthly_score`.
+          NULL when the score is NULL.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['assignment_list_type_score', 'assignment_list_monthly_score']
+
+      - name: HCC_VERSION
+        description: The assignment list's `HCC_VERSION` for the row, passed through.
+
+      - name: ALR_FILE_NAME
+        description: Assignment-list file the row was read from.
+
+      - name: ALR_FILE_DATE
+        description: Period end date of that assignment-list file.
+
+# ---------------------------------------------------------------------------
+# Unit test
+#
+# One person per scenario, so that each expected row pins one rule. Every
+# fixture carries a decoy for the rule it exercises: a demographic score next
+# to the type score, an eligibility code that disagrees with the assignment
+# list, an older BEUR delivery with the wrong type, an older crosswalk mapping
+# to the wrong person, a monthly score in the wrong month's column. A model
+# that read the wrong input would produce a different row, not a missing one.
+# ---------------------------------------------------------------------------
+
+unit_tests:
+
+  - name: test_enrollment_type_priority_and_score_selection
+    model: int_member_month_risk
+    description: >
+      P1  2025 layout, AGDU_SCORE populated, not a new enrollee. The
+          demographic score, the BEUR fraction and the eligibility code all
+          say something else; the score column wins.
+      P2  New enrollee with DIS_SCORE populated. Keeps `disabled` and the
+          0.7 CMS wrote in that column, not the 0.95 demographic score and
+          not the aged status on the eligibility span.
+      P3  2023 layout: no type columns, monthly scores. Takes the March
+          score from column 03, not the decoys in 01 and 12; the type comes
+          from the BEUR fraction of the PY2025 delivery, not the older PY2024
+          delivery that says ESRD.
+      P4  Not on the assignment list. Falls to eligibility codes: status 20
+          is disabled, the score is NULL, the new-enrollee flag is NULL.
+      P5  Assignment list carries a retired MBI that the CCLF crosswalk maps
+          to the Tuva person.
+      P6  Assignment list carries a retired MBI known only to the
+          excluded-beneficiary crosswalk, which has two mappings for it; the
+          later one wins.
+      P7  Not assigned; aged status with a person-year dual fraction of 0.75
+          is aged/dual.
+      P8  Not assigned; status missing, original entitlement reason 2 is ESRD.
+      P9  Not assigned; status 10 with original reason 1 is aged, and dual
+          code 00 makes it aged/non-dual — the status outranks the original
+          reason.
+      An assignment-list row for P1 in a month outside the spine produces no
+      row.
+
+    given:
+
+      - input: ref('the_tuva_project', 'core__member_months')
+        rows:
+          - {person_id: 'P1', member_id: 'P1', year_month: '202501', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'P2', member_id: 'P2', year_month: '202502', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'P3', member_id: 'P3', year_month: '202303', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'P4', member_id: 'P4', year_month: '202401', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'P5', member_id: 'P5', year_month: '202506', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'P6', member_id: 'P6', year_month: '202507', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'P7', member_id: 'P7', year_month: '202402', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'P8', member_id: 'P8', year_month: '202403', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'P9', member_id: 'P9', year_month: '202404', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+
+      - input: ref('cms_aalr_connector', 'enrollment')
+        rows:
+          - {current_bene_mbi_id: 'P1',   bene_member_month: '202501', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agdu_score: 1.1, dem_agdu_score: 1.9, file_name: 'QALR.2025Q4', file_date: '2025-12-31'}
+          - {current_bene_mbi_id: 'P2',   bene_member_month: '202502', assignment_type: 1, new_enrollee: 1, hcc_version: 'V28', dis_score: 0.7,  dem_dis_score: 0.95, file_name: 'QALR.2025Q4', file_date: '2025-12-31'}
+          - {current_bene_mbi_id: 'P3',   bene_member_month: '202303', assignment_type: 1, new_enrollee: 0, hcc_version: 'V24', bene_rsk_r_scre_01: 9.9, bene_rsk_r_scre_03: 1.3, bene_rsk_r_scre_12: 8.8, file_name: 'AALR.Y2023', file_date: '2023-12-31'}
+          - {current_bene_mbi_id: 'OLD5', bene_member_month: '202506', assignment_type: 2, new_enrollee: 0, hcc_version: 'V28', esrd_score: 1.5, dem_esrd_score: 1.0, file_name: 'QALR.2025Q4', file_date: '2025-12-31'}
+          - {current_bene_mbi_id: 'OLD6', bene_member_month: '202507', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 0.9, dem_agnd_score: 1.0, file_name: 'QALR.2025Q4', file_date: '2025-12-31'}
+          # Decoy: a month the spine does not carry.
+          - {current_bene_mbi_id: 'P1',   bene_member_month: '202512', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agdu_score: 1.2, file_name: 'QALR.2025Q4', file_date: '2025-12-31'}
+
+      - input: ref('medicare_cclf_connector', 'int_beneficiary_xref_deduped')
+        rows:
+          - {prvs_num: 'OLD5', crnt_num: 'P5'}
+
+      - input: ref('stg_excluded_beneficiary_mbi_xref')
+        rows:
+          - {PERFORMANCE_YEAR: '2025', REPORT_MONTH: '01', PREVIOUS_BENE_MBI: 'OLD6', CURRENT_BENE_MBI: 'WRONG6', FILE_DATE: '2025-01-31', FILE_PATH: 'a'}
+          - {PERFORMANCE_YEAR: '2025', REPORT_MONTH: '06', PREVIOUS_BENE_MBI: 'OLD6', CURRENT_BENE_MBI: 'P6',     FILE_DATE: '2025-06-30', FILE_PATH: 'b'}
+
+      - input: ref('stg_beur_beneficiary_expenditure_utilization_report')
+        rows:
+          # P1 decoy: the fraction says disabled; the score column outranks it.
+          - {ACOID: 'A', PRFMNC_YR_NUM: '2025', RPT_YR_NUM: '2025', RPT_QTR_NUM: '4', BENE_MBI_ID: 'P1', ESRD_FRAC: '0', DSBL_FRAC: '1', AGDU_FRAC: '0', AGND_FRAC: '0', FILE_DATE: '2025-12-31', FILE_PATH: 'c'}
+          # P2 decoy: aged/non-dual.
+          - {ACOID: 'A', PRFMNC_YR_NUM: '2025', RPT_YR_NUM: '2025', RPT_QTR_NUM: '4', BENE_MBI_ID: 'P2', ESRD_FRAC: '0', DSBL_FRAC: '0', AGDU_FRAC: '0', AGND_FRAC: '1', FILE_DATE: '2025-12-31', FILE_PATH: 'c'}
+          # P3: the PY2025 delivery of 2023 says aged/non-dual; the PY2024 one says ESRD and must lose.
+          - {ACOID: 'A', PRFMNC_YR_NUM: '2025', RPT_YR_NUM: '2023', RPT_QTR_NUM: null, BENE_MBI_ID: 'P3', ESRD_FRAC: '0', DSBL_FRAC: '0', AGDU_FRAC: '0.1', AGND_FRAC: '0.9', FILE_DATE: '2025-09-01', FILE_PATH: 'd'}
+          - {ACOID: 'A', PRFMNC_YR_NUM: '2024', RPT_YR_NUM: '2023', RPT_QTR_NUM: null, BENE_MBI_ID: 'P3', ESRD_FRAC: '1', DSBL_FRAC: '0', AGDU_FRAC: '0',   AGND_FRAC: '0',   FILE_DATE: '2024-09-01', FILE_PATH: 'e'}
+
+      - input: ref('the_tuva_project', 'core__eligibility')
+        rows:
+          - {person_id: 'P1', data_source: 'medicare', enrollment_start_date: '2025-01-01', enrollment_end_date: '2025-12-31', medicare_status_code: '20', original_reason_entitlement_code: '1', dual_status_code: '00'}
+          - {person_id: 'P2', data_source: 'medicare', enrollment_start_date: '2025-01-01', enrollment_end_date: '2025-12-31', medicare_status_code: '10', original_reason_entitlement_code: '0', dual_status_code: '00'}
+          - {person_id: 'P3', data_source: 'medicare', enrollment_start_date: '2023-01-01', enrollment_end_date: '2023-12-31', medicare_status_code: '20', original_reason_entitlement_code: '1', dual_status_code: '00'}
+          - {person_id: 'P4', data_source: 'medicare', enrollment_start_date: '2024-01-01', enrollment_end_date: '2024-12-31', medicare_status_code: '20', original_reason_entitlement_code: '1', dual_status_code: '00'}
+          - {person_id: 'P7', data_source: 'medicare', enrollment_start_date: '2024-01-01', enrollment_end_date: '2024-12-31', medicare_status_code: '10', original_reason_entitlement_code: '0', dual_status_code: '0.75'}
+          - {person_id: 'P8', data_source: 'medicare', enrollment_start_date: '2024-01-01', enrollment_end_date: '2024-12-31', medicare_status_code: 'NA', original_reason_entitlement_code: '2', dual_status_code: 'NA'}
+          - {person_id: 'P9', data_source: 'medicare', enrollment_start_date: '2024-01-01', enrollment_end_date: '2024-12-31', medicare_status_code: '10', original_reason_entitlement_code: '1', dual_status_code: '00'}
+
+    expect:
+      rows:
+        - {PERSON_ID: 'P1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202501', ALR_BENE_MBI_ID: 'P1',   MBI_CROSSWALK_SOURCE: 'direct',                        IS_ASSIGNED: true,  IS_NEW_ENROLLEE: false, ENROLLMENT_TYPE: 'aged_dual',     ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.1,  RISK_SCORE_SOURCE: 'assignment_list_type_score'}
+        - {PERSON_ID: 'P2', DATA_SOURCE: 'medicare', YEAR_MONTH: '202502', ALR_BENE_MBI_ID: 'P2',   MBI_CROSSWALK_SOURCE: 'direct',                        IS_ASSIGNED: true,  IS_NEW_ENROLLEE: true,  ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 0.7,  RISK_SCORE_SOURCE: 'assignment_list_type_score'}
+        - {PERSON_ID: 'P3', DATA_SOURCE: 'medicare', YEAR_MONTH: '202303', ALR_BENE_MBI_ID: 'P3',   MBI_CROSSWALK_SOURCE: 'direct',                        IS_ASSIGNED: true,  IS_NEW_ENROLLEE: false, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'beur_person_year_fraction',    RISK_SCORE: 1.3,  RISK_SCORE_SOURCE: 'assignment_list_monthly_score'}
+        - {PERSON_ID: 'P4', DATA_SOURCE: 'medicare', YEAR_MONTH: '202401', ALR_BENE_MBI_ID: null,   MBI_CROSSWALK_SOURCE: null,                            IS_ASSIGNED: false, IS_NEW_ENROLLEE: null,  ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'eligibility_codes',            RISK_SCORE: null, RISK_SCORE_SOURCE: null}
+        - {PERSON_ID: 'P5', DATA_SOURCE: 'medicare', YEAR_MONTH: '202506', ALR_BENE_MBI_ID: 'OLD5', MBI_CROSSWALK_SOURCE: 'cclf_beneficiary_xref',         IS_ASSIGNED: true,  IS_NEW_ENROLLEE: false, ENROLLMENT_TYPE: 'esrd',          ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score'}
+        - {PERSON_ID: 'P6', DATA_SOURCE: 'medicare', YEAR_MONTH: '202507', ALR_BENE_MBI_ID: 'OLD6', MBI_CROSSWALK_SOURCE: 'excluded_beneficiary_mbi_xref', IS_ASSIGNED: true,  IS_NEW_ENROLLEE: false, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 0.9,  RISK_SCORE_SOURCE: 'assignment_list_type_score'}
+        - {PERSON_ID: 'P7', DATA_SOURCE: 'medicare', YEAR_MONTH: '202402', ALR_BENE_MBI_ID: null,   MBI_CROSSWALK_SOURCE: null,                            IS_ASSIGNED: false, IS_NEW_ENROLLEE: null,  ENROLLMENT_TYPE: 'aged_dual',     ENROLLMENT_TYPE_SOURCE: 'eligibility_codes',            RISK_SCORE: null, RISK_SCORE_SOURCE: null}
+        - {PERSON_ID: 'P8', DATA_SOURCE: 'medicare', YEAR_MONTH: '202403', ALR_BENE_MBI_ID: null,   MBI_CROSSWALK_SOURCE: null,                            IS_ASSIGNED: false, IS_NEW_ENROLLEE: null,  ENROLLMENT_TYPE: 'esrd',          ENROLLMENT_TYPE_SOURCE: 'eligibility_codes',            RISK_SCORE: null, RISK_SCORE_SOURCE: null}
+        - {PERSON_ID: 'P9', DATA_SOURCE: 'medicare', YEAR_MONTH: '202404', ALR_BENE_MBI_ID: null,   MBI_CROSSWALK_SOURCE: null,                            IS_ASSIGNED: false, IS_NEW_ENROLLEE: null,  ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'eligibility_codes',            RISK_SCORE: null, RISK_SCORE_SOURCE: null}

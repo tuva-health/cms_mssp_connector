@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `int_member_month_risk`: one row per Tuva person, data source and month
+  carrying the MSSP enrollment type and the CMS prospective HCC risk score
+  from the assignment list, with the source of each, the new-enrollee and
+  assigned flags, and the MBI crosswalk step that joined the assignment list
+  to the Tuva person id (TUVA-74).
+
 ## [0.2.0] - 2026-09-04
 
 First formal release of the converged baseline. Validated end to end in a
