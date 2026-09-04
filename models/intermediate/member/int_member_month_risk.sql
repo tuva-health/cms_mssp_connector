@@ -17,6 +17,24 @@
     id, because Tuva was built through the CCLF crosswalk and not this one;
     consulting it first would move those members off their own person id.
 
+    Assignment is pinned to one delivery per calendar year. CMS delivers the
+    assignment list in performance-year packages, stamped D<YY> in the file
+    name, and a package reaches into other years: the PY2026 package carries
+    the PY2026 prospective-assignment window across 2025 (its initial AALR
+    and its first quarterly lists) and re-delivers 2023 and 2024 as benchmark
+    years, scored on the PY2026 model and normalisation basis. Letting those
+    rows stand as 2025 or 2024 assignment mixes two performance years' scores
+    and over-counts assigned member-months. So each assignment-list row is
+    given the year its file reports — the Y<YYYY> token of a benchmark-year
+    file, the <YYYY>Q<N> token of a quarterly file, otherwise the delivery
+    stamp itself — and a member-month takes rows only from files reporting its
+    own calendar year, and among those only from the earliest delivery that
+    reports it. For the performance year itself that is its own delivery; for
+    a benchmark year it is the delivery in which the year was first reported,
+    so a later package never rewrites history. Rows from any other delivery
+    are ignored for that month: a member known only to an off-year delivery
+    is unassigned there, takes the type fallbacks and carries a NULL score.
+
     Two ranks keep the grain total against inputs that enforce nothing. Two
     assignment-list MBIs can resolve to one person in one month once a retired
     MBI is crosswalked, and the same person-year can appear in the BEUR under
@@ -84,9 +102,45 @@ assignment_list as (
         end                                                     as MONTHLY_SCORE,
 
         cast(file_name as {{ dbt.type_string() }})              as FILE_NAME,
-        cast(file_date as date)                                 as FILE_DATE
+        cast(file_date as date)                                 as FILE_DATE,
+
+        -- D<YY> delivery stamp: the performance-year package the file came in.
+        case
+            when {{ dbt.position("'.D'", "file_name") }} > 0
+            then {{ cast_year_or_null(dbt.concat(["'20'", "substring(file_name, " ~ dbt.position("'.D'", "file_name") ~ " + 2, 2)"])) }}
+        end                                                     as DELIVERY_PERFORMANCE_YEAR,
+
+        -- The year the file reports, where the name says so.
+        case
+            when {{ dbt.position("'.AALR.Y'", "file_name") }} > 0
+            then {{ cast_year_or_null("substring(file_name, " ~ dbt.position("'.AALR.Y'", "file_name") ~ " + 7, 4)") }}
+            when {{ dbt.position("'.QALR.'", "file_name") }} > 0
+            then {{ cast_year_or_null("substring(file_name, " ~ dbt.position("'.QALR.'", "file_name") ~ " + 6, 4)") }}
+        end                                                     as FILE_REPORT_YEAR
     from {{ ref('cms_aalr_connector', 'enrollment') }}
     where current_bene_mbi_id is not null
+
+),
+
+assignment_dated as (
+
+    select
+        assignment_list.*,
+        coalesce(FILE_REPORT_YEAR, DELIVERY_PERFORMANCE_YEAR)   as REPORT_YEAR
+    from assignment_list
+
+),
+
+-- One delivery per reported year: the earliest package that reports it.
+pinned_delivery as (
+
+    select
+        REPORT_YEAR,
+        min(DELIVERY_PERFORMANCE_YEAR)                          as DELIVERY_PERFORMANCE_YEAR
+    from assignment_dated
+    where REPORT_YEAR is not null
+      and DELIVERY_PERFORMANCE_YEAR is not null
+    group by REPORT_YEAR
 
 ),
 
@@ -143,7 +197,7 @@ excluded_beneficiary_xref as (
 -- Every MBI either source carries, resolved to a Tuva person once.
 mbi_keys as (
 
-    select BENE_MBI_ID from assignment_list
+    select BENE_MBI_ID from assignment_dated
     union
     select BENE_MBI_ID from beur
 
@@ -180,24 +234,29 @@ mbi_resolved as (
 
 ),
 
+-- Only rows from the pinned delivery of the month's own calendar year.
 assignment_ranked as (
 
     select
         mbi_resolved.PERSON_ID,
         mbi_resolved.MBI_CROSSWALK_SOURCE,
-        assignment_list.*,
+        assignment_dated.*,
         row_number() over (
-            partition by mbi_resolved.PERSON_ID, assignment_list.YEAR_MONTH
+            partition by mbi_resolved.PERSON_ID, assignment_dated.YEAR_MONTH
             order by
-                assignment_list.FILE_DATE desc nulls last,
+                assignment_dated.FILE_DATE desc nulls last,
                 case when mbi_resolved.MBI_CROSSWALK_SOURCE = 'direct' then 0 else 1 end,
-                assignment_list.FILE_NAME desc,
-                assignment_list.BENE_MBI_ID desc
+                assignment_dated.FILE_NAME desc,
+                assignment_dated.BENE_MBI_ID desc
         )                                                       as ASSIGNMENT_RANK
-    from assignment_list
+    from assignment_dated
+    inner join pinned_delivery
+        on pinned_delivery.REPORT_YEAR = assignment_dated.REPORT_YEAR
+        and pinned_delivery.DELIVERY_PERFORMANCE_YEAR = assignment_dated.DELIVERY_PERFORMANCE_YEAR
     inner join mbi_resolved
-        on mbi_resolved.BENE_MBI_ID = assignment_list.BENE_MBI_ID
+        on mbi_resolved.BENE_MBI_ID = assignment_dated.BENE_MBI_ID
     where mbi_resolved.PERSON_ID is not null
+      and assignment_dated.REPORT_YEAR = {{ cast_year_or_null("substring(assignment_dated.YEAR_MONTH, 1, 4)") }}
 
 ),
 
@@ -390,6 +449,8 @@ select
     end                                                         as RISK_SCORE_SOURCE,
 
     assignment.HCC_VERSION                                      as HCC_VERSION,
+    assignment.DELIVERY_PERFORMANCE_YEAR                        as ALR_DELIVERY_PERFORMANCE_YEAR,
+    assignment.REPORT_YEAR                                      as ALR_REPORT_YEAR,
     assignment.FILE_NAME                                        as ALR_FILE_NAME,
     assignment.FILE_DATE                                        as ALR_FILE_DATE
 
