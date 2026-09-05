@@ -474,6 +474,164 @@ models:
         data_tests:
           - not_null
 
+  - name: int_benchmark_risk_scores
+    description: >
+      BNMRK Table 1 sections `[C]` and `[D]` joined to BNMRK Table 4, pivoted
+      to one row per (delivery, enrollment type, benchmark year): the ACO's
+      renormalised CMS-HCC risk score, its ratio to BY3, and the national
+      assignable FFS mean score the renormalisation divides by.
+
+      `[C]` is `ACO_RISK_SCORE`, `[D]` is `RISK_RATIO_TO_BY3`, and the Table 4
+      factor is `NATIONAL_MEAN_RISK_SCORE`, at `BY_LABEL` `BY1`, `BY2` or
+      `BY3`. Table 4 carries no section or row labels beyond the enrollment
+      type, so it cannot be found by label; this model is where it surfaces.
+
+      Scores must be paired with the performance year's own report. `[C]` for
+      one calendar year differs between the PY2025 and PY2026 workbooks even
+      though both cover it, because each report applies the risk model and
+      the renormalisation of its own performance year. BY3 of the PY2025
+      report and BY2 of the PY2026 report describe the same calendar year and
+      are not the same number, and a consumer that reads one report's scores
+      against another's benchmark is comparing across models. Filter on
+      `PERFORMANCE_YEAR` and take every score from that one report.
+
+      The two sheets are joined on `FILE_PATH`: they are two sheets of one
+      workbook, so one delivery stamp and one ranking serve both, and every
+      cell either sheet carries keeps its row — a cell on one sheet and not
+      the other is a NULL, never a missing row. A preliminary delivery has
+      been observed shipping `N/A` for the BY3 national mean, which
+      arrives here as a NULL `NATIONAL_MEAN_RISK_SCORE` on a row whose `[C]`
+      and `[D]` are populated.
+
+      Nothing is calculated. Both sheets' cells are passed through at the
+      staging precision.
+
+    config:
+      schema: _int_input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - FILE_PATH
+              - ENROLLMENT_TYPE
+              - BY_LABEL
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier the delivery belongs to.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: >
+          Performance year of the delivery, from the file store path. The
+          report whose risk model and renormalisation every score on the row
+          was produced under — see the model description for why scores must
+          not be read across reports.
+
+      - name: SUBMISSION_ID
+        description: Delivery stamp from the file name (`D<YYMMDD>.T<NNNNNNN>`).
+        data_tests:
+          - not_null
+
+      - name: FILE_DATE
+        description: Delivery date, NULL where the stamp is a placeholder.
+
+      - name: SUBMISSION_RANK
+        description: >
+          Rank of this delivery within `(ACO_ID, PERFORMANCE_YEAR)`, 1 being
+          the most recent, ranked exactly as in `int_benchmark_historical`.
+          One rank serves both sheets because they are joined on the
+          workbook, not on the stamp.
+        data_tests:
+          - not_null
+
+      - name: IS_LATEST_SUBMISSION
+        description: >
+          True on every row of the most recent delivery for the performance
+          year. A flag and not a filter, as everywhere in this layer.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          Canonical Medicare enrollment type, resolved case-insensitively
+          against the `mssp_enrollment_type` seed on each sheet and used as
+          the join key between them. `unmapped` where a sheet's label is not
+          in the seed; the row is kept, visibly wrong, and the accepted-values
+          test on this column fails on it — on every delivery, not only the
+          latest, which is why `unmapped` is deliberately not in the list.
+          Neither sheet carries an aggregate row, so `total` is not accepted
+          either.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual']
+
+      - name: ENROLLMENT_TYPE_LABEL
+        description: Display form of `ENROLLMENT_TYPE`, from the same seed.
+
+      - name: ENROLLMENT_TYPE_SORT
+        description: Sort key for `ENROLLMENT_TYPE`; 99 for `unmapped`.
+
+      - name: BY_LABEL
+        description: >
+          Benchmark year column: `BY1`, `BY2` or `BY3`. Table 1's blended
+          `Benchmark` column is not a cell for sections `[C]` and `[D]` — CMS
+          writes `'-'` there — and is not carried. Part of the model grain.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['BY1', 'BY2', 'BY3']
+
+      - name: ACO_ROW_LABEL
+        description: >
+          Column A of the Table 1 row `[C]` and `[D]` were read from,
+          verbatim, so the mapping can be checked against what CMS wrote.
+          NULL where Table 1 has no row for the enrollment type.
+
+      - name: ACO_RISK_SCORE
+        description: >
+          `[C]` — the ACO's CMS-HCC risk score for the benchmark year,
+          renormalised so the national assignable FFS mean is 1.0. NULL where
+          Table 1 has no `[C]` cell for the row, which
+          `assert_risk_scores_are_complete_per_latest_submission` reports on
+          the latest delivery.
+
+      - name: RISK_RATIO_TO_BY3
+        description: >
+          `[D]` — `ACO_RISK_SCORE` for the benchmark year divided by BY3's, so
+          1 at BY3 by definition; `assert_risk_ratio_to_by3_is_one` asserts
+          it. NULL where Table 1 has no `[D]` cell for the row.
+
+      - name: NATIONAL_ROW_LABEL
+        description: >
+          Column A of the Table 4 row the national mean was read from,
+          verbatim. NULL where Table 4 has no row for the enrollment type.
+
+      - name: NATIONAL_MEAN_RISK_SCORE
+        description: >
+          Table 4 — the national assignable FFS mean CMS-HCC risk score for
+          the enrollment type and benchmark year, the factor `[C]` was
+          renormalised by. NULL where the cell is not a number, which a
+          preliminary delivery has been observed shipping for BY3.
+
+      - name: FILE_PATH
+        description: >
+          Full path of the source workbook, shared by both sheets. Part of the
+          model grain.
+        data_tests:
+          - not_null
+
+      - name: DIRECTORY_NAME
+        description: Delivery bundle directory the workbook arrived in.
+
+      - name: FILE_NAME
+        description: File name of the source workbook.
+
   # ---------------------------------------------------------------------------
   # AEXPU — annual Expenditure & Utilization
   # ---------------------------------------------------------------------------
@@ -1045,3 +1203,93 @@ models:
         description: 1-based worksheet row index. Part of the model grain.
         data_tests:
           - not_null
+
+# ---------------------------------------------------------------------------
+# Unit tests
+#
+# The models above are lookups and rankings rather than arithmetic, and the
+# singular tests in tests/intermediate/benchmark cover what they produce over
+# real deliveries. int_benchmark_risk_scores is the one model that pivots two
+# sheets into one row, and a pivot has selection rules a schema test cannot
+# see: which section lands in which column, which rows are excluded, what
+# happens to a cell one sheet carries and the other does not. This fixture
+# pins those rules against synthetic rows small enough to check by hand.
+# ---------------------------------------------------------------------------
+
+unit_tests:
+
+  - name: test_risk_scores_pivot_both_sheets_and_keep_every_cell
+    model: int_benchmark_risk_scores
+    description: >
+      One ACO, one performance year, two deliveries of the workbook.
+
+      The June workbook (B-SUB-2, ranked 1) carries ESRD on both sheets for
+      all three benchmark years, with the Table 4 BY3 cell reading 'N/A' as
+      a preliminary delivery has been observed doing; Disabled on Table 4
+      only at BY1 and on Table 1 only at BY2; and a label neither sheet maps,
+      spelled differently on each. The March workbook (B-SUB-1, ranked 2)
+      carries ESRD at BY3 only.
+
+      Decoys on Table 1: a section [L] row, and a [C] cell in the blended
+      'Benchmark' column, both carrying values that would show up in the
+      output if the section and column filters were loosened.
+
+      What the expected rows pin: [C] lands in ACO_RISK_SCORE and [D] in
+      RISK_RATIO_TO_BY3 and never the other way; the Table 4 cell lands in
+      NATIONAL_MEAN_RISK_SCORE; a cell on one sheet without a partner keeps
+      its row with a NULL; an unmapped label from either sheet is kept as
+      'unmapped' and the two sheets' spellings are carried side by side; the
+      superseded delivery is ranked 2 and flagged false; and neither decoy
+      appears.
+
+    given:
+
+      - input: ref('mssp_enrollment_type')
+        rows:
+          - {ROW_LABEL_UPPER: 'ESRD',     ENROLLMENT_TYPE: 'esrd',     ENROLLMENT_TYPE_LABEL: 'ESRD',     ENROLLMENT_TYPE_SORT: 1}
+          - {ROW_LABEL_UPPER: 'DISABLED', ENROLLMENT_TYPE: 'disabled', ENROLLMENT_TYPE_LABEL: 'Disabled', ENROLLMENT_TYPE_SORT: 2}
+
+      - input: ref('int_benchmark_historical')
+        rows:
+          # June delivery: ESRD, [C] then [D], all three benchmark years.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'C', ROW_LABEL: 'ESRD',       ENROLLMENT_TYPE: 'esrd',     BY_LABEL: 'BY1',       VALUE_NUMERIC: 1.10}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'C', ROW_LABEL: 'ESRD',       ENROLLMENT_TYPE: 'esrd',     BY_LABEL: 'BY2',       VALUE_NUMERIC: 1.20}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'C', ROW_LABEL: 'ESRD',       ENROLLMENT_TYPE: 'esrd',     BY_LABEL: 'BY3',       VALUE_NUMERIC: 1.25}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'D', ROW_LABEL: 'ESRD',       ENROLLMENT_TYPE: 'esrd',     BY_LABEL: 'BY1',       VALUE_NUMERIC: 0.88}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'D', ROW_LABEL: 'ESRD',       ENROLLMENT_TYPE: 'esrd',     BY_LABEL: 'BY2',       VALUE_NUMERIC: 0.96}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'D', ROW_LABEL: 'ESRD',       ENROLLMENT_TYPE: 'esrd',     BY_LABEL: 'BY3',       VALUE_NUMERIC: 1}
+          # Decoys: the blended column on [C], and another section entirely.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'C', ROW_LABEL: 'ESRD',       ENROLLMENT_TYPE: 'esrd',     BY_LABEL: 'Benchmark', VALUE_NUMERIC: -1}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'L', ROW_LABEL: 'ESRD',       ENROLLMENT_TYPE: 'esrd',     BY_LABEL: 'BY1',       VALUE_NUMERIC: 5000}
+          # Disabled at BY2 on this sheet only.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'C', ROW_LABEL: 'Disabled',   ENROLLMENT_TYPE: 'disabled', BY_LABEL: 'BY2',       VALUE_NUMERIC: 1.30}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'D', ROW_LABEL: 'Disabled',   ENROLLMENT_TYPE: 'disabled', BY_LABEL: 'BY2',       VALUE_NUMERIC: 0.90}
+          # A label the seed does not know, already marked upstream.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'C', ROW_LABEL: 'Aged/Other', ENROLLMENT_TYPE: 'unmapped', BY_LABEL: 'BY1',       VALUE_NUMERIC: 2.0}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', SECTION_CODE: 'D', ROW_LABEL: 'Aged/Other', ENROLLMENT_TYPE: 'unmapped', BY_LABEL: 'BY1',       VALUE_NUMERIC: 2.0}
+          # March delivery, superseded.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-1', FILE_DATE: '2000-03-01', FILE_PATH: 'py2000/B-SUB-1.xlsx', SECTION_CODE: 'C', ROW_LABEL: 'ESRD',       ENROLLMENT_TYPE: 'esrd',     BY_LABEL: 'BY3',       VALUE_NUMERIC: 1.24}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-1', FILE_DATE: '2000-03-01', FILE_PATH: 'py2000/B-SUB-1.xlsx', SECTION_CODE: 'D', ROW_LABEL: 'ESRD',       ENROLLMENT_TYPE: 'esrd',     BY_LABEL: 'BY3',       VALUE_NUMERIC: 1}
+
+      - input: ref('stg_bnmrk_table_4')
+        rows:
+          # June delivery: ESRD for all three years, BY3 not a number.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', ROW_LABEL: 'ESRD',       COLUMN_LABEL: 'BY1', VALUE_TEXT: '1.01', VALUE_NUMERIC: 1.01}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', ROW_LABEL: 'ESRD',       COLUMN_LABEL: 'BY2', VALUE_TEXT: '1.02', VALUE_NUMERIC: 1.02}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', ROW_LABEL: 'ESRD',       COLUMN_LABEL: 'BY3', VALUE_TEXT: 'N/A',  VALUE_NUMERIC: null}
+          # Disabled at BY1 on this sheet only.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', ROW_LABEL: 'Disabled',   COLUMN_LABEL: 'BY1', VALUE_TEXT: '1.5',  VALUE_NUMERIC: 1.5}
+          # The unknown label again, in this sheet's own spelling.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-2', FILE_DATE: '2000-06-01', FILE_PATH: 'py2000/B-SUB-2.xlsx', ROW_LABEL: 'Aged/other', COLUMN_LABEL: 'BY1', VALUE_TEXT: '1.7',  VALUE_NUMERIC: 1.7}
+          # March delivery, superseded.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'B-SUB-1', FILE_DATE: '2000-03-01', FILE_PATH: 'py2000/B-SUB-1.xlsx', ROW_LABEL: 'ESRD',       COLUMN_LABEL: 'BY3', VALUE_TEXT: '1.05', VALUE_NUMERIC: 1.05}
+
+    expect:
+      rows:
+        - {SUBMISSION_ID: 'B-SUB-2', SUBMISSION_RANK: 1, IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'esrd',     ENROLLMENT_TYPE_LABEL: 'ESRD',     ENROLLMENT_TYPE_SORT: 1,  BY_LABEL: 'BY1', ACO_ROW_LABEL: 'ESRD',       ACO_RISK_SCORE: 1.10, RISK_RATIO_TO_BY3: 0.88, NATIONAL_ROW_LABEL: 'ESRD',       NATIONAL_MEAN_RISK_SCORE: 1.01}
+        - {SUBMISSION_ID: 'B-SUB-2', SUBMISSION_RANK: 1, IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'esrd',     ENROLLMENT_TYPE_LABEL: 'ESRD',     ENROLLMENT_TYPE_SORT: 1,  BY_LABEL: 'BY2', ACO_ROW_LABEL: 'ESRD',       ACO_RISK_SCORE: 1.20, RISK_RATIO_TO_BY3: 0.96, NATIONAL_ROW_LABEL: 'ESRD',       NATIONAL_MEAN_RISK_SCORE: 1.02}
+        - {SUBMISSION_ID: 'B-SUB-2', SUBMISSION_RANK: 1, IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'esrd',     ENROLLMENT_TYPE_LABEL: 'ESRD',     ENROLLMENT_TYPE_SORT: 1,  BY_LABEL: 'BY3', ACO_ROW_LABEL: 'ESRD',       ACO_RISK_SCORE: 1.25, RISK_RATIO_TO_BY3: 1,    NATIONAL_ROW_LABEL: 'ESRD',       NATIONAL_MEAN_RISK_SCORE: null}
+        - {SUBMISSION_ID: 'B-SUB-2', SUBMISSION_RANK: 1, IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'disabled', ENROLLMENT_TYPE_LABEL: 'Disabled', ENROLLMENT_TYPE_SORT: 2,  BY_LABEL: 'BY1', ACO_ROW_LABEL: null,         ACO_RISK_SCORE: null, RISK_RATIO_TO_BY3: null, NATIONAL_ROW_LABEL: 'Disabled',   NATIONAL_MEAN_RISK_SCORE: 1.5}
+        - {SUBMISSION_ID: 'B-SUB-2', SUBMISSION_RANK: 1, IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'disabled', ENROLLMENT_TYPE_LABEL: 'Disabled', ENROLLMENT_TYPE_SORT: 2,  BY_LABEL: 'BY2', ACO_ROW_LABEL: 'Disabled',   ACO_RISK_SCORE: 1.30, RISK_RATIO_TO_BY3: 0.90, NATIONAL_ROW_LABEL: null,         NATIONAL_MEAN_RISK_SCORE: null}
+        - {SUBMISSION_ID: 'B-SUB-2', SUBMISSION_RANK: 1, IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'unmapped', ENROLLMENT_TYPE_LABEL: 'Unmapped', ENROLLMENT_TYPE_SORT: 99, BY_LABEL: 'BY1', ACO_ROW_LABEL: 'Aged/Other', ACO_RISK_SCORE: 2.0,  RISK_RATIO_TO_BY3: 2.0,  NATIONAL_ROW_LABEL: 'Aged/other', NATIONAL_MEAN_RISK_SCORE: 1.7}
+        - {SUBMISSION_ID: 'B-SUB-1', SUBMISSION_RANK: 2, IS_LATEST_SUBMISSION: false, ENROLLMENT_TYPE: 'esrd',     ENROLLMENT_TYPE_LABEL: 'ESRD',     ENROLLMENT_TYPE_SORT: 1,  BY_LABEL: 'BY3', ACO_ROW_LABEL: 'ESRD',       ACO_RISK_SCORE: 1.24, RISK_RATIO_TO_BY3: 1,    NATIONAL_ROW_LABEL: 'ESRD',       NATIONAL_MEAN_RISK_SCORE: 1.05}

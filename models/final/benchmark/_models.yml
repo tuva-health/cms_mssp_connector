@@ -30,6 +30,12 @@ version: 2
 #       cannot compute. The March preliminary delivery ships no Table 6, so [J]
 #       is absent and [K], [M], [P] and [R] cannot be derived. Dropping the row
 #       would be tidier and much harder to notice.
+#
+# Every downstream consumer wants the same two predicates, so the two `_current`
+# models further down apply them once: the same figures, one row per
+# quarter, latest calculable delivery only, with the headline per-capita figures
+# also expressed per member per month. They are the default read path; the two
+# full-grain facts are for reconciliation against a particular delivery.
 
 models:
 
@@ -502,6 +508,333 @@ models:
         data_tests:
           - not_null
 
+  - name: fct_projected_benchmark_by_enrollment_type_current
+    description: >
+      The default read path over `fct_projected_benchmark_by_enrollment_type`:
+      the same figures, filtered to the latest calculable benchmark delivery,
+      with `[M]` also expressed per member per month.
+
+      One row per ACO, performance year, quarter and enrollment type. The two
+      grain warnings at the top of this file are what this model removes: every
+      row is built from the most recent benchmark delivery for its performance
+      year (`IS_LATEST_BENCHMARK_SUBMISSION`) and every row has its `[M]`
+      (`IS_CALCULABLE`), so an aggregate over it is an aggregate over one
+      answer per quarter. Those two flags are not carried; they are true on
+      every row by construction.
+
+      Nothing is derived here except the division. Every other column is the
+      full-grain fact's column, unchanged, and is documented there.
+      `BENCHMARK_SUBMISSION_ID` and `QUARTERLY_SUBMISSION_ID` are kept so a
+      reader can still see which delivery a row was read from, and
+      `IS_AGREEMENT_DEFAULTED` so a defaulted `[J]` column still announces
+      itself.
+
+      Read the full-grain fact instead when the question is about a delivery
+      other than the latest — reconciling against what CMS said in June, or
+      seeing which quarters the March preliminary could not compute. Every
+      pairing is a row there and none is chosen.
+
+    config:
+      schema: input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ACO_ID
+              - PERFORMANCE_YEAR
+              - PERIOD
+              - ENROLLMENT_TYPE
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: Performance year the benchmark is set for.
+        data_tests:
+          - not_null
+
+      - name: PERIOD
+        description: The quarter the ACO's own figures come from, `<YYYY>Q<N>`.
+        data_tests:
+          - not_null
+
+      - name: QUARTER_NUM
+        description: Quarter number 1-4 parsed out of `PERIOD`, for ordering.
+
+      - name: BENCHMARK_SUBMISSION_ID
+        description: >
+          Which benchmark delivery this row was read from. Always the latest
+          delivery for the performance year here; carried so that fact is
+          visible on the row rather than implied by the model's name.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE
+        description: Canonical Medicare enrollment type.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual']
+
+      - name: ENROLLMENT_TYPE_LABEL
+        description: Display form of `ENROLLMENT_TYPE`.
+
+      - name: ENROLLMENT_TYPE_SORT
+        description: Sort key giving the enrollment types CMS's own presentation order.
+
+      - name: NATIONAL_BASE_EXPENDITURE_PER_CAPITA
+        description: "`[A]`, as on the full-grain fact."
+
+      - name: NATIONAL_CURRENT_EXPENDITURE_PER_CAPITA
+        description: "`[B]`, as on the full-grain fact."
+
+      - name: NATIONAL_EXPENDITURE_UPDATE_FACTOR
+        description: "`[C]`, as on the full-grain fact."
+
+      - name: REGIONAL_BASE_EXPENDITURE_PER_CAPITA
+        description: "`[D]`, as on the full-grain fact."
+
+      - name: REGIONAL_CURRENT_EXPENDITURE_PER_CAPITA
+        description: "`[E]`, as on the full-grain fact."
+
+      - name: REGIONAL_EXPENDITURE_UPDATE_FACTOR
+        description: "`[F]`, as on the full-grain fact."
+
+      - name: NATIONAL_WEIGHT
+        description: "`[G]`, as on the full-grain fact."
+
+      - name: REGIONAL_WEIGHT
+        description: "`[H]`, as on the full-grain fact."
+
+      - name: NATIONAL_REGIONAL_BLENDED_UPDATE_FACTOR
+        description: "`[I]`, as on the full-grain fact."
+
+      - name: ACCOUNTABLE_CARE_PROSPECTIVE_TREND
+        description: "`[J]`, as on the full-grain fact. Never NULL here: a row without it is not calculable."
+
+      - name: THREE_WAY_BLENDED_UPDATE_FACTOR
+        description: "`[K]`, as on the full-grain fact."
+
+      - name: HISTORICAL_BENCHMARK_EXPENDITURE
+        description: "`[L]`, as on the full-grain fact."
+
+      - name: PROJECTED_UPDATED_BENCHMARK_EXPENDITURE
+        description: >
+          `[M]` — the projected updated benchmark expenditure for this
+          enrollment type, annual and per person-year, as on the full-grain
+          fact. Never NULL here: the `IS_CALCULABLE` filter is exactly the
+          condition that this was derived.
+        data_tests:
+          - not_null
+
+      - name: PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM
+        description: >
+          `[M] / 12` — the same benchmark per member per month. `[M]` is an
+          annual per person-year figure and twelve months is the whole of the
+          conversion. Divided in double precision like `[M]` itself; see the
+          `to_double` macro.
+        data_tests:
+          - not_null
+
+      - name: PERSON_YEARS
+        description: "`[N]` for this enrollment type, as on the full-grain fact."
+
+      - name: TOTAL_PERSON_YEARS
+        description: "`[N]` total, as on the full-grain fact."
+
+      - name: ENROLLMENT_PROPORTION
+        description: "`[O]`, as on the full-grain fact."
+
+      - name: QUARTERLY_SUBMISSION_ID
+        description: >
+          Delivery stamp of the QEXPU workbook behind the quarterly inputs. With
+          `BENCHMARK_SUBMISSION_ID`, every figure on the row traces to a named
+          workbook.
+        data_tests:
+          - not_null
+
+      - name: ANNUAL_EXPENDITURE_BENCHMARK_YEAR
+        description: Calendar benchmark year of the AEXPU workbook behind `[A]`.
+
+      - name: ANNUAL_EXPENDITURE_SUBMISSION_ID
+        description: Delivery stamp of that AEXPU workbook.
+
+      - name: ACPT_PERFORMANCE_YEAR_LABEL
+        description: Which BNMRK Table 6 column `[J]` was read from.
+        data_tests:
+          - not_null
+
+      - name: IS_AGREEMENT_DEFAULTED
+        description: >
+          True where the ACO has no row in `mssp_aco_agreement` for this
+          performance year, so `ACPT_PERFORMANCE_YEAR_LABEL` is the `PY1`
+          default rather than a configured value. Carried so a defaulted `[J]`
+          column announces itself on the read path consumers actually use.
+        data_tests:
+          - not_null
+
+  - name: fct_projected_savings_current
+    description: >
+      The default read path over `fct_projected_savings`: the same figures,
+      filtered to the latest calculable benchmark delivery, with `[P]` and
+      `[Q]` also expressed per member per month.
+
+      One row per ACO, performance year and quarter — the grain of
+      `fct_projected_benchmark_by_enrollment_type_current` with the enrollment
+      types collapsed, and the same two predicates applied: every row is built
+      from the most recent benchmark delivery for its performance year and
+      every row has its `[P]`. `IS_LATEST_BENCHMARK_SUBMISSION` and
+      `IS_CALCULABLE` are not carried; they are true on every row by
+      construction.
+
+      Nothing is derived here except the two divisions. Every other column is
+      the full-grain fact's column, unchanged, and is documented there. The
+      two submission ids and `IS_AGREEMENT_DEFAULTED` are kept so a reader can
+      still see which delivery a row was read from and whether its agreement
+      configuration was a default.
+
+      Read the full-grain fact instead when the question is about a delivery
+      other than the latest, or about which pairings could not be computed.
+
+    config:
+      schema: input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ACO_ID
+              - PERFORMANCE_YEAR
+              - PERIOD
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: Performance year the benchmark is set for.
+        data_tests:
+          - not_null
+
+      - name: PERIOD
+        description: The quarter the ACO's own figures come from, `<YYYY>Q<N>`.
+        data_tests:
+          - not_null
+
+      - name: QUARTER_NUM
+        description: Quarter number 1-4 parsed out of `PERIOD`, for ordering.
+
+      - name: BENCHMARK_SUBMISSION_ID
+        description: >
+          Which benchmark delivery this row was calculated against. Always the
+          latest delivery for the performance year here; carried so that fact
+          is visible on the row.
+        data_tests:
+          - not_null
+
+      - name: MEAN_PROJECTED_UPDATED_BENCHMARK
+        description: >
+          `[P]` — the mean projected updated benchmark, annual and per
+          person-year, as on the full-grain fact. Never NULL here: the
+          `IS_CALCULABLE` filter is exactly the condition that this was derived.
+        data_tests:
+          - not_null
+
+      - name: MEAN_PROJECTED_UPDATED_BENCHMARK_PMPM
+        description: >
+          `[P] / 12` — the same benchmark per member per month. Divided in
+          double precision like `[P]` itself; see the `to_double` macro.
+        data_tests:
+          - not_null
+
+      - name: ACO_EXPENDITURE_PER_CAPITA
+        description: >
+          `[Q]` — the ACO's own total expenditure per capita for the quarter,
+          annual, as on the full-grain fact.
+
+      - name: ACO_EXPENDITURE_PER_CAPITA_PMPM
+        description: >
+          `[Q] / 12` — the same expenditure per member per month, so it can be
+          set beside `MEAN_PROJECTED_UPDATED_BENCHMARK_PMPM` without a
+          conversion at the point of use. `[Q]` arrives as a fixed-point
+          decimal, and this is the one place on the model where the cast to
+          double is load-bearing rather than a formality: fixed-point division
+          derives its scale from the operands. NULL where `[Q]` is missing.
+
+      - name: PROJECTED_SAVINGS_PERCENTAGE
+        description: "`[R]`, as on the full-grain fact."
+
+      - name: ASSIGNED_BENEFICIARIES
+        description: "`[S]`, as on the full-grain fact."
+
+      - name: MSR_TYPE
+        description: "`[T]`, as on the full-grain fact."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Variable', 'Fixed']
+
+      - name: FIXED_MSR_RATE
+        description: As on the full-grain fact.
+
+      - name: ACO_TRACK
+        description: As on the full-grain fact.
+
+      - name: MSR_BASIS_APPLIED
+        description: As on the full-grain fact.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['fixed', 'variable']
+
+      - name: ESTIMATED_MSR
+        description: "`[U]`, as on the full-grain fact."
+
+      - name: EXPENDITURES_BELOW_BENCHMARK
+        description: "`[V]`, as on the full-grain fact."
+
+      - name: SAVINGS_EXCEEDS_MSR
+        description: "`[W]`, as on the full-grain fact."
+
+      - name: SAVINGS_STATUS
+        description: "`[W]` as a three-valued enum, as on the full-grain fact."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['above_msr', 'below_msr', 'no_savings']
+
+      - name: QUARTERLY_SUBMISSION_ID
+        description: Delivery stamp of the QEXPU workbook behind `[Q]` and `[S]`.
+        data_tests:
+          - not_null
+
+      - name: ANNUAL_EXPENDITURE_BENCHMARK_YEAR
+        description: Calendar benchmark year of the AEXPU workbook behind `[A]`.
+
+      - name: ANNUAL_EXPENDITURE_SUBMISSION_ID
+        description: Delivery stamp of that AEXPU workbook.
+
+      - name: ACPT_PERFORMANCE_YEAR_LABEL
+        description: Which BNMRK Table 6 column `[J]` was read from.
+        data_tests:
+          - not_null
+
+      - name: IS_AGREEMENT_DEFAULTED
+        description: >
+          True where the ACO has no row in `mssp_aco_agreement` for this
+          performance year, so `MSR_TYPE` and `ACPT_PERFORMANCE_YEAR_LABEL` are
+          defaults rather than configured values.
+        data_tests:
+          - not_null
+
 # ---------------------------------------------------------------------------
 # Unit tests
 #
@@ -872,3 +1205,111 @@ unit_tests:
           MSR_BASIS_APPLIED: 'fixed'
           ESTIMATED_MSR: 0.015
           IS_AGREEMENT_DEFAULTED: false
+
+  - name: test_current_per_type_keeps_latest_calculable_rows_and_divides_by_twelve
+    model: fct_projected_benchmark_by_enrollment_type_current
+    description: >
+      Pins the two predicates and the division. The fixture is one ACO and one
+      performance year with three pairings, of which exactly one should
+      survive:
+
+        2000Q1 x B-SUB-2  latest, calculable      -> kept, two enrollment rows
+        2000Q1 x B-SUB-1  superseded, calculable  -> dropped by the latest flag
+        2000Q2 x B-SUB-2  latest, incalculable    -> dropped by IS_CALCULABLE
+
+      Each decoy is load-bearing on its own. The superseded pairing is
+      calculable, so only the latest-delivery predicate removes it; the
+      incalculable pairing is on the latest delivery, so only the calculable
+      predicate removes it. Dropping either `where` clause surfaces an extra
+      row, and the superseded row carries an [M] of 2400 whose PMPM would be a
+      clean 200 — visible, not a rounding artefact.
+
+      The kept rows carry one clean [M] and one repeating one: 1200 / 12 is
+      exactly 100, and 2166.6666666666665 / 12 — Disabled's [M] from the
+      per-type test above — is 180.55555555555554 in IEEE 754, not the
+      180.5555555555556 a hand calculation would round to.
+
+    given:
+
+      - input: ref('fct_projected_benchmark_by_enrollment_type')
+        rows:
+          # The latest, calculable pairing: the rows that should come through.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB-2', IS_LATEST_BENCHMARK_SUBMISSION: true,  IS_CALCULABLE: true,  QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'esrd',     PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 1200}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB-2', IS_LATEST_BENCHMARK_SUBMISSION: true,  IS_CALCULABLE: true,  QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'disabled', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2166.6666666666665}
+          # Decoy: the superseded delivery for the same quarter, fully calculable.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB-1', IS_LATEST_BENCHMARK_SUBMISSION: false, IS_CALCULABLE: true,  QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'esrd',     PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2400}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB-1', IS_LATEST_BENCHMARK_SUBMISSION: false, IS_CALCULABLE: true,  QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'disabled', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2400}
+          # Decoy: the latest delivery for a quarter it could not compute.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B-SUB-2', IS_LATEST_BENCHMARK_SUBMISSION: true,  IS_CALCULABLE: false, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'esrd',     PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: null}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B-SUB-2', IS_LATEST_BENCHMARK_SUBMISSION: true,  IS_CALCULABLE: false, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'disabled', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: null}
+
+    expect:
+      rows:
+        - PERIOD: '2000Q1'
+          BENCHMARK_SUBMISSION_ID: 'B-SUB-2'
+          QUARTERLY_SUBMISSION_ID: 'Q-SUB-1'
+          ENROLLMENT_TYPE: 'esrd'
+          PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 1200
+          PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 100.0
+          IS_AGREEMENT_DEFAULTED: true
+        - PERIOD: '2000Q1'
+          BENCHMARK_SUBMISSION_ID: 'B-SUB-2'
+          QUARTERLY_SUBMISSION_ID: 'Q-SUB-1'
+          ENROLLMENT_TYPE: 'disabled'
+          PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2166.6666666666665
+          PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 180.55555555555554
+          IS_AGREEMENT_DEFAULTED: true
+
+  - name: test_current_savings_keeps_latest_calculable_rows_and_divides_by_twelve
+    model: fct_projected_savings_current
+    description: >
+      The ACO-level counterpart of the test above, with the same three-way
+      fixture shape and one more kept row at realistic magnitude.
+
+        2000Q1 x B-SUB-2  latest, calculable      -> kept
+        2000Q1 x B-SUB-1  superseded, calculable  -> dropped by the latest flag
+        2000Q2 x B-SUB-2  latest, incalculable    -> dropped by IS_CALCULABLE
+        2000Q3 x B-SUB-2  latest, calculable      -> kept
+
+      The incalculable pairing carries a [Q] even though it has no [P], which
+      is what the real March preliminary rows look like: the quarterly side is
+      complete and only the benchmark side is missing. A model that filtered
+      on the benchmark being present but not on IS_CALCULABLE would agree with
+      this test; one that dropped the calculable predicate altogether would
+      surface a row with an expenditure PMPM and no benchmark PMPM, and fail.
+
+      2000Q3 uses figures of the size the real facts carry — an annual
+      benchmark near 25,000 and expenditure near 22,000 — so the PMPMs land
+      where a reader expects them, near 2,000, and both quotients are
+      repeating: 25000 / 12 is 2083.3333333333335 and 22000 / 12 is
+      1833.3333333333333, each the exact double rather than a rounding.
+
+    given:
+
+      - input: ref('fct_projected_savings')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB-2', IS_LATEST_BENCHMARK_SUBMISSION: true,  IS_CALCULABLE: true,  QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', MSR_TYPE: 'Variable', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, MEAN_PROJECTED_UPDATED_BENCHMARK: 3000,  ACO_EXPENDITURE_PER_CAPITA: 2700}
+          # Decoy: the superseded delivery for the same quarter, fully calculable.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB-1', IS_LATEST_BENCHMARK_SUBMISSION: false, IS_CALCULABLE: true,  QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', MSR_TYPE: 'Variable', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, MEAN_PROJECTED_UPDATED_BENCHMARK: 2400,  ACO_EXPENDITURE_PER_CAPITA: 2700}
+          # Decoy: the latest delivery for a quarter it could not compute. [Q] is present, [P] is not.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q2', QUARTER_NUM: 2, BENCHMARK_SUBMISSION_ID: 'B-SUB-2', IS_LATEST_BENCHMARK_SUBMISSION: true,  IS_CALCULABLE: false, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2', MSR_TYPE: 'Variable', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, MEAN_PROJECTED_UPDATED_BENCHMARK: null,  ACO_EXPENDITURE_PER_CAPITA: 2700}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q3', QUARTER_NUM: 3, BENCHMARK_SUBMISSION_ID: 'B-SUB-2', IS_LATEST_BENCHMARK_SUBMISSION: true,  IS_CALCULABLE: true,  QUARTERLY_SUBMISSION_ID: 'Q-SUB-3', MSR_TYPE: 'Variable', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, MEAN_PROJECTED_UPDATED_BENCHMARK: 25000, ACO_EXPENDITURE_PER_CAPITA: 22000}
+
+    expect:
+      rows:
+        - PERIOD: '2000Q1'
+          BENCHMARK_SUBMISSION_ID: 'B-SUB-2'
+          QUARTERLY_SUBMISSION_ID: 'Q-SUB-1'
+          MEAN_PROJECTED_UPDATED_BENCHMARK: 3000.0
+          MEAN_PROJECTED_UPDATED_BENCHMARK_PMPM: 250.0
+          ACO_EXPENDITURE_PER_CAPITA: 2700
+          ACO_EXPENDITURE_PER_CAPITA_PMPM: 225.0
+          IS_AGREEMENT_DEFAULTED: true
+        - PERIOD: '2000Q3'
+          BENCHMARK_SUBMISSION_ID: 'B-SUB-2'
+          QUARTERLY_SUBMISSION_ID: 'Q-SUB-3'
+          MEAN_PROJECTED_UPDATED_BENCHMARK: 25000.0
+          MEAN_PROJECTED_UPDATED_BENCHMARK_PMPM: 2083.3333333333335
+          ACO_EXPENDITURE_PER_CAPITA: 22000
+          ACO_EXPENDITURE_PER_CAPITA_PMPM: 1833.3333333333333
+          IS_AGREEMENT_DEFAULTED: true

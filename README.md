@@ -26,6 +26,7 @@ Intermediate models live under `models/intermediate` and are materialized as
 tables, configured into the `_int_input_layer` schema:
 
 - `benchmark`: typed facts over the BNMRK / AEXPU / QEXPU workbooks
+- `member`: enrollment type and CMS prospective risk score per member-month
 
 The staging models are faithful but untyped — one row per worksheet cell, every
 value in a text column — so an input to the historical benchmark is a
@@ -37,12 +38,25 @@ deliveries without choosing between them:
 - `int_benchmark_historical` — BNMRK Table 1, every section of the benchmark derivation
 - `int_benchmark_acpt` — BNMRK Table 6, the Accountable Care Prospective Trend
 - `int_benchmark_trend` — BNMRK Table 2, the trend factor audit trail
+- `int_benchmark_risk_scores` — BNMRK Table 1 sections [C] and [D] with Table 4,
+  the CMS-HCC risk score inputs by enrollment type and benchmark year
 - `int_expenditures_annual` — AEXPU Table 1, by benchmark year
 - `int_expenditures_quarterly` — QEXPU Table 1
 - `int_expenditures_regional` — QEXPU Table 2, regional expenditures and weights
 
 They calculate nothing. Deriving the benchmark from these inputs is the job of
 the final layer.
+
+`int_member_month_risk` sits alongside them on the `core__member_months` grain
+(person, data source, month). It states which MSSP enrollment type the member
+is in — from the populated score column on the 2025+ assignment list, else the
+BEUR person-year fractions, else the Tuva eligibility codes, with
+`ENROLLMENT_TYPE_SOURCE` saying which — and the CMS prospective HCC risk score
+the assignment list supplies, read from the per-type column or the monthly
+column depending on the file's layout. Assignment-list MBIs are mapped to the
+Tuva person id the way the CCLF connector maps them, then through the
+excluded-beneficiary crosswalk. Nothing is defaulted: a member-month with no
+score keeps its type and a NULL score.
 
 Final models live under `models/final`, are materialized as tables and are
 configured into the `input_layer` schema alongside the other connectors' final
@@ -53,6 +67,12 @@ models:
 - `fct_projected_savings` — the ACO-level mean projected benchmark, the
   projected savings percentage, the estimated minimum savings rate, and the two
   comparisons between them
+- `fct_projected_benchmark_by_enrollment_type_current` and
+  `fct_projected_savings_current` — the default read path over the two facts
+  above: the same figures filtered to the latest calculable benchmark delivery,
+  one row per ACO, performance year, quarter (and enrollment type), with the
+  projected updated benchmark and the ACO's expenditure also expressed per
+  member per month (`*_PMPM`, the annual figure divided by twelve)
 
 Two things about their grain govern how they must be queried, and both are
 documented at length in `models/final/benchmark/_models.yml`:
@@ -67,11 +87,118 @@ documented at length in `models/final/benchmark/_models.yml`:
   the prospective trend and everything below it cannot be derived for anything
   paired with it. Dropping the row would be tidier and much harder to notice.
 
+The two `_current` models apply both predicates once, so a consumer that wants
+one answer per quarter reads them and never sees the multiplicity. Read the
+full-grain facts for reconciliation against a particular delivery.
+
 Two seeds supply what the workbooks do not carry: `seeds/mssp_msr_lookup.csv`,
 the minimum savings rate band schedule, and `seeds/mssp_aco_agreement.csv`, the
 per-ACO minimum savings rate election and agreement performance year. The second
 ships with a synthetic example row only; an ACO with no row takes documented
 defaults and every output row it produces is flagged `IS_AGREEMENT_DEFAULTED`.
+
+### Tuva semantic layer
+
+`dbt_project.yml` sets `semantic_layer_enabled: true`, so the same `build`
+phase that populates the Tuva marts also builds the Tuva semantic layer: 22
+facts and dimensions (`fact_member_months`, `fact_claims`, `fact_risk_scores`,
+`dim_member`, `dim_date`, and the rest) plus their `semantic_layer__stg_*`
+staging models and three value-set seeds, all placed in the `semantic_layer`
+schema. The 22 facts and dimensions are part of the build contract:
+`scripts/verify_manifest.py` requires every one of them to be enabled and
+placed in `semantic_layer`, so a manifest that drops the semantic layer fails
+the verifier before anything is released. After a run, `fact_member_months`
+carries one row per person, data source, and month with the paid amounts and
+risk scores populated.
+
+The connector adds two facts of its own to that schema, under
+`models/final/semantic_layer`:
+
+- `fact_member_month_benchmark` — the benchmark applied to every member-month,
+  keyed on the same `MEMBER_MONTH_SK` as `fact_member_months` so Power BI and
+  Dash join the two one to one. Three per-member-per-month rates: the flat
+  rate (`[P] / 12`, the ACO mean projected updated benchmark, identical for
+  every member), the enrollment-type rate (`[M] / 12` for the member's type),
+  and the risk-adjusted rate (the enrollment-type rate times the member's CMS
+  prospective HCC score over the BY3 CMS-HCC score `[C]` for that type,
+  uncapped), plus that rate under the ACO's aggregate cap
+  (`RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED`, the uncapped rate times the year's
+  `CAP_FACTOR` from `fact_benchmark_aco_quarter`). Each row also carries the
+  enrollment type, the member's score and its source, the BY3 type score, the
+  risk ratio, the cap factor, the actual total paid, and the variance to each
+  rate.
+
+  One projection serves each performance year — the calendar year of the
+  member-month — by default the latest calculable quarter of that year on the
+  latest benchmark delivery, and its period, quarter and submission ids are
+  carried on every row so a consumer can see which CMS delivery it is reading.
+  A member with no CMS score gets a NULL risk-adjusted rate and a NULL
+  `RISK_SCORE_SOURCE` while the flat and type rates are still filled; a
+  member-month in a year with no calculable projection keeps its row with
+  NULL rates and `HAS_BENCHMARK = false`, so the one-to-one join holds across
+  the whole spine. The spine has no ACO on it and the connector is deployed
+  one ACO at a time, so the projection joins on performance year alone; a
+  warn-level test reports a year with more than one ACO. The verifier
+  requires the fact to be enabled and placed in `semantic_layer`.
+
+  Two singular tests reconcile the rates: the risk-adjusted rate summed over
+  assigned member-months must equal the type rate times the sum of the risk
+  ratios for every year and type, and — at warn severity — the flat rate
+  times assigned member-months should reconcile to `[P]` times the quarterly
+  report's person years, where the difference is assignment timing (the next
+  performance year's assignment lists reach back into this year's second
+  half). The test header documents the observed gap and the band it accepts.
+
+- `fact_benchmark_aco_quarter` — the ACO-level view a dashboard opens with:
+  one row per ACO, performance year and reported quarter on the latest
+  calculable delivery, with the benchmark and expenditure per member per
+  month (`[P] / 12`, `[Q] / 12`), the projected savings percentage, the
+  estimated MSR and its basis, the savings status, and the risk adjustment
+  block. The quarter that serves `fact_member_month_benchmark` for the year
+  is flagged `IS_CURRENT_PROJECTION`, chosen by the same rule (highest
+  quarter, lowest ACO on ties), and a singular test holds the two facts to
+  the same choice.
+
+  The risk adjustment block reproduces the cap of 42 CFR 425.605(a)(1)(ii)
+  as far as the delivery allows. Per enrollment type, the PY-to-BY3 risk
+  ratio is the mean CMS prospective HCC score over the year's assigned,
+  scored member-months divided by the BY3 `[C]` for the type. The aggregate
+  ratio `R` is their weighted mean with the regulation's weights — person
+  years times historical benchmark expenditure per type, 425.605(a)(1)(ii)(C)
+  as finalised at 87 FR 69946. The cap is applied at the aggregate: with
+  `mssp_risk_score_cap` (default `0.03`, the regulation's 3 percentage
+  points) the bound is `1 + cap`; where `R` exceeds it the cap factor is
+  `bound / R`, otherwise exactly 1 — the cap is one-sided, as the regulation
+  is (positive adjustments only; CMS declined a floor at 87 FR 69942), so a
+  decrease in the aggregate ratio passes through uncapped. Every enrollment
+  type — and through the member fact every member — is rescaled by that one
+  factor, so relative risk between members is preserved and the capped
+  member rates sum to the risk-adjusted ACO benchmark (`Σ enrollment
+  proportion x [M] x ratio x factor`, exposed annual and PMPM) applied to
+  the member mix. One place where this departs from the regulation is
+  recorded in the model docs: CMS clips each type to the cap value rather
+  than rescaling (87 FR 69935, Step 7).
+
+  The regulation's upper bound is the ACO's demographic risk score growth
+  plus 3 points; that growth term is not in the delivery, so the default is
+  the flat cap and a labelled scenario projects a stand-in from the BNMRK
+  Table 4 national mean scores instead: per type, the BY1-to-BY3 growth
+  annualised over two years and compounded from the BY3 calendar year (the
+  parameters sheet's `Benchmark Year 3 (BY3)` expenditure and risk score
+  period) to the performance year, aggregated with the same weights.
+  `NATIONAL_GROWTH_PROJECTED`, `CAP_UPPER_BOUND_SCENARIO`,
+  `CAP_FACTOR_SCENARIO` and `IS_CAP_BINDING_SCENARIO` sit beside the flat-cap
+  columns and are informational. Swapping in a factor CMS publishes is a
+  change to the variable, not the model.
+
+  Everything is NULL-safe and nothing is defaulted: a type with no assigned,
+  scored member-months leaves the aggregate, the factor and the capped
+  columns NULL for the year rather than treating the type as unchanged. A
+  unit test pins the aggregate ratio, the cap above the bound, the pass-
+  through below it, the no-cap case, the NULL cascade and the scenario; singular tests assert that the capped
+  member rates reconcile to the ACO fact's ratios and factor (an error, and
+  one that fails if the factor is dropped) and that the two facts agree on
+  the projection; and the verifier requires the fact in `semantic_layer`.
 
 ## Expected Source Data
 
@@ -287,9 +414,11 @@ client deployment has validated it end to end.
 .
 |-- models/
 |   |-- final/
-|   |   `-- benchmark/
+|   |   |-- benchmark/
+|   |   `-- semantic_layer/
 |   |-- intermediate/
-|   |   `-- benchmark/
+|   |   |-- benchmark/
+|   |   `-- member/
 |   `-- staging/
 |       |-- benchmark/
 |       |-- bnex/

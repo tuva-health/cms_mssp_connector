@@ -72,6 +72,54 @@ BENCHMARK_FACT_OUTPUTS = (
     "fct_projected_benchmark_by_enrollment_type",
     "fct_projected_savings",
 )
+# The Tuva semantic layer: the facts and dimensions the connector build
+# materialises in the semantic_layer schema because dbt_project.yml sets
+# semantic_layer_enabled. Package model names are semantic_layer__<name> with
+# alias <name>; the semantic_layer__stg_* staging models feed these and are not
+# part of the contract.
+SEMANTIC_LAYER_OUTPUTS = (
+    "dim_condition",
+    "dim_data_source",
+    "dim_date",
+    "dim_encounter_group",
+    "dim_encounter_provider",
+    "dim_encounter_type",
+    "dim_member",
+    "dim_member_months",
+    "dim_service_category",
+    "fact_admissions",
+    "fact_claims",
+    "fact_ed_visits",
+    "fact_encounter_service_bridge",
+    "fact_encounters",
+    "fact_expected_values",
+    "fact_hcc_gaps",
+    "fact_member_condition_bridge",
+    "fact_member_months",
+    "fact_pharmacy_claims",
+    "fact_quality_measures",
+    "fact_risk_factors",
+    "fact_risk_scores",
+)
+
+# The two current-projection models over those facts: the same figures
+# filtered to the latest calculable benchmark delivery and carrying PMPM
+# columns. Placed beside the facts in input_layer (TUVA-72).
+BENCHMARK_CURRENT_OUTPUTS = (
+    "fct_projected_benchmark_by_enrollment_type_current",
+    "fct_projected_savings_current",
+)
+# The connector's own semantic layer facts: the member-month benchmark rates,
+# keyed like the Tuva member-months fact and placed in semantic_layer beside it
+# (TUVA-75), and the ACO-quarter benchmark fact with the aggregate risk ratio
+# cap the member fact reads its factor from (TUVA-76). Connector models, so
+# their unique ids are model.cms_mssp_connector.* and their aliases are their
+# names; the SEMANTIC_LAYER_OUTPUTS set above is the Tuva package's and cannot
+# carry them.
+CONNECTOR_SEMANTIC_LAYER_OUTPUTS = (
+    "fact_member_month_benchmark",
+    "fact_benchmark_aco_quarter",
+)
 BOUNDARY_OUTPUTS = {
     "model.cms_aalr_connector.enrollment": ("enrollment", "raw_data"),
     "model.cms_aalr_connector.provider_attribution": ("provider_attribution", "input_layer"),
@@ -192,13 +240,24 @@ def verify(manifest: dict, lock: str, database: Optional[str] = None) -> List[st
         if actual != expected:
             errors.append(f"{name} relation placement must be {expected}, found {actual}")
 
-    for name in BENCHMARK_FACT_OUTPUTS:
+    for name in BENCHMARK_FACT_OUTPUTS + BENCHMARK_CURRENT_OUTPUTS:
         unique_id = f"model.cms_mssp_connector.{name}"
         node = enabled_model(nodes, unique_id)
         if node is None:
             errors.append(f"required enabled benchmark fact is missing: {name}")
             continue
         expected = (database, "input_layer", name)
+        actual = (node.get("database"), node.get("schema"), node.get("alias"))
+        if actual != expected:
+            errors.append(f"{name} relation placement must be {expected}, found {actual}")
+
+    for name in CONNECTOR_SEMANTIC_LAYER_OUTPUTS:
+        unique_id = f"model.cms_mssp_connector.{name}"
+        node = enabled_model(nodes, unique_id)
+        if node is None:
+            errors.append(f"required enabled semantic layer fact is missing: {name}")
+            continue
+        expected = (database, "semantic_layer", name)
         actual = (node.get("database"), node.get("schema"), node.get("alias"))
         if actual != expected:
             errors.append(f"{name} relation placement must be {expected}, found {actual}")
@@ -214,6 +273,17 @@ def verify(manifest: dict, lock: str, database: Optional[str] = None) -> List[st
             errors.append(f"{unique_id} relation placement must be {expected}, found {actual}")
         if not reaches_enabled_tuva(nodes, unique_id):
             errors.append(f"enabled Tuva dependency path is missing from {unique_id}")
+
+    for name in SEMANTIC_LAYER_OUTPUTS:
+        unique_id = f"model.the_tuva_project.semantic_layer__{name}"
+        node = enabled_model(nodes, unique_id)
+        if node is None:
+            errors.append(f"required enabled semantic layer relation is missing: {name}")
+            continue
+        expected = (database, "semantic_layer", name)
+        actual = (node.get("database"), node.get("schema"), node.get("alias"))
+        if actual != expected:
+            errors.append(f"{name} relation placement must be {expected}, found {actual}")
 
     return errors
 
@@ -245,8 +315,11 @@ def main() -> int:
         f"manifest contract passed: {len(MSSP_OUTPUTS)} MSSP outputs, "
         f"{len(BENCHMARK_STAGING_OUTPUTS)} benchmark staging outputs, "
         f"{len(BENCHMARK_FACT_OUTPUTS)} benchmark facts, "
+        f"{len(BENCHMARK_CURRENT_OUTPUTS)} current projections, "
         f"{len(BOUNDARY_OUTPUTS)} package outputs, "
-        f"{len(BOUNDARY_OUTPUTS)} Tuva boundary paths"
+        f"{len(BOUNDARY_OUTPUTS)} Tuva boundary paths, "
+        f"{len(SEMANTIC_LAYER_OUTPUTS)} semantic layer outputs, "
+        f"{len(CONNECTOR_SEMANTIC_LAYER_OUTPUTS)} connector semantic layer facts"
     )
     return 0
 

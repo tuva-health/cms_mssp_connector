@@ -24,6 +24,17 @@
     QUARTER_NUM. Pointing the quarterly model at the annual sheet leaves
     QUARTER_NUM NULL on every row, which is exactly the mutation above.
 
+    int_benchmark_risk_scores is the exception to "never from values", for the
+    same reason its Table 4 half is in the staging test: Table 4 has no section
+    or group heading and shares its row and column labels with Table 3, so the
+    two are separated by magnitude, which is a property of the sheets rather
+    than of any ACO. Table 4 holds risk score renormalization factors near 1
+    where Table 3 holds dollar truncation thresholds, and Table 1 section [C]
+    holds risk scores near 1 where section [C] of Table 2 holds regional per
+    capita dollars. Both halves are bound on the BY1 column rather than BY3
+    because a preliminary delivery has been observed shipping 'N/A' for the
+    BY3 national mean.
+
     Empty is not failure. int_benchmark_acpt is legitimately empty for an ACO
     whose only delivery is the March preliminary one, and a model with no rows
     is skipped, matching how the staging test behaves.
@@ -36,6 +47,8 @@
         "SECTION_LABEL = 'National Expenditure Trend Factor'",
     'int_benchmark_acpt':
         "SECTION_LABEL = 'ACPT'",
+    'int_benchmark_risk_scores':
+        "BY_LABEL = 'BY1' and ACO_RISK_SCORE < 100 and NATIONAL_MEAN_RISK_SCORE < 100",
     'int_expenditures_annual':
         "BENCHMARK_YEAR is not null and METRIC = 'component_expenditures_per_beneficiary'",
     'int_expenditures_quarterly':

@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The Tuva semantic layer is part of the build contract. `dbt_project.yml`
+  sets `semantic_layer_enabled: true`, so the `build` phase materialises the
+  22 semantic layer facts and dimensions (with their staging models and
+  value-set seeds) in the `semantic_layer` schema, and
+  `scripts/verify_manifest.py` requires each of them to be enabled and placed
+  there. Before this the connector never set the var, so the schema was a
+  stale artifact of an earlier run with an empty member-months fact
+  (TUVA-71).
+- Current-projection models `fct_projected_benchmark_by_enrollment_type_current`
+  and `fct_projected_savings_current` in `input_layer`: the two benchmark facts
+  filtered to the latest calculable benchmark delivery, one row per ACO,
+  performance year, quarter (and enrollment type), with the projected updated
+  benchmark and the ACO's expenditure also expressed per member per month.
+  They are the default read path; the full-grain facts remain for
+  reconciliation against a particular delivery. The manifest verifier checks
+  their placement, and unit tests pin the filter and the division (TUVA-72).
+- `int_benchmark_risk_scores`: the benchmark-year half of the risk adjustment
+  story, typed. BNMRK Table 1 sections [C] (the ACO's renormalised CMS-HCC
+  risk score) and [D] (its ratio to BY3) joined to BNMRK Table 4 (the
+  national assignable FFS mean score the renormalisation divides by), one row
+  per delivery, enrollment type and benchmark year, ranked and flagged like
+  the other intermediate benchmark models. Tests assert the full four-by-three
+  grid on every latest delivery, that [D] is 1 at BY3, and that Table 4 is
+  bound to its own sheet by magnitude; a warning reports a workbook carrying
+  only one of the two sheets (TUVA-73).
+- `int_member_month_risk`: one row per Tuva person, data source and month
+  carrying the MSSP enrollment type and the CMS prospective HCC risk score
+  from the assignment list, with the source of each, the new-enrollee and
+  assigned flags, and the MBI crosswalk step that joined the assignment list
+  to the Tuva person id. Assignment is pinned to one delivery per calendar
+  year, the earliest package that reports the year, so a later package's
+  prospective-assignment window and benchmark-year re-deliveries never count
+  as assignment for those months (TUVA-74).
+- `fact_member_month_benchmark` in `semantic_layer`: the benchmark applied to
+  every member-month, keyed on the same `MEMBER_MONTH_SK` as the Tuva
+  `fact_member_months` for a one-to-one join. Three rates per member per
+  month — flat (`[P] / 12`), by enrollment type (`[M] / 12` for the member's
+  type) and risk-adjusted, uncapped (the type rate times the member's CMS
+  prospective HCC score over the BY3 `[C]` for the type) — with the
+  enrollment type, score and source, the BY3 score, the risk ratio, actual
+  total paid and the variance to each rate. One projection serves each
+  performance year, by default its latest calculable quarter on the latest
+  delivery, and its period and submission ids are carried on every row. A
+  member with no score gets a NULL risk-adjusted rate and a populated flag;
+  a member-month in a year with no calculable projection keeps its row with
+  NULL rates. The manifest verifier requires the fact in `semantic_layer`; a
+  unit test pins the three rates, and singular tests assert the one-to-one
+  join, the per-year-per-type reconciliation of the risk-adjusted rate, and
+  (warn) the flat rate against the quarterly report's person years and one
+  ACO per performance year (TUVA-75).
+- `fact_benchmark_aco_quarter` in `semantic_layer`: one row per ACO,
+  performance year and reported quarter on the latest calculable delivery,
+  with the benchmark and expenditure PMPM, projected savings percentage,
+  estimated MSR and basis, savings status, and the risk adjustment block —
+  the per-type PY-to-BY3 risk ratio (assignment-list PY mean over BY3
+  `[C]`), the aggregate ratio weighted by person years times historical
+  benchmark expenditure per 42 CFR 425.605(a)(1)(ii)(C), the cap bound
+  `1 + mssp_risk_score_cap` (new project variable, default `0.03`), the cap
+  factor `bound / R` where the aggregate exceeds the bound and 1 otherwise
+  — one-sided per 42 CFR 425.605(a)(1)(ii), so a decrease in the aggregate
+  ratio passes through uncapped — an `IS_CAP_BINDING` flag, and the risk-adjusted ACO benchmark
+  (`Σ enrollment proportion x [M] x ratio x factor`, annual and PMPM). The
+  cap is applied at the aggregate and rescales every type by the one
+  factor, so relative risk between members is preserved and the capped
+  member total reconciles to the capped ACO benchmark. A scenario column set
+  (`NATIONAL_GROWTH_PROJECTED`, `CAP_UPPER_BOUND_SCENARIO`,
+  `CAP_FACTOR_SCENARIO`, `IS_CAP_BINDING_SCENARIO`) projects the growth term
+  the regulation adds to the cap from the BNMRK Table 4 BY1-to-BY3 trend,
+  compounded from the parameters sheet's BY3 calendar year; the flat cap is
+  the default and the scenario is labelled a projection. The row serving
+  `fact_member_month_benchmark` is flagged `IS_CURRENT_PROJECTION`. All
+  figures are NULL-safe: a type without scored members leaves the aggregate,
+  factor and capped columns NULL. The model docs cite the regulation and the
+  CY 2023 PFS final rule (87 FR 69934-69946, 70238) and record where the
+  model departs from them: the single-factor rescaling is a project
+  convention. The manifest verifier requires the fact in `semantic_layer`; a
+  unit test pins the aggregate, the cap above the bound, the pass-through
+  below it, the no-cap case, the NULL cascade and the scenario; singular tests assert
+  the capped member reconciliation and the projection agreement (TUVA-76).
+- `fact_member_month_benchmark` gains `CAP_FACTOR`,
+  `RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED` (the uncapped risk-adjusted rate
+  times the year's factor) and `VARIANCE_TO_RISK_ADJUSTED_CAPPED`, read off
+  the ACO-quarter fact's current row for the same ACO and year (TUVA-76).
+
 ## [0.2.0] - 2026-09-04
 
 First formal release of the converged baseline. Validated end to end in a
