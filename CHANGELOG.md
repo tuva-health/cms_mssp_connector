@@ -92,6 +92,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED` (the uncapped risk-adjusted rate
   times the year's factor) and `VARIANCE_TO_RISK_ADJUSTED_CAPPED`, read off
   the ACO-quarter fact's current row for the same ACO and year (TUVA-76).
+- `fact_benchmark_aco_quarter` carries CMS's method of applying the risk
+  score cap beside the project's single factor: `RISK_RATIO_CLIPPED_<TYPE>`
+  (each type's ratio clipped at `CAP_UPPER_BOUND` where the aggregate
+  exceeds it and left as it is where it does not, per 42 CFR
+  425.605(a)(1)(ii)(B) and Step 7 at 87 FR 69935), `RISK_ADJUSTED_BENCHMARK_CMS`
+  with its `_PMPM` (`Σ enrollment proportion x [M] x clipped ratio`, the
+  same inputs and NULL cascade as `RISK_ADJUSTED_BENCHMARK`), and
+  `RISK_ADJUSTED_BENCHMARK_METHOD_DIFFERENCE` (CMS minus single-factor,
+  exactly 0 wherever the cap does not bind). No existing column changes,
+  and `fact_member_month_benchmark` keeps the single factor, the one form
+  under which member rows add up to the ACO figure. The unit test pins the
+  two methods agreeing within the bound, parting where the types straddle
+  it, and parting where every type is above it; the model docs and README
+  describe both and why the member fact carries one.
 
 ### Changed
 
