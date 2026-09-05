@@ -93,6 +93,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   times the year's factor) and `VARIANCE_TO_RISK_ADJUSTED_CAPPED`, read off
   the ACO-quarter fact's current row for the same ACO and year (TUVA-76).
 
+### Changed
+
+- `cms_alr_connector` is pinned at `51e1483`, which keeps CMS-HCC risk scores
+  at ten decimals instead of rounding them to two. The member risk ratios and
+  the risk-adjusted benchmark rates inherit the recovered precision on the
+  next build.
+
 ## [0.2.0] - 2026-09-04
 
 First formal release of the converged baseline. Validated end to end in a
