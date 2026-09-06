@@ -175,9 +175,24 @@ The connector adds two facts of its own to that schema, under
   factor, so relative risk between members is preserved and the capped
   member rates sum to the risk-adjusted ACO benchmark (`Σ enrollment
   proportion x [M] x ratio x factor`, exposed annual and PMPM) applied to
-  the member mix. One place where this departs from the regulation is
-  recorded in the model docs: CMS clips each type to the cap value rather
-  than rescaling (87 FR 69935, Step 7).
+  the member mix.
+
+  That single factor is a project convention. CMS applies the cap per type
+  (42 CFR 425.605(a)(1)(ii)(B); 87 FR 69935, Step 7): where `R` exceeds the
+  bound each type's ratio is clipped at the bound, so a type below it keeps
+  its ratio and a type above it is cut to the bound, and where `R` is
+  within the bound no type is clipped even if one exceeds it on its own.
+  The fact carries that method beside the single factor:
+  `RISK_RATIO_CLIPPED_<TYPE>`, `RISK_ADJUSTED_BENCHMARK_CMS` (`Σ enrollment
+  proportion x [M] x clipped ratio`, annual and PMPM) and
+  `RISK_ADJUSTED_BENCHMARK_METHOD_DIFFERENCE` (CMS minus single-factor,
+  exactly 0 wherever the cap does not bind). The two differ, in general,
+  wherever the cap binds — most visibly when the types straddle the bound,
+  since only the types above it are cut. `fact_member_month_benchmark`
+  keeps the single factor alone: one number per year is what lets every
+  member's capped rate stay its uncapped rate times that number, preserves
+  relative risk between members of different types, and makes the member
+  rows add up to the ACO figure.
 
   The regulation's upper bound is the ACO's demographic risk score growth
   plus 3 points; that growth term is not in the delivery, so the default is
@@ -195,7 +210,9 @@ The connector adds two facts of its own to that schema, under
   scored member-months leaves the aggregate, the factor and the capped
   columns NULL for the year rather than treating the type as unchanged. A
   unit test pins the aggregate ratio, the cap above the bound, the pass-
-  through below it, the no-cap case, the NULL cascade and the scenario; singular tests assert that the capped
+  through below it, the no-cap case, the NULL cascade, the scenario, and
+  the two capping methods agreeing within the bound and parting where the
+  types straddle it; singular tests assert that the capped
   member rates reconcile to the ACO fact's ratios and factor (an error, and
   one that fails if the factor is dropped) and that the two facts agree on
   the projection; and the verifier requires the fact in `semantic_layer`.
