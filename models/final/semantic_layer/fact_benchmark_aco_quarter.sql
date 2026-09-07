@@ -6,7 +6,7 @@
     ratio, the cap on it, and the risk-adjusted benchmark that results.
 
     The savings columns are fct_projected_savings_current's, carried as they
-    are. What is computed here is the risk block, in four steps.
+    are. What is computed here is the risk block, in five steps.
 
     1. Per enrollment type, the PY risk ratio r_t: the mean CMS prospective
        HCC score over the assigned, scored member-months of that type and
@@ -47,17 +47,38 @@
        sum_t ENROLLMENT_PROPORTION_t x [M]_t x r_t x c, an annual per capita
        figure, with its PMPM. fact_member_month_benchmark reads c off the
        IS_CURRENT_PROJECTION row of each year, so the capped member rates
-       sum to exactly this figure applied to the member mix. Note that
-       CMS's own application, at 87 FR 69935 (Step 7), clips each type's
-       ratio to the cap value rather than rescaling — a different capped
-       benchmark whenever the types straddle the cap. The single factor is
-       a deliberate choice for the member-level fact; the header of
-       _models.yml records it.
+       sum to exactly this figure applied to the member mix. The single
+       factor is a deliberate choice for the member-level fact: one number
+       per year keeps every member's capped rate its uncapped rate times
+       that number, so relative risk between members of different types is
+       preserved and the member rows add up to the ACO figure. The header
+       of _models.yml records it. CMS's own application differs, and step
+       5 carries it beside this.
+
+    5. The CMS method. 425.605(a)(1)(ii)(B), and Step 7 of the worked
+       application at 87 FR 69935, apply the cap per type: when R exceeds
+       the bound each type's ratio is clipped at the bound, min(r_t, bound),
+       so a type below the bound keeps its ratio and a type above it is cut
+       to the bound; when R is within the bound no type is clipped, even
+       one above the bound on its own. RISK_RATIO_CLIPPED_<TYPE> carries
+       those ratios, RISK_ADJUSTED_BENCHMARK_CMS the benchmark they give,
+       sum_t ENROLLMENT_PROPORTION_t x [M]_t x clipped_t, with its PMPM,
+       and RISK_ADJUSTED_BENCHMARK_METHOD_DIFFERENCE is CMS minus
+       single-factor. The two are equal wherever the cap does not bind and
+       differ, in general, wherever it does: with types on both sides of
+       the bound only the types above it are cut, and even with every type
+       above it — when both methods land the aggregate on the bound — the
+       benchmarks agree only if the [M]-weighted mix of the types matches
+       the ratio weights. The member fact keeps the single factor of step
+       4; the CMS columns are for stating the ACO figure as CMS would, and
+       for sizing what the choice is worth.
 
     Everything is NULL-safe and nothing is defaulted. A type with no
     assigned, scored member-months in the year has a NULL r_t, which makes
-    R, c, the capped benchmark and the binding flag NULL for every quarter
-    of that year rather than quietly treating the type as unchanged. A
+    R, c, the binding flag, the capped benchmark and every CMS-method
+    column — the clipped ratio of a type whose own ratio is known included,
+    since whether to clip it is then unknown — NULL for every quarter of
+    that year rather than quietly treating the type as unchanged. A
     quarter with no enrollment-type rows keeps its savings columns and a
     NULL risk block. The Table 4 national means are NULL on the preliminary
     March delivery, which cascades into the scenario columns alone.
@@ -75,6 +96,17 @@
 
 {%- set cap = var('mssp_risk_score_cap') -%}
 {%- set enrollment_types = ['esrd', 'disabled', 'aged_dual', 'aged_non_dual'] -%}
+
+{#- r_t clipped at the flat bound, for the CMS method (step 5 above). The
+    NULL guard is not decoration: least() ignores a NULL argument on DuckDB
+    and Postgres but returns NULL on Snowflake, and a type without a ratio
+    must stay NULL on every adapter rather than come back as the bound. -#}
+{%- set clipped_ratio -%}
+case
+    when RISK_RATIO is null then {{ to_double('null') }}
+    else least(RISK_RATIO, {{ to_double(1) }} + {{ to_double(cap) }})
+end
+{%- endset -%}
 
 with projections as (
 
@@ -326,7 +358,11 @@ aggregated as (
         sum(WEIGHT * RISK_RATIO)                            as WEIGHTED_RISK_RATIO_TOTAL,
         sum(WEIGHT * NATIONAL_GROWTH_PROJECTED)             as WEIGHTED_GROWTH_TOTAL,
         sum(ENROLLMENT_PROPORTION * ENROLLMENT_TYPE_BENCHMARK * RISK_RATIO)
-                                                            as RISK_ADJUSTED_BENCHMARK_UNCAPPED
+                                                            as RISK_ADJUSTED_BENCHMARK_UNCAPPED,
+
+        {#- the CMS method's sum, meaningful only where the cap binds -#}
+        sum(ENROLLMENT_PROPORTION * ENROLLMENT_TYPE_BENCHMARK * {{ clipped_ratio | indent(12) }})
+                                                            as RISK_ADJUSTED_BENCHMARK_CLIPPED
 
         {%- for enrollment_type in enrollment_types %},
 
@@ -338,6 +374,8 @@ aggregated as (
                                                             as BY3_RISK_SCORE_{{ enrollment_type | upper }},
         max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then RISK_RATIO end)
                                                             as RISK_RATIO_{{ enrollment_type | upper }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then {{ clipped_ratio | indent(12) }} end)
+                                                            as RISK_RATIO_CLIPPED_{{ enrollment_type | upper }},
         max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then WEIGHT end)
                                                             as WEIGHT_{{ enrollment_type | upper }}
         {%- endfor %}
@@ -416,7 +454,16 @@ scenario as (
         case
             when HAS_COMPLETE_BENCHMARK
             then RISK_ADJUSTED_BENCHMARK_UNCAPPED * CAP_FACTOR
-        end                                                 as RISK_ADJUSTED_BENCHMARK
+        end                                                 as RISK_ADJUSTED_BENCHMARK,
+
+        {#- CMS method: the clipped ratios where the cap binds, the ratios
+            as they are where it does not, NULL where that is unknown -#}
+        case
+            when not HAS_COMPLETE_BENCHMARK or IS_CAP_BINDING is null
+                then {{ to_double('null') }}
+            when IS_CAP_BINDING then RISK_ADJUSTED_BENCHMARK_CLIPPED
+            else RISK_ADJUSTED_BENCHMARK_UNCAPPED
+        end                                                 as RISK_ADJUSTED_BENCHMARK_CMS
 
     from capped
 
@@ -475,7 +522,27 @@ select
     scenario.RISK_ADJUSTED_BENCHMARK                        as RISK_ADJUSTED_BENCHMARK,
 
     {#- annual per capita / 12 -#}
-    scenario.RISK_ADJUSTED_BENCHMARK / {{ to_double(12) }}  as RISK_ADJUSTED_BENCHMARK_PMPM,
+    scenario.RISK_ADJUSTED_BENCHMARK / {{ to_double(12) }}  as RISK_ADJUSTED_BENCHMARK_PMPM
+
+    {#- the CMS method: each type's ratio clipped at the bound where the cap
+        binds, untouched where it does not, NULL where the binding is
+        unknown — the ratio of a type the quarter has no row for stays NULL -#}
+    {%- for enrollment_type in enrollment_types %},
+    case
+        when scenario.IS_CAP_BINDING
+            then scenario.RISK_RATIO_CLIPPED_{{ enrollment_type | upper }}
+        when not scenario.IS_CAP_BINDING
+            then scenario.RISK_RATIO_{{ enrollment_type | upper }}
+    end                                                     as RISK_RATIO_CLIPPED_{{ enrollment_type | upper }}
+    {%- endfor %},
+
+    scenario.RISK_ADJUSTED_BENCHMARK_CMS                    as RISK_ADJUSTED_BENCHMARK_CMS,
+    scenario.RISK_ADJUSTED_BENCHMARK_CMS / {{ to_double(12) }}
+                                                            as RISK_ADJUSTED_BENCHMARK_CMS_PMPM,
+
+    {#- exactly 0 wherever the cap does not bind: both are then the uncapped sum -#}
+    scenario.RISK_ADJUSTED_BENCHMARK_CMS - scenario.RISK_ADJUSTED_BENCHMARK
+                                                            as RISK_ADJUSTED_BENCHMARK_METHOD_DIFFERENCE,
 
     scenario.NATIONAL_GROWTH_PROJECTED                      as NATIONAL_GROWTH_PROJECTED,
     scenario.CAP_UPPER_BOUND_SCENARIO                       as CAP_UPPER_BOUND_SCENARIO,
