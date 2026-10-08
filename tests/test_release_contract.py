@@ -12,6 +12,11 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = REPOSITORY_ROOT / "scripts" / "create_release_metadata.py"
 BUILD_RELEASE_IMAGE = REPOSITORY_ROOT / "scripts" / "build_release_image.sh"
+BUILD_IMAGE = REPOSITORY_ROOT / "scripts" / "build_image.sh"
+RELEASE_NOTES = REPOSITORY_ROOT / "scripts" / "release_notes.py"
+RELEASE_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
+BUILT_DIGEST = "sha256:" + "1" * 64
+BUILT_CONFIG_DIGEST = "sha256:" + "2" * 64
 
 # Neutral release identifiers standing in for client release evidence.
 RELEASE_ID = "2026-08-22.1"
@@ -277,7 +282,7 @@ class ReleaseBuilderTests(unittest.TestCase):
         self.directory = Path(directory.name)
         self.root = self.directory / "clone"
         (self.root / "scripts").mkdir(parents=True)
-        for script in (BUILD_RELEASE_IMAGE, GENERATOR):
+        for script in (BUILD_RELEASE_IMAGE, BUILD_IMAGE, GENERATOR):
             target = self.root / "scripts" / script.name
             target.write_bytes(script.read_bytes())
             target.chmod(0o755)
@@ -339,7 +344,14 @@ class ReleaseBuilderTests(unittest.TestCase):
                 "printf 'docker %s\\n' \"$*\" >> \"$FAKE_CALL_LOG\"\n"
                 "case \"$1\" in\n"
                 "  login) cat >/dev/null ;;\n"
-                "  build|push|pull|rm) exit 0 ;;\n"
+                "  buildx)\n"
+                "    while [ \"$#\" -gt 0 ]; do\n"
+                "      if [ \"$1\" = --metadata-file ]; then\n"
+                "        printf '{\"containerimage.digest\": \"%s\", \"containerimage.config.digest\": \"%s\"}' \"$FAKE_BUILT_DIGEST\" \"$FAKE_BUILT_CONFIG_DIGEST\" > \"$2\"\n"
+                "      fi\n"
+                "      shift\n"
+                "    done ;;\n"
+                "  push|pull|rm) exit 0 ;;\n"
                 "  create) printf 'test-container\\n' ;;\n"
                 "  cp) /bin/cp \"$FAKE_IMAGE_METADATA\" \"$3\" ;;\n"
                 "  *) exit 1 ;;\n"
@@ -369,6 +381,8 @@ class ReleaseBuilderTests(unittest.TestCase):
             **os.environ,
             "FAKE_CALL_LOG": str(self.call_log),
             "FAKE_ECR_DIGEST": ECR_DIGEST,
+            "FAKE_BUILT_DIGEST": BUILT_DIGEST,
+            "FAKE_BUILT_CONFIG_DIGEST": BUILT_CONFIG_DIGEST,
             "FAKE_IMAGE_METADATA": str(self.image_metadata),
             "FAKE_PYTHON": sys.executable,
             "PATH": f"{binary_directory}:{os.environ['PATH']}",
@@ -397,12 +411,18 @@ class ReleaseBuilderTests(unittest.TestCase):
         result = self.run_builder(REPOSITORY, RELEASE_ID, RELEASE_REF="canonical-local/main")
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        build = [call for call in self.calls() if call.startswith("docker build ")]
+        build = [call for call in self.calls() if call.startswith("docker buildx build ")]
         self.assertEqual(len(build), 1, self.calls())
         self.assertIn("--platform linux/amd64", build[0])
         self.assertIn(f"--build-arg SOURCE_COMMIT={head}", build[0])
         self.assertIn(f"--build-arg RELEASE_ID={RELEASE_ID}", build[0])
-        self.assertIn(f"--tag {REPOSITORY}:{RELEASE_ID}", build[0])
+        epoch = self.git("log", "-1", "--format=%ct", "HEAD")
+        self.assertIn(f"--build-arg SOURCE_DATE_EPOCH={epoch}", build[0])
+        self.assertIn("--provenance=false --sbom=false", build[0])
+        self.assertIn(
+            f"--output type=docker,name={REPOSITORY}:{RELEASE_ID},rewrite-timestamp=true",
+            build[0],
+        )
 
     def test_guard_rejects_source_that_is_not_the_release_reference(self) -> None:
         head = self.commit("advance past origin/main")
@@ -489,6 +509,127 @@ class ReleaseBuilderTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("uv run --frozen", result.stderr)
         self.assertEqual(self.calls(), [])
+
+    def test_guard_refuses_a_dirty_clone_before_any_registry_call(self) -> None:
+        (self.root / "README.md").write_text("edited\n", encoding="ascii")
+
+        result = self.run_builder(REPOSITORY, RELEASE_ID)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls(), [])
+
+    def test_build_image_records_the_digests_without_pushing(self) -> None:
+        record = self.directory / "record.json"
+        self.call_log.write_text("", encoding="ascii")
+        result = subprocess.run(
+            [str(self.root / "scripts" / "build_image.sh"), "mssp-connector", RELEASE_ID,
+             "--record", str(record)],
+            env=self.environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse([call for call in self.calls() if call.startswith(("docker push", "aws "))])
+        built = json.loads(record.read_text(encoding="ascii"))
+        self.assertEqual(built["manifest_digest"], BUILT_DIGEST)
+        self.assertEqual(built["config_digest"], BUILT_CONFIG_DIGEST)
+        self.assertEqual(built["image"], f"mssp-connector@{BUILT_DIGEST}")
+        self.assertEqual(built["source_commit"], self.head)
+        self.assertEqual(built["release_id"], RELEASE_ID)
+        self.assertEqual(
+            built["source_date_epoch"], int(self.git("log", "-1", "--format=%ct", "HEAD"))
+        )
+
+
+class ReleaseWorkflowTests(unittest.TestCase):
+    def test_local_image_metadata_skips_the_pull(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            image_metadata = Path(directory) / "image.json"
+            image_metadata.write_text(
+                json.dumps(
+                    {
+                        "command_contract": {
+                            "build": ["dbt seed", "dbt snapshot", "dbt run"],
+                            "test": ["dbt test"],
+                        },
+                        "dependency_sha256": {"package-lock.yml": "c" * 64, "uv.lock": "d" * 64},
+                        "manifest_sha256": {"dev": "e" * 64, "prod": "f" * 64},
+                        "release_id": RELEASE_ID,
+                        "source_commit": "a" * 40,
+                    }
+                ),
+                encoding="ascii",
+            )
+            # The fake docker refuses pull here, so success proves it was skipped
+            # and that create used the local tag.
+            binary_directory = Path(directory) / "bin"
+            binary_directory.mkdir()
+            docker = binary_directory / "docker"
+            docker.write_text(
+                "#!/bin/sh\n"
+                "case \"$1\" in\n"
+                "  create) [ \"$4\" = mssp-connector:candidate ] && printf 'c\\n' ;;\n"
+                "  cp) /bin/cp \"$FAKE_IMAGE_METADATA\" \"$3\" ;;\n"
+                "  rm) exit 0 ;;\n"
+                "  *) exit 1 ;;\n"
+                "esac\n",
+                encoding="ascii",
+            )
+            docker.chmod(0o755)
+            result = subprocess.run(
+                [sys.executable, str(GENERATOR), "release",
+                 "--image-reference", "mssp-connector@" + BUILT_DIGEST,
+                 "--local-image", "mssp-connector:candidate"],
+                env={
+                    **os.environ,
+                    "FAKE_IMAGE_METADATA": str(image_metadata),
+                    "PATH": f"{binary_directory}:{os.environ['PATH']}",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        metadata = json.loads(result.stdout)
+        self.assertEqual(metadata["image_reference"], "mssp-connector@" + BUILT_DIGEST)
+        self.assertEqual(metadata["ecr_digest"], BUILT_DIGEST)
+
+    def test_release_workflow_builds_without_publishing(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="ascii")
+
+        self.assertIn("scripts/build_image.sh", workflow)
+        self.assertIn("--local-image", workflow)
+        self.assertIn("--prerelease", workflow)
+        self.assertNotIn("docker push", workflow)
+        self.assertNotIn("--push", workflow)
+        for registry_step in ("docker/login-action", "aws-actions/", "ghcr.io", "packages: write"):
+            self.assertNotIn(registry_step, workflow)
+
+    def test_workbook_contract_is_pinned_for_the_release_notes(self) -> None:
+        pyproject = (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="ascii")
+
+        self.assertIn("[tool.cms_mssp_connector]", pyproject)
+        self.assertRegex(
+            pyproject,
+            r'workbook_contract = \{ contract = "cms-mssp-workbook-export", version = "[0-9]+\.[0-9]+\.[0-9]+" \}',
+        )
+
+    def test_changelog_section_is_required(self) -> None:
+        present = subprocess.run(
+            [sys.executable, str(RELEASE_NOTES), "changelog", "0.2.0"],
+            text=True, capture_output=True, check=False,
+        )
+        missing = subprocess.run(
+            [sys.executable, str(RELEASE_NOTES), "changelog", "99.0.0"],
+            text=True, capture_output=True, check=False,
+        )
+
+        self.assertEqual(present.returncode, 0, present.stderr)
+        self.assertTrue(present.stdout.strip())
+        self.assertNotEqual(missing.returncode, 0)
 
 
 if __name__ == "__main__":
