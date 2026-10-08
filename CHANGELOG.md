@@ -137,6 +137,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the risk-adjusted benchmark rates inherit the recovered precision on the
   next build.
 
+- `packages.yml` now pins `cms_alr_connector` to a commit (`24302c5`, the
+  merge of tuva-health/cms_alr_connector#4) instead of tracking its default
+  branch, and `package-lock.yml` moves to it from `51e1483`. That is the last
+  git dependency that was pinned only in the lock, so regenerating the lock can
+  no longer pull an unreviewed ALR commit (P-TUVA-14). The ALR change between
+  the two commits touches only its own `packages.yml`, `package-lock.yml`, and
+  `.gitignore`; the resolved packages are unchanged (`medicare_cclf_connector`
+  `603a258`, `the_tuva_project` from GitHub at `v0.17.2`, `cc3b8ce`).
+
 ### Fixed
 
 - `dbt deps` works again. The dbt Hub entry for `the_tuva_project` 1.0.0
