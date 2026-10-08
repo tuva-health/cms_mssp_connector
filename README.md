@@ -479,8 +479,14 @@ pre-release, and what "validated" does and does not mean, is in
 [`docs/client-release-consumption.md`](https://github.com/tuva-health/cms_mssp_pipeline/blob/main/docs/client-release-consumption.md).
 A fork consumes a pipeline release and a connector release together, so pick a
 connector release whose `workbook_contract` (in its release notes) is the
-contract the pipeline release exports. The connector-specific steps, with
-`upstream` as the fork's remote for this repository:
+contract the pipeline release exports.
+
+A fork proves it runs a connector release with **git**, not by comparing
+images: its commit contains the tag and differs from it only in client-specific
+paths. It then builds and deploys its own image from that commit as usual. The
+release's recorded digests and metadata are Tuva's own record of what the tag
+built (TUVA-68); a client does not rebuild the tag or compare against them. With `upstream` as the fork's remote for this
+repository:
 
 1. **Merge the tag** through an `upstream-sync/vX.Y.Z` branch and a PR into the
    fork's `main`, merging (never rebasing), never a `main` tip:
@@ -492,54 +498,43 @@ contract the pipeline release exports. The connector-specific steps, with
    git merge --no-ff vX.Y.Z -m "Merge cms_mssp_connector vX.Y.Z"
    ```
 
-2. **Check the fork changes nothing in the image.** This must print nothing:
+2. **Check conformance** on the commit you will deploy. It must print `PASS`:
 
    ```bash
-   git diff --stat vX.Y.Z upstream-sync/vX.Y.Z -- \
-     Dockerfile .dockerignore pyproject.toml uv.lock dbt_project.yml packages.yml \
-     package-lock.yml analyses macros models scripts seeds snapshots
+   scripts/check_release_conformance.sh vX.Y.Z           # checks HEAD; or name a commit
+   # or run the release's own copy of the check:
+   git show vX.Y.Z:scripts/check_release_conformance.sh | sh -s -- vX.Y.Z
    ```
 
-   If it lists anything, the fork carries model or code changes. Build and run
-   the fork's own commit, say so in the evidence, and open a PR to hoist the
-   changes into this repository.
+   `PASS` means `git merge-base --is-ancestor vX.Y.Z HEAD` holds and every path
+   in `git diff --name-only vX.Y.Z HEAD` is one of the connector's
+   client-specific paths:
 
-3. **Build the tag commit** with your own profile, not the fork's merge commit.
-   The baked `source_commit` is the checkout's `HEAD`, and `build_image.sh`
-   refuses a `HEAD` other than `RELEASE_REF`. `config/profiles.yml` is
-   gitignored, so a worktree at the tag with your profile copied in is a clean
-   clone:
+   | Path | Why it is the fork's |
+   | --- | --- |
+   | `config/profiles.yml` | The fork's dbt profile (account, role, warehouse, target databases), baked into the image. Canonical ships only `config/profiles.example.yml`. |
+   | `.gitignore` | Canonical ignores `config/profiles.yml`; a fork that commits its profile drops that line. |
+
+   Nothing else is: input database and schema reach dbt as `--vars` from the
+   runtime overlay (`scripts/run_dbt.sh`, `MSSP_DEV_DATABASE`,
+   `MSSP_PROD_DATABASE`, `MSSP_INPUT_SCHEMA`), so `dbt_project.yml`, models,
+   macros, seeds and scripts stay canonical. `FAIL` lists the canonical paths
+   the fork changed; hoist those changes into this repository with a PR and
+   validate the next release that carries them.
+
+3. **Build and deploy the fork's merge commit** as usual. `build_release_image.sh`
+   requires `HEAD` to equal `RELEASE_REF`, which defaults to `origin/main`
+   (the fork's `main`):
 
    ```bash
-   git worktree add ../mssp-connector-vX.Y.Z vX.Y.Z
-   cp config/profiles.yml ../mssp-connector-vX.Y.Z/config/
-   cd ../mssp-connector-vX.Y.Z
-   RELEASE_REF=vX.Y.Z uv run --frozen scripts/build_release_image.sh <registry>/<repository> vX.Y.Z
+   uv run --frozen scripts/build_release_image.sh <registry>/<repository> <release-id>
    ```
 
-4. **Compare the baked metadata**, not the digest (see above):
-
-   ```bash
-   image="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["image_reference"])' release-metadata/vX.Y.Z.json)"
-   docker run --rm --entrypoint cat "$image" /app/release-metadata.json > /tmp/mine-vX.Y.Z.json
-   gh release download vX.Y.Z -R tuva-health/cms_mssp_connector -p 'release-metadata-vX.Y.Z.json' -D /tmp
-   python3 - /tmp/mine-vX.Y.Z.json /tmp/release-metadata-vX.Y.Z.json <<'PY'
-   import json, sys
-   mine, release = (json.load(open(p)) for p in sys.argv[1:])
-   for key in ("source_commit", "release_id", "dependency_sha256", "command_contract"):
-       print(f"{key:18}", "match" if mine[key] == release[key] else f"DIFFER release={release[key]} mine={mine[key]}")
-   PY
-   ```
-
-   All four must match. `manifest_sha256` and the digest will not. A match
-   shows you built the release's source with its locked dependencies. It does
-   not prove the image's bytes equal the release build's: the dbt manifests
-   and your profile differ by design.
-
-5. **Pin** `CONNECTOR_IMAGE` to `$image` (a `repository@sha256:` digest) in the
-   pipeline overlay, run the dev sequence, and post the evidence (the
-   connector lines of the template cover steps 2 and 4), as in the pipeline
-   document.
+   Pin `CONNECTOR_IMAGE` to the `image_reference` in
+   `release-metadata/<release-id>.json` (a `repository@sha256:` digest) in the
+   pipeline overlay, run the dev sequence, and post the conformance output with
+   the run's results in the pipeline's `Validate vX.Y.Z (<client>)` issue, as
+   in the pipeline document.
 
 ## Project Notes
 
