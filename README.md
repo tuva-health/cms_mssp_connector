@@ -443,35 +443,14 @@ records what it builds to.
    --local-image`, rebuilds on a second runner, and creates the pre-release
    with `release-metadata-<tag>.json` and `image-digests-<tag>.json` attached.
 
-### Checking your build against a release
+### Release digests and metadata
 
-The connector image is **not** byte-reproducible, so do not expect your digest
-to match the release's. Two CI builds of one commit differ in:
-
-- the dbt manifests (`target/manifest.json`, `target/prod/manifest.json`):
-  dbt stamps every node with a `created_at` time at parse, so the manifests,
-  their `manifest_sha256` in `release-metadata.json`, and the image digest
-  change on every build;
-- the `uv sync` layer: some compiled `.pyc` files, and
-  `dbt/adapters/__init__.py`, which more than one installed package ships;
-  the content that ends up there varied between builds;
-- the `.git` metadata of the dbt packages `dbt deps` clones from git.
-
-Your image also bakes in your own `config/profiles.yml`. Compare what is
-deterministic instead, the metadata baked into your image against the release's
-`release-metadata-<tag>.json`:
-
-```bash
-docker run --rm --entrypoint cat <your-image> /app/release-metadata.json
-```
-
-`source_commit`, `release_id` (when you build with the tag as the release ID),
-`dependency_sha256` (`uv.lock`, `package-lock.yml`), and `command_contract`
-must be equal. `manifest_sha256` will differ for the reasons above.
-
-The build still sets `SOURCE_DATE_EPOCH` to the commit time, rewrites layer
-timestamps to it, and turns off attestations. The base images and the Debian
-snapshot are pinned, so every layer outside the three above already reproduces.
+The image digests and `release-metadata-<tag>.json` a release records are
+Tuva's internal record of what the tag built. The connector image is not
+byte-reproducible (dbt stamps parse times into its manifests), so they are not
+a target for a client build. Clients do not rebuild the tag or compare against
+them; they follow `cms_mssp_pipeline`'s
+[`docs/client-release-consumption.md`](https://github.com/tuva-health/cms_mssp_pipeline/blob/main/docs/client-release-consumption.md).
 
 ## Project Notes
 
