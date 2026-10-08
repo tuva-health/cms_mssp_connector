@@ -4,7 +4,7 @@ packages:
     version: 1.3.3
   - git: https://github.com/tuva-health/cms_alr_connector.git
     name: cms_aalr_connector
-    revision: 51e148339dae0a6d72dda45f70a02f7a6720d064
+    revision: 24302c5b931575937e715170ac4bb4c4e5cf37af
   - git: https://github.com/tuva-health/medicare_cclf_connector.git
     name: medicare_cclf_connector
     revision: 603a258e3c649d6a4eb7d0835e8efc7d79371204
@@ -20,4 +20,4 @@ packages:
   - name: dbt_date
     package: godatadriven/dbt_date
     version: 0.17.2
-sha1_hash: e9f7abdf88ff664c9ff0454f87486cc427532116
+sha1_hash: 30b4d5882447b28635800769a6de89160df4d41a
