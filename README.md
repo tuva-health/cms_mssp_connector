@@ -471,6 +471,76 @@ The build still sets `SOURCE_DATE_EPOCH` to the commit time, rewrites layer
 timestamps to it, and turns off attestations, and the base images and Debian
 snapshot are pinned, so every layer outside those three reproduces.
 
+### Consuming a release in a client fork
+
+The whole loop, from merging the tag to the maintainer promoting the
+pre-release, and what "validated" does and does not mean, is in
+`cms_mssp_pipeline`'s
+[`docs/client-release-consumption.md`](https://github.com/tuva-health/cms_mssp_pipeline/blob/main/docs/client-release-consumption.md).
+A fork consumes a pipeline release and a connector release together, so pick a
+connector release whose `workbook_contract` (in its release notes) is the
+contract the pipeline release exports. The connector-specific steps, with
+`upstream` as the fork's remote for this repository:
+
+1. **Merge the tag** through an `upstream-sync/vX.Y.Z` branch and a PR into the
+   fork's `main`, merging (never rebasing), never a `main` tip:
+
+   ```bash
+   git fetch upstream --tags
+   git rev-parse 'vX.Y.Z^{commit}'     # must equal "Source commit" in the release notes
+   git switch -c upstream-sync/vX.Y.Z main
+   git merge --no-ff vX.Y.Z -m "Merge cms_mssp_connector vX.Y.Z"
+   ```
+
+2. **Check the fork changes nothing in the image.** This must print nothing:
+
+   ```bash
+   git diff --stat vX.Y.Z upstream-sync/vX.Y.Z -- \
+     Dockerfile .dockerignore pyproject.toml uv.lock dbt_project.yml packages.yml \
+     package-lock.yml analyses macros models scripts seeds snapshots
+   ```
+
+   If it lists anything, the fork carries model or code changes. Build and run
+   the fork's own commit, say so in the evidence, and open a PR to hoist the
+   changes into this repository.
+
+3. **Build the tag commit** with your own profile, not the fork's merge commit.
+   The baked `source_commit` is the checkout's `HEAD`, and `build_image.sh`
+   refuses a `HEAD` other than `RELEASE_REF`. `config/profiles.yml` is
+   gitignored, so a worktree at the tag with your profile copied in is a clean
+   clone:
+
+   ```bash
+   git worktree add ../mssp-connector-vX.Y.Z vX.Y.Z
+   cp config/profiles.yml ../mssp-connector-vX.Y.Z/config/
+   cd ../mssp-connector-vX.Y.Z
+   RELEASE_REF=vX.Y.Z uv run --frozen scripts/build_release_image.sh <registry>/<repository> vX.Y.Z
+   ```
+
+4. **Compare the baked metadata**, not the digest (see above):
+
+   ```bash
+   image="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["image_reference"])' release-metadata/vX.Y.Z.json)"
+   docker run --rm --entrypoint cat "$image" /app/release-metadata.json > /tmp/mine-vX.Y.Z.json
+   gh release download vX.Y.Z -R tuva-health/cms_mssp_connector -p 'release-metadata-vX.Y.Z.json' -D /tmp
+   python3 - /tmp/mine-vX.Y.Z.json /tmp/release-metadata-vX.Y.Z.json <<'PY'
+   import json, sys
+   mine, release = (json.load(open(p)) for p in sys.argv[1:])
+   for key in ("source_commit", "release_id", "dependency_sha256", "command_contract"):
+       print(f"{key:18}", "match" if mine[key] == release[key] else f"DIFFER release={release[key]} mine={mine[key]}")
+   PY
+   ```
+
+   All four must match. `manifest_sha256` and the digest will not. A match
+   shows you built the release's source with its locked dependencies. It does
+   not prove the image's bytes equal the release build's: the dbt manifests
+   and your profile differ by design.
+
+5. **Pin** `CONNECTOR_IMAGE` to `$image` (a `repository@sha256:` digest) in the
+   pipeline overlay, run the dev sequence, and post the evidence (the
+   connector lines of the template cover steps 2 and 4), as in the pipeline
+   document.
+
 ## Project Notes
 
 - Staging models are configured as views in `dbt_project.yml`.

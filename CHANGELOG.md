@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`[tool.cms_mssp_connector] workbook_contract`), and
   `scripts/create_release_metadata.py release --local-image` reads the baked
   metadata from an image that was built but not pushed.
+- README *Consuming a release in a client fork* (TUVA-69): merge the tag
+  through `upstream-sync/*`, build the tag commit with your own profile,
+  compare the baked metadata with the release's, and pin `CONNECTOR_IMAGE`;
+  the full loop is in `cms_mssp_pipeline` `docs/client-release-consumption.md`.
 - The Tuva semantic layer is part of the build contract. `dbt_project.yml`
   sets `semantic_layer_enabled: true`, so the `build` phase materialises the
   22 semantic layer facts and dimensions (with their staging models and
