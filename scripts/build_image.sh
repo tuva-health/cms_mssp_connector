@@ -114,7 +114,8 @@ import sys
 from pathlib import Path
 
 build_metadata, repository, source_commit, release_id, epoch, record_path = sys.argv[1:]
-built = json.loads(Path(build_metadata).read_text(encoding="ascii"))
+# buildx metadata is JSON (UTF-8) and can carry non-ASCII text from the build.
+built = json.loads(Path(build_metadata).read_text(encoding="utf-8"))
 digest = built.get("containerimage.digest", "")
 config_digest = built.get("containerimage.config.digest", "")
 for label, value in (("manifest", digest), ("config", config_digest)):
