@@ -378,8 +378,12 @@ uv run --frozen scripts/build_release_image.sh <registry>/<repository> <release-
 ## Continuous Integration
 
 `.github/workflows/ci.yml` runs on every pull request to `main` and on every
-push to `main`, with no warehouse access and no client secrets. Its five jobs
-are the checks to require on `main`:
+push to `main`, with no warehouse access and no client secrets. Changes land
+on `main` only through a pull request whose required checks are green on a
+branch that is up to date with `main` (no approvals required; no force-push or
+deletion; merge commits and squash merges, not rebase merges). Its five jobs
+are those required checks; their names are what the protection rule matches,
+so rename one only together with the rule:
 
 - `test` — `uv sync --frozen` then the contract tests under `tests/`
   (runtime, manifest, release and dependency contracts).
