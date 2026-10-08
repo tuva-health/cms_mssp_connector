@@ -395,7 +395,7 @@ class ManifestContractTests(unittest.TestCase):
 
     def test_rejects_an_unapproved_package_revision(self) -> None:
         lock = (REPOSITORY_ROOT / "package-lock.yml").read_text(encoding="ascii")
-        errors = self.verify(valid_manifest(), lock.replace("0.17.2", "0.17.1", 1))
+        errors = self.verify(valid_manifest(), lock.replace("cc3b8ce89bc43925e8c493bf92d8eb1c36da6061", "0" * 40, 1))
 
         self.assertTrue(any("the_tuva_project" in error for error in errors))
 

@@ -114,6 +114,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the risk-adjusted benchmark rates inherit the recovered precision on the
   next build.
 
+### Fixed
+
+- `dbt deps` works again. The dbt Hub entry for `the_tuva_project` 1.0.0
+  publishes `require_dbt_version` as the single string `">=1.10.5,<3.0.0"`,
+  which dbt-core's semver parser rejects, and dbt reads every Hub version of a
+  package even when `package-lock.yml` pins one. The lock now installs
+  `the_tuva_project` from GitHub at the `v0.17.2` tag commit (`cc3b8ce`), the
+  same code the Hub's 0.17.2 served, so `dbt deps` never queries the Hub for
+  it. This matches how `medicare_cclf_connector` now installs it.
+
 ## [0.2.0] - 2026-09-04
 
 First formal release of the converged baseline. Validated end to end in a

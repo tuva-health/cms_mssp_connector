@@ -8,9 +8,9 @@ packages:
   - git: https://github.com/tuva-health/medicare_cclf_connector.git
     name: medicare_cclf_connector
     revision: 603a258e3c649d6a4eb7d0835e8efc7d79371204
-  - name: the_tuva_project
-    package: tuva-health/the_tuva_project
-    version: 0.17.2
+  - git: https://github.com/tuva-health/the_tuva_project.git
+    name: the_tuva_project
+    revision: cc3b8ce89bc43925e8c493bf92d8eb1c36da6061
   - name: dbt_expectations
     package: metaplane/dbt_expectations
     version: 0.10.10
