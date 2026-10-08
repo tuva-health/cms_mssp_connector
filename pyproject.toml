@@ -15,3 +15,9 @@ dependencies = [
 
 [dependency-groups]
 dev = []
+
+[tool.cms_mssp_connector]
+# The workbook export contract (cms_mssp_pipeline contracts/workbook/v1.json)
+# whose twenty cell-grain relations the benchmark models read. Every GitHub
+# Release names it; bump it together with the models when the contract changes.
+workbook_contract = { contract = "cms-mssp-workbook-export", version = "1.0.0" }

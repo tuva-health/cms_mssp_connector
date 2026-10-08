@@ -1,0 +1,224 @@
+# Release gate for the canonical connector.
+#
+# On a `v*` tag: prove the tag is releasable (on main, matches pyproject.toml,
+# has a CHANGELOG entry), build the release image with scripts/build_image.sh,
+# record its release metadata with scripts/create_release_metadata.py, rebuild
+# on a second runner to check whether the build reproduces, and create a GitHub
+# pre-release carrying the CHANGELOG section, the workbook contract version, the
+# image digests and the release metadata.
+#
+# The image is NOT pushed to any registry and no registry credential is used.
+# Clients build their own image (their dbt profile is baked in); the release
+# records what the tag builds to. The only write is the GitHub Release, made
+# with this workflow's GITHUB_TOKEN.
+#
+# Anything other than a tag push is a dry run: everything above except creating
+# the Release (the notes and assets go to the job summary and a workflow
+# artifact instead). That covers workflow_dispatch and pull requests that touch
+# the release machinery, so a change to it is rehearsed before it merges.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/release.yml
+      - Dockerfile
+      - scripts/build_image.sh
+      - scripts/create_release_metadata.py
+      - scripts/release_notes.py
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to rehearse (default: v<pyproject version>). Dry run only; nothing is published."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Never cancel a tag release; a newer push to a PR supersedes its rehearsal.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Same uv release as the Dockerfile's uv stage (see ci.yml).
+  UV_VERSION: "0.10.9"
+  IMAGE_NAME: cms-mssp-connector
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      dry_run: ${{ steps.tag.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            tag="$GITHUB_REF_NAME"
+            dry_run=false
+          else
+            tag="${INPUT_TAG:-v$version}"
+            dry_run=true
+          fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::$tag is not a semver tag (vX.Y.Z)"
+            exit 1
+          fi
+          if [[ "${tag#v}" != "$version" ]]; then
+            echo "::error::tag $tag does not match pyproject.toml version $version"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag version=$version dry_run=$dry_run commit=$GITHUB_SHA"
+
+      - name: Check the commit is on main
+        env:
+          DRY_RUN: ${{ steps.tag.outputs.dry_run }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "$GITHUB_SHA is on main"
+          elif [[ "$DRY_RUN" == "true" ]]; then
+            echo "::warning::$GITHUB_SHA is not on main; a real tag here would be refused"
+          else
+            echo "::error::tagged commit $GITHUB_SHA is not on main"
+            exit 1
+          fi
+
+      - name: Check the CHANGELOG has a section for the version
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: python3 scripts/release_notes.py changelog "${TAG#v}"
+
+  build:
+    name: build${{ matrix.rebuild && ' (rebuild)' || '' }}
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: true
+      matrix:
+        # The rebuild is a second, independent build on a fresh runner with no
+        # shared cache: the reproducibility check.
+        rebuild: [false, true]
+    env:
+      TAG: ${{ needs.verify.outputs.tag }}
+      SUFFIX: ${{ matrix.rebuild && '-rebuild' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Render a placeholder profile from the example
+        # The Dockerfile copies config/profiles.yml into the image; it is
+        # git-ignored, so the clean-clone guard does not see it.
+        run: scripts/render_placeholder_profile.sh > config/profiles.yml
+
+      - name: Build the image (loaded locally, no push, no cache)
+        env:
+          # The verify job has already checked the commit is on main.
+          RELEASE_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out"
+          uv run --frozen scripts/build_image.sh "$IMAGE_NAME" "$TAG" \
+            --record "$out/build-record-$TAG$SUFFIX.json"
+          echo "OUT=$out" >> "$GITHUB_ENV"
+
+      - name: Record the release metadata from the built image
+        run: |
+          set -euo pipefail
+          digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["manifest_digest"])' "$OUT/build-record-$TAG$SUFFIX.json")"
+          uv run --frozen python scripts/create_release_metadata.py release \
+            --image-reference "$IMAGE_NAME@$digest" \
+            --local-image "$IMAGE_NAME:$TAG" \
+            --output "$OUT/release-metadata-$TAG$SUFFIX.json"
+          cat "$OUT/release-metadata-$TAG$SUFFIX.json"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build${{ env.SUFFIX }}
+          path: ${{ env.OUT }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: release
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.verify.outputs.tag }}
+      DRY_RUN: ${{ needs.verify.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: build*
+          path: ${{ runner.temp }}/builds
+          merge-multiple: true
+
+      - name: Assemble the release notes and assets
+        run: |
+          set -euo pipefail
+          builds="$RUNNER_TEMP/builds"
+          assets="$RUNNER_TEMP/assets"
+          mkdir -p "$assets"
+          # The rebuild's metadata is evidence only; the release carries the first build's.
+          cp "$builds/release-metadata-$TAG.json" "$assets/"
+          python3 scripts/release_notes.py notes \
+            --tag "$TAG" \
+            --records "$builds" \
+            --metadata "$builds/release-metadata-$TAG.json" \
+            --digests-out "$assets/image-digests-$TAG.json" \
+            > "$RUNNER_TEMP/notes.md"
+          ls -l "$assets"
+          cat "$RUNNER_TEMP/notes.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the rehearsed release (dry run)
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dry-run-${{ env.TAG }}
+          path: |
+            ${{ runner.temp }}/notes.md
+            ${{ runner.temp }}/assets
+          retention-days: 14
+
+      - name: Create the GitHub pre-release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --verify-tag \
+            --prerelease \
+            --title "$TAG" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            "$RUNNER_TEMP"/assets/*

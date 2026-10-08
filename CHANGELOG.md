@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Tag-triggered release workflow (`.github/workflows/release.yml`, TUVA-68).
+  A `v*` tag on `main` whose version matches `pyproject.toml` and has a
+  CHANGELOG section is built with `scripts/build_image.sh` against the
+  placeholder profile and rebuilt on a second runner. A GitHub pre-release is
+  then created with the CHANGELOG section, the workbook contract version, the
+  image digests, the rebuild verdict, and the release metadata. No image is
+  pushed anywhere. Any trigger other than a tag push is a dry run. The
+  workbook contract the models read is pinned in `pyproject.toml`
+  (`[tool.cms_mssp_connector] workbook_contract`), and
+  `scripts/create_release_metadata.py release --local-image` reads the baked
+  metadata from an image that was built but not pushed.
 - The Tuva semantic layer is part of the build contract. `dbt_project.yml`
   sets `semantic_layer_enabled: true`, so the `build` phase materialises the
   22 semantic layer facts and dimensions (with their staging models and
@@ -108,6 +119,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   describe both and why the member fact carries one.
 
 ### Changed
+
+- The image build moved from `scripts/build_release_image.sh` into
+  `scripts/build_image.sh`, which the push script and the release workflow
+  both call. Builds now go through `docker buildx build` with `SOURCE_DATE_EPOCH`
+  set to the commit time, layer timestamps rewritten to it, and provenance and
+  SBOM attestations off. Needs BuildKit 0.13 or newer.
 
 - `cms_alr_connector` is pinned at `51e1483`, which keeps CMS-HCC risk scores
   at ten decimals instead of rounding them to two. The member risk ratios and

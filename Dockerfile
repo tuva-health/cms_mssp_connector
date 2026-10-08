@@ -3,6 +3,10 @@ FROM python:3.10.21-slim-bookworm@sha256:7ed92b32353e8d8bd865b5ba811e0315d3999c3
 
 ARG SOURCE_COMMIT
 ARG RELEASE_ID
+# Commit time, supplied by scripts/build_image.sh. BuildKit clamps image and layer
+# timestamps to it; declaring it here also exposes it to RUN, so the bytecode uv
+# compiles uses hash-based invalidation instead of source mtimes.
+ARG SOURCE_DATE_EPOCH
 
 ENV DBT_PROFILES_DIR=/app/config \
     DBT_SEND_ANONYMOUS_USAGE_STATS=false \

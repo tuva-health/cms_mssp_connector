@@ -355,9 +355,10 @@ dbt docs serve
 
 A release is one immutable image built from a clean clone whose `HEAD` is the
 agreed release commit. `scripts/build_release_image.sh` builds it for
-`linux/amd64`, pushes it under the release ID as its tag, resolves the pushed
-`repository@sha256:` digest from ECR and binds that digest to the metadata baked
-into the image:
+`linux/amd64` with `scripts/build_image.sh` (the one build recipe, shared with
+the release workflow), pushes it under the release ID as its tag, resolves the
+pushed `repository@sha256:` digest from ECR and binds that digest to the
+metadata baked into the image:
 
 ```bash
 uv run --frozen scripts/build_release_image.sh <registry>/<repository> <release-id>
@@ -404,13 +405,71 @@ so rename one only together with the rule:
 Live `dbt build` and `dbt test` runs against a warehouse remain in the client
 repositories; this workflow never runs them.
 
+`.github/workflows/release.yml` is the release gate (see [Releases](#releases)).
+Any trigger other than a tag push is a dry run: `workflow_dispatch`, or a pull
+request that changes `release.yml`, `Dockerfile`, `scripts/build_image.sh`,
+`scripts/create_release_metadata.py` or `scripts/release_notes.py`. A dry run
+does everything except create the Release, and uploads the notes and assets as
+the `release-dry-run-<tag>` artifact. It is not a required check.
+
 ## Releases
 
-Releases are semver tags `vX.Y.Z` on `main`. Each one has an entry in
-[`CHANGELOG.md`](CHANGELOG.md) and a GitHub Release carrying the immutable
-image digest and the release metadata produced by
-`scripts/build_release_image.sh`. A release stays marked pre-release until a
-client deployment has validated it end to end.
+Releases are semver tags `vX.Y.Z` on `main`. Pushing the tag runs
+`.github/workflows/release.yml`, which creates a GitHub Release marked
+**pre-release** carrying the CHANGELOG section, the workbook contract version
+(`[tool.cms_mssp_connector] workbook_contract` in `pyproject.toml`: the
+`cms_mssp_pipeline` export the benchmark models read), the image digests, and
+the release metadata. A release stays a pre-release until a client deployment
+has validated it end to end.
+
+**No image is published.** Each client builds its own image (with its own dbt
+profile baked in) and pushes it to its own registry with
+`scripts/build_release_image.sh`. The release proves the tag builds and
+records what it builds to.
+
+### Cutting a release
+
+1. On a branch, bump `version` in `pyproject.toml`, move the `[Unreleased]`
+   CHANGELOG entries under `## [X.Y.Z] - <date>`, and bump `workbook_contract`
+   if the models now read a different contract version. Land it on `main`
+   through a PR.
+2. Tag the merge commit on `main` and push the tag:
+
+   ```bash
+   git fetch origin && git tag -a vX.Y.Z origin/main -m "vX.Y.Z" && git push origin vX.Y.Z
+   ```
+
+3. The workflow refuses the tag unless the commit is on `main`, the tag equals
+   `v` + the `pyproject.toml` version, and CHANGELOG has a non-empty section
+   for it. It then builds the image with `scripts/build_image.sh` against the
+   placeholder profile (`linux/amd64`, loaded locally, no push, no cache),
+   binds the baked metadata with `scripts/create_release_metadata.py release
+   --local-image`, rebuilds on a second runner, and creates the pre-release
+   with `release-metadata-<tag>.json` and `image-digests-<tag>.json` attached.
+
+### Release digests and metadata
+
+The image digests and `release-metadata-<tag>.json` a release records are
+Tuva's internal record of what the tag built. Clients do not rebuild the tag or
+compare against them; they follow `cms_mssp_pipeline`'s
+[`docs/client-release-consumption.md`](https://github.com/tuva-health/cms_mssp_pipeline/blob/main/docs/client-release-consumption.md).
+
+Maintainer note: the connector image is **not** byte-reproducible, so the
+release's rebuild is expected to report a different config digest. Two CI
+builds of one commit differ in:
+
+- the dbt manifests (`target/manifest.json`, `target/prod/manifest.json`): dbt
+  stamps every node with a `created_at` time at parse, so the manifests, their
+  `manifest_sha256` in `release-metadata.json`, and the image digest change on
+  every build;
+- the `uv sync` layer: some compiled `.pyc` files, and
+  `dbt/adapters/__init__.py`, which more than one installed package ships; its
+  content varied between builds depending on which package was installed last;
+- the `.git` metadata of the dbt packages `dbt deps` clones from git.
+
+The build still sets `SOURCE_DATE_EPOCH` to the commit time, rewrites layer
+timestamps to it, and turns off attestations, and the base images and Debian
+snapshot are pinned, so every layer outside those three reproduces.
 
 ## Project Notes
 

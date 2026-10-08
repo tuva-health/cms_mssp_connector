@@ -76,12 +76,17 @@ def create_release_metadata(args: argparse.Namespace) -> int:
         return 1
     container_id = ""
     try:
-        subprocess.run(
-            ["docker", "pull", "--platform", "linux/amd64", args.image_reference],
-            check=True,
-        )
+        # --local-image reads the baked metadata from an image that was built
+        # but never pushed (the release workflow); otherwise pull the pushed
+        # digest so the metadata provably comes from what the registry holds.
+        source = args.local_image or args.image_reference
+        if not args.local_image:
+            subprocess.run(
+                ["docker", "pull", "--platform", "linux/amd64", args.image_reference],
+                check=True,
+            )
         container_id = subprocess.run(
-            ["docker", "create", "--platform", "linux/amd64", args.image_reference],
+            ["docker", "create", "--platform", "linux/amd64", source],
             check=True,
             capture_output=True,
             text=True,
@@ -149,6 +154,11 @@ def main() -> int:
 
     release = modes.add_parser("release", help="bind baked metadata to an ECR digest")
     release.add_argument("--image-reference", required=True)
+    release.add_argument(
+        "--local-image",
+        help="read the baked metadata from this local image instead of pulling "
+        "--image-reference (for an image that was built but not pushed)",
+    )
     release.add_argument("--output", type=Path)
     release.set_defaults(handler=create_release_metadata)
 
