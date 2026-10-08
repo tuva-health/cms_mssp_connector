@@ -446,11 +446,26 @@ records what it builds to.
 ### Release digests and metadata
 
 The image digests and `release-metadata-<tag>.json` a release records are
-Tuva's internal record of what the tag built. The connector image is not
-byte-reproducible (dbt stamps parse times into its manifests), so they are not
-a target for a client build. Clients do not rebuild the tag or compare against
-them; they follow `cms_mssp_pipeline`'s
+Tuva's internal record of what the tag built. Clients do not rebuild the tag or
+compare against them; they follow `cms_mssp_pipeline`'s
 [`docs/client-release-consumption.md`](https://github.com/tuva-health/cms_mssp_pipeline/blob/main/docs/client-release-consumption.md).
+
+Maintainer note: the connector image is **not** byte-reproducible, so the
+release's rebuild is expected to report a different config digest. Two CI
+builds of one commit differ in:
+
+- the dbt manifests (`target/manifest.json`, `target/prod/manifest.json`): dbt
+  stamps every node with a `created_at` time at parse, so the manifests, their
+  `manifest_sha256` in `release-metadata.json`, and the image digest change on
+  every build;
+- the `uv sync` layer: some compiled `.pyc` files, and
+  `dbt/adapters/__init__.py`, which more than one installed package ships; its
+  content varied between builds depending on which package was installed last;
+- the `.git` metadata of the dbt packages `dbt deps` clones from git.
+
+The build still sets `SOURCE_DATE_EPOCH` to the commit time, rewrites layer
+timestamps to it, and turns off attestations, and the base images and Debian
+snapshot are pinned, so every layer outside those three reproduces.
 
 ## Project Notes
 

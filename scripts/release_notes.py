@@ -27,6 +27,10 @@ except ModuleNotFoundError:  # Python 3.10, the project floor
     tomllib = None
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+# Client-facing adoption path (the pipeline repository owns the consumption doc).
+CONSUMPTION_DOC_URL = (
+    "https://github.com/tuva-health/cms_mssp_pipeline/blob/main/docs/client-release-consumption.md"
+)
 
 
 def changelog_section(version: str) -> str:
@@ -96,12 +100,15 @@ def render(tag: str, record: dict, metadata: dict, check: "dict | None", contrac
         f"`package-lock.yml` sha256 `{metadata['dependency_sha256']['package-lock.yml']}`",
         f"- **SOURCE_DATE_EPOCH:** `{record['source_date_epoch']}` (commit time)",
         "",
-        "## Image digests",
+        "## Recorded image digests",
         "",
         "Built in CI by `scripts/build_image.sh` for `linux/amd64` with the "
         "placeholder profile from `scripts/render_placeholder_profile.sh`. **No "
-        "image is published**; build your own from this tag (see README, "
-        "*Releases*).",
+        "image is published.** These digests and the metadata below are recorded "
+        "for Tuva's reproducibility check; they are not a target for a client "
+        "build. To adopt this release, follow the consumption doc, "
+        f"`cms_mssp_pipeline`'s [`docs/client-release-consumption.md`]({CONSUMPTION_DOC_URL}), "
+        "and run its git conformance check.",
         "",
         "| config digest (image ID) | manifest digest |",
         "| --- | --- |",
@@ -121,11 +128,9 @@ def render(tag: str, record: dict, metadata: dict, check: "dict | None", contrac
         )
         if not check["config_digest_match"]:
             out.append(
-                "The dbt manifests baked into the image carry a generation time and "
-                "invocation ID, so the digest identifies this CI build only. Compare "
-                "a client build by its baked `/app/release-metadata.json` instead "
-                "(source commit, dependency checksums, command contract); see README, "
-                "*Releases*."
+                "Expected: the dbt manifests baked into the image carry a generation "
+                "time and invocation ID, so the digest identifies this CI build only "
+                "(see README, *Release digests and metadata*)."
             )
     out += [
         "",

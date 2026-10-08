@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -630,6 +631,49 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(present.returncode, 0, present.stderr)
         self.assertTrue(present.stdout.strip())
         self.assertNotEqual(missing.returncode, 0)
+
+    def test_release_notes_record_digests_and_send_clients_to_the_conformance_check(self) -> None:
+        # release_notes.py reads pyproject.toml with tomllib (3.11+); the release
+        # workflow runs it with the runner's python3, so do the same on a 3.10 venv.
+        candidates = [sys.executable] if sys.version_info >= (3, 11) else []
+        candidates += ["python3.13", "python3.12", "python3.11", "/usr/bin/python3"]
+        python = next(
+            (c for c in candidates if shutil.which(c) and subprocess.run(
+                [c, "-c", "import tomllib"], capture_output=True, check=False
+            ).returncode == 0),
+            None,
+        )
+        if python is None:
+            self.skipTest("no Python 3.11+ interpreter for release_notes.py")
+        tag = "v0.2.0"
+        with tempfile.TemporaryDirectory() as directory:
+            records = Path(directory)
+            for name, config in ((f"build-record-{tag}.json", "2"), (f"build-record-{tag}-rebuild.json", "3")):
+                (records / name).write_text(json.dumps({
+                    "release_id": tag,
+                    "source_commit": "a" * 40,
+                    "source_date_epoch": 1,
+                    "platform": "linux/amd64",
+                    "config_digest": "sha256:" + config * 64,
+                    "manifest_digest": BUILT_DIGEST,
+                }), encoding="ascii")
+            metadata = records / "metadata.json"
+            metadata.write_text(json.dumps({
+                "source_commit": "a" * 40,
+                "dependency_sha256": {"uv.lock": "c" * 64, "package-lock.yml": "d" * 64},
+            }), encoding="ascii")
+            notes = subprocess.run(
+                [python, str(RELEASE_NOTES), "notes", "--tag", tag,
+                 "--records", str(records), "--metadata", str(metadata)],
+                text=True, capture_output=True, check=False,
+            )
+
+        self.assertEqual(notes.returncode, 0, notes.stderr)
+        self.assertIn("sha256:" + "2" * 64, notes.stdout)
+        self.assertIn("docs/client-release-consumption.md", notes.stdout)
+        self.assertIn("conformance check", notes.stdout)
+        self.assertNotIn("build your own", notes.stdout)
+        self.assertNotIn("/app/release-metadata.json", notes.stdout)
 
 
 if __name__ == "__main__":
