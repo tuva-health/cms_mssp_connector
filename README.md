@@ -450,9 +450,8 @@ records what it builds to.
 ### Release digests and metadata
 
 The image digests and `release-metadata-<tag>.json` a release records are
-Tuva's internal record of what the tag built. Clients do not rebuild the tag or
-compare against them; they follow `cms_mssp_pipeline`'s
-[`docs/client-release-consumption.md`](https://github.com/tuva-health/cms_mssp_pipeline/blob/main/docs/client-release-consumption.md).
+Tuva's internal record of what the tag built, not a target for a client build;
+clients follow *Consuming a release in a client fork* below.
 
 Maintainer note: the connector image is **not** byte-reproducible, so the
 release's rebuild is expected to report a different config digest. Two CI
@@ -470,6 +469,70 @@ builds of one commit differ in:
 The build still sets `SOURCE_DATE_EPOCH` to the commit time, rewrites layer
 timestamps to it, and turns off attestations, and the base images and Debian
 snapshot are pinned, so every layer outside those three reproduces.
+
+### Consuming a release in a client fork
+
+The whole loop, from merging the tag to the maintainer promoting the
+pre-release, and what "validated" does and does not mean, is in
+`cms_mssp_pipeline`'s
+[`docs/client-release-consumption.md`](https://github.com/tuva-health/cms_mssp_pipeline/blob/main/docs/client-release-consumption.md).
+A fork consumes a pipeline release and a connector release together, so pick a
+connector release whose `workbook_contract` (in its release notes) is the
+contract the pipeline release exports.
+
+A fork proves it runs a connector release with **git**, not by comparing
+images: its commit contains the tag and differs from it only in client-specific
+paths. It then builds and deploys its own image from that commit as usual; it
+does not rebuild the tag or compare against the release's digests or metadata.
+With `upstream` as the fork's remote for this repository:
+
+1. **Merge the tag** through an `upstream-sync/vX.Y.Z` branch and a PR into the
+   fork's `main`, merging (never rebasing), never a `main` tip:
+
+   ```bash
+   git fetch upstream --tags
+   git rev-parse 'vX.Y.Z^{commit}'     # must equal "Source commit" in the release notes
+   git switch -c upstream-sync/vX.Y.Z main
+   git merge --no-ff vX.Y.Z -m "Merge cms_mssp_connector vX.Y.Z"
+   ```
+
+2. **Check conformance** on the commit you will deploy. It must print `PASS`:
+
+   ```bash
+   scripts/check_release_conformance.sh vX.Y.Z           # checks HEAD; or name a commit
+   # or run the release's own copy of the check:
+   git show vX.Y.Z:scripts/check_release_conformance.sh | sh -s -- vX.Y.Z
+   ```
+
+   `PASS` means `git merge-base --is-ancestor vX.Y.Z HEAD` holds and every path
+   in `git diff --name-only vX.Y.Z HEAD` is one of the connector's
+   client-specific paths:
+
+   | Path | Why it is the fork's |
+   | --- | --- |
+   | `config/profiles.yml` | The fork's dbt profile (account, role, warehouse, target databases), baked into the image. Canonical ships only `config/profiles.example.yml`. |
+   | `.gitignore` | Canonical ignores `config/profiles.yml`; a fork that commits its profile drops that line. |
+
+   Nothing else is: input database and schema reach dbt as `--vars` from the
+   runtime overlay (`scripts/run_dbt.sh`, `MSSP_DEV_DATABASE`,
+   `MSSP_PROD_DATABASE`, `MSSP_INPUT_SCHEMA`), so `dbt_project.yml`, models,
+   macros, seeds and scripts stay canonical. `FAIL` lists the canonical paths
+   the fork changed; hoist those changes into this repository with a PR and
+   validate the next release that carries them.
+
+3. **Build and deploy the fork's merge commit** as usual. `build_release_image.sh`
+   requires `HEAD` to equal `RELEASE_REF`, which defaults to `origin/main`
+   (the fork's `main`):
+
+   ```bash
+   uv run --frozen scripts/build_release_image.sh <registry>/<repository> <release-id>
+   ```
+
+   Pin `CONNECTOR_IMAGE` to the `image_reference` in
+   `release-metadata/<release-id>.json` (a `repository@sha256:` digest) in the
+   pipeline overlay, run the dev sequence, and post the conformance output with
+   the run's results in the pipeline's `Validate vX.Y.Z (<client>)` issue, as
+   in the pipeline document.
 
 ## Project Notes
 
