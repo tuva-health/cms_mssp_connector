@@ -450,9 +450,8 @@ records what it builds to.
 ### Release digests and metadata
 
 The image digests and `release-metadata-<tag>.json` a release records are
-Tuva's internal record of what the tag built. Clients do not rebuild the tag or
-compare against them; they follow `cms_mssp_pipeline`'s
-[`docs/client-release-consumption.md`](https://github.com/tuva-health/cms_mssp_pipeline/blob/main/docs/client-release-consumption.md).
+Tuva's internal record of what the tag built, not a target for a client build;
+clients follow *Consuming a release in a client fork* below.
 
 Maintainer note: the connector image is **not** byte-reproducible, so the
 release's rebuild is expected to report a different config digest. Two CI
@@ -483,10 +482,9 @@ contract the pipeline release exports.
 
 A fork proves it runs a connector release with **git**, not by comparing
 images: its commit contains the tag and differs from it only in client-specific
-paths. It then builds and deploys its own image from that commit as usual. The
-release's recorded digests and metadata are Tuva's own record of what the tag
-built (TUVA-68); a client does not rebuild the tag or compare against them. With `upstream` as the fork's remote for this
-repository:
+paths. It then builds and deploys its own image from that commit as usual; it
+does not rebuild the tag or compare against the release's digests or metadata.
+With `upstream` as the fork's remote for this repository:
 
 1. **Merge the tag** through an `upstream-sync/vX.Y.Z` branch and a PR into the
    fork's `main`, merging (never rebasing), never a `main` tip:
