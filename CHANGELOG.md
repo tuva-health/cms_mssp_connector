@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-08
+
 ### Added
 
 - Tag-triggered release workflow (`.github/workflows/release.yml`, TUVA-68).
@@ -131,20 +133,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both call. Builds now go through `docker buildx build` with `SOURCE_DATE_EPOCH`
   set to the commit time, layer timestamps rewritten to it, and provenance and
   SBOM attestations off. Needs BuildKit 0.13 or newer.
-
-- `cms_alr_connector` is pinned at `51e1483`, which keeps CMS-HCC risk scores
-  at ten decimals instead of rounding them to two. The member risk ratios and
-  the risk-adjusted benchmark rates inherit the recovered precision on the
-  next build.
-
-- `packages.yml` now pins `cms_alr_connector` to a commit (`24302c5`, the
-  merge of tuva-health/cms_alr_connector#4) instead of tracking its default
-  branch, and `package-lock.yml` moves to it from `51e1483`. That is the last
-  git dependency that was pinned only in the lock, so regenerating the lock can
-  no longer pull an unreviewed ALR commit (P-TUVA-14). The ALR change between
-  the two commits touches only its own `packages.yml`, `package-lock.yml`, and
-  `.gitignore`; the resolved packages are unchanged (`medicare_cclf_connector`
-  `603a258`, `the_tuva_project` from GitHub at `v0.17.2`, `cc3b8ce`).
+- `cms_alr_connector` is pinned to a commit in `packages.yml` (`24302c5`,
+  the merge of tuva-health/cms_alr_connector#4) instead of tracking its
+  default branch; that was the last git dependency pinned only in the lock,
+  so regenerating the lock can no longer pull an unreviewed ALR commit
+  (P-TUVA-14). Over the release the lock moved from the previous revision to
+  `51e1483`, which keeps CMS-HCC risk scores at ten decimals instead of
+  rounding them to two (the member risk ratios and the risk-adjusted
+  benchmark rates inherit the recovered precision on the next build), and
+  then to `24302c5`. The ALR change between those two commits touches only
+  its own `packages.yml`, `package-lock.yml`, and `.gitignore`; the resolved
+  packages are unchanged (`medicare_cclf_connector` `603a258`,
+  `the_tuva_project` from GitHub at `v0.17.2`, `cc3b8ce`).
 
 ### Fixed
 
@@ -208,5 +208,6 @@ client dev and prod deployment on 2026-09-03/04.
   anything is pushed, and `release-metadata/` is git-ignored (TUVA-54).
 - README setup instructions refer to the `cms_mssp_connector` profile name.
 
-[Unreleased]: https://github.com/tuva-health/cms_mssp_connector/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/tuva-health/cms_mssp_connector/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/tuva-health/cms_mssp_connector/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tuva-health/cms_mssp_connector/releases/tag/v0.2.0
