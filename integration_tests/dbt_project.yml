@@ -1,0 +1,64 @@
+name: 'integration_tests'
+version: '1.0.0'
+config-version: 2
+
+profile: default
+
+flags:
+  # Tuva Core 1.0 resolves refs inside a package before the root project.
+  # CI runs this project as the root, so the flag has to live here as well
+  # as in the connector's dbt_project.yml.
+  require_ref_searches_node_package_before_root: true
+
+vars:
+  # This is the canonical commented inventory of the vars cms_mssp_connector
+  # and the packages it installs read. Keep every var documented here when its
+  # lookup is added or changed. Vars set here are global, so they reach
+  # cms_alr_connector, medicare_cclf_connector, the_tuva_project and the
+  # semantic-layer packages too; the connector's own dbt_project.yml vars only
+  # apply inside the connector.
+
+  ## Source location
+  # Where every raw table lives: the MSSP tables (source mssp_raw), the ALR
+  # tables (source cms_ssp_reports, read by cms_alr_connector) and the CCLF
+  # tables (source medicare_cclf, read by medicare_cclf_connector). In this
+  # project the fixture seeds in seeds/ are loaded there, so these must name
+  # the seeds' database and schema. The database is the DuckDB file's stem
+  # (profiles/local_duckdb).
+  input_database: cms_mssp_connector_ci
+  input_schema: raw
+
+  ## medicare_cclf_connector
+  # True makes medicare_cclf_connector take enrollment and eligibility from
+  # cms_alr_connector's `enrollment` model (ALR member months) instead of its
+  # own CCLF enrollment source, as a client running the MSSP connector does.
+  cms_alr_connector: true
+
+  ## Domain enablement (the_tuva_project)
+  # Enables the_tuva_project's claims models downstream of the connectors.
+  claims_enabled: true
+  # Enables the_tuva_project's provider attribution models, fed by
+  # cms_alr_connector's `provider_attribution` model.
+  provider_attribution_enabled: true
+
+  ## cms_mssp_connector
+  # Cap on the ACO's aggregate PY-to-BY3 prospective HCC risk ratio
+  # (fact_benchmark_aco_quarter). Defaults to 0.03 in the connector's
+  # dbt_project.yml; set it here only to test another value.
+  # mssp_risk_score_cap: 0.03
+
+  ## Schema naming
+  # Optional prefix for output schemas, shared with the packages, e.g.
+  # dev_mike_input_layer. Unset in local and DuckDB CI runs.
+  # tuva_schema_prefix: dev_mike
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+on-run-start:
+  - "{{ ensure_unit_test_schemas() }}"

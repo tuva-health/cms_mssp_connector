@@ -1,0 +1,493 @@
+version: 2
+
+# The twenty BNMRK / AEXPU / QEXPU cell-grain relations of the workbook export
+# contract (cms_mssp_pipeline contracts/workbook/v1.json), as the pipeline's
+# synthetic end-to-end run writes them: fake workbooks from its openpyxl test
+# builders, unpivoted by mssp-process. Every value is fake. Regenerate with
+# integration_tests/scripts/export_workbook_seeds.py; never hand-edit.
+#
+# Column types follow the contract: row_num BIGINT, file_date DATE, every
+# other column VARCHAR. The builders are shape- and type-valid only, not
+# CMS-consistent, so the benchmark tests tagged fixture_gap warn instead of
+# failing (TUVA-126 replaces these fixtures).
+
+seeds:
+  - name: aexpu_parameters
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: aexpu_table_1
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: aexpu_table_1a
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: aexpu_table_3
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: aexpu_table_4
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: aexpu_table_4a
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: bnmrk_parameters
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: bnmrk_table_1
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: bnmrk_table_1a
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: bnmrk_table_1b
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: bnmrk_table_1c
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: bnmrk_table_2
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: bnmrk_table_3
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: bnmrk_table_4
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: bnmrk_table_5
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: bnmrk_table_6
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: qexpu_parameters
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: qexpu_table_1
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: qexpu_table_2
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+
+  - name: qexpu_table_3
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        column_group_label: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar

@@ -1,0 +1,10 @@
+packages:
+  # The connector under test. Its own packages.yml brings in dbt_utils,
+  # cms_alr_connector v1.0.0 (and through it medicare_cclf_connector v1.0.0
+  # and Tuva Core v1.0.0, dbt package name the_tuva_project) and the
+  # semantic-layer stack, so CI builds the same dependency set a client gets.
+  # `dbt deps` resolves them fresh on every run: the lock this writes is
+  # gitignored, because its hash covers only this file and a committed copy
+  # would go stale silently when ../packages.yml changes. The root
+  # package-lock.yml records the set a release was built with.
+  - local: ../
