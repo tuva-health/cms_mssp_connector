@@ -30,7 +30,7 @@ uv run --frozen python -m unittest discover -s tests
 uv lock --check
 ```
 
-The build covers this connector, both CMS connectors, Tuva Core and the semantic-layer stack. The fixtures are CMS-consistent, so every test runs at its own severity; don't relax a test to make a build pass. The synthetic ACO `A0000`'s agreement row is appended to the `mssp_aco_agreement` seed by a post-hook in `integration_tests/dbt_project.yml`; never add it to the shipped seed.
+The build covers this connector, both CMS connectors, Tuva Core, the semantic-layer stack and CMS chronic conditions. The fixtures are CMS-consistent, so every test runs at its own severity; don't relax a test to make a build pass. The synthetic ACO `A0000`'s agreement row is appended to the `mssp_aco_agreement` seed by a post-hook in `integration_tests/dbt_project.yml`; never add it to the shipped seed.
 
 ## Data rules
 
