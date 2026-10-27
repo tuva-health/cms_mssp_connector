@@ -1,3 +1,4 @@
+{{ config(severity = var('mssp_fixture_gap_severity', 'error'), tags = ['fixture_gap']) }}
 {#-
     No enrollment type label may reach the intermediate models unrecognised.
 

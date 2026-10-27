@@ -47,6 +47,14 @@ vars:
   # dbt_project.yml; set it here only to test another value.
   # mssp_risk_score_cap: 0.03
 
+  # Severity of the benchmark tests tagged fixture_gap (select them with
+  # --select tag:fixture_gap). The connector defaults it to error, so client
+  # runs are unaffected. The synthetic workbook seeds are shape- and
+  # type-valid only, not CMS-consistent, so those tests fail on them; warn
+  # here keeps them running and reported without failing the build. TUVA-126
+  # brings CMS-consistent workbooks and removes this var.
+  mssp_fixture_gap_severity: warn
+
   ## Schema naming
   # Optional prefix for output schemas, shared with the packages, e.g.
   # dev_mike_input_layer. Unset in local and DuckDB CI runs.

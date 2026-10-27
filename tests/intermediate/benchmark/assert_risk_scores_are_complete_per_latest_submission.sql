@@ -1,3 +1,4 @@
+{{ config(severity = var('mssp_fixture_gap_severity', 'error'), tags = ['fixture_gap']) }}
 {#-
     Every latest benchmark delivery must carry the full risk score grid: four
     enrollment types by three benchmark years, each row holding the ACO's

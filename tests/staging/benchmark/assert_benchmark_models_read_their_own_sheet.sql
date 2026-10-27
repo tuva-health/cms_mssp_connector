@@ -1,3 +1,4 @@
+{{ config(severity = var('mssp_fixture_gap_severity', 'error'), tags = ['fixture_gap']) }}
 {#-
     Binds every benchmark staging model to the worksheet it is supposed to read.
 
