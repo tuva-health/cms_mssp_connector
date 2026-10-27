@@ -3,7 +3,6 @@ dbt_packages/
 logs/
 .direnv/
 .envrc
-CLAUDE.md
 .venv/
 .claude
 .pi/
