@@ -448,9 +448,6 @@ models:
           - accepted_values:
               arguments:
                 values: ['BY1', 'BY2', 'BY3']
-              config:
-                severity: "{{ var('mssp_fixture_gap_severity') }}"
-                tags: ['fixture_gap']
 
       - name: VALUE_TEXT
         description: The source cell verbatim.
@@ -572,9 +569,6 @@ models:
           - accepted_values:
               arguments:
                 values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual']
-              config:
-                severity: "{{ var('mssp_fixture_gap_severity') }}"
-                tags: ['fixture_gap']
 
       - name: ENROLLMENT_TYPE_LABEL
         description: Display form of `ENROLLMENT_TYPE`, from the same seed.
@@ -592,9 +586,6 @@ models:
           - accepted_values:
               arguments:
                 values: ['BY1', 'BY2', 'BY3']
-              config:
-                severity: "{{ var('mssp_fixture_gap_severity') }}"
-                tags: ['fixture_gap']
 
       - name: ACO_ROW_LABEL
         description: >

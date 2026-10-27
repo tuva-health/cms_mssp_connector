@@ -504,10 +504,10 @@ so rename one only together with the rule:
   file: `dbt deps`, `dbt parse`, `dbt seed` of the synthetic fixtures, then
   `dbt build` of this connector, `cms_alr_connector`,
   `medicare_cclf_connector`, Tuva Core and the semantic-layer stack, with the
-  connector's unit and data tests. The benchmark tests tagged `fixture_gap`
-  warn there until TUVA-126 brings CMS-consistent workbook fixtures (see
-  `integration_tests/README.md`). The check name matches the CMS connectors'
-  DuckDB jobs. It is new; adding it to the protection rule is TUVA-129.
+  connector's unit and data tests. The fixtures are CMS-consistent (see
+  `integration_tests/README.md`), so the benchmark path produces real
+  output and every test runs at its own severity. The check name matches the
+  CMS connectors' DuckDB jobs. It is new; adding it to the protection rule is TUVA-129.
 
 `dbt build / duckdb` is the only job that runs dbt against data, and only
 synthetic data. Runs against a warehouse with real data remain in the client
@@ -646,7 +646,7 @@ With `upstream` as the fork's remote for this repository:
 
 - Staging models are configured as views in `dbt_project.yml`.
 - The project includes adapter-dispatched macros in `macros/` for safer cross-database casting. `cast_numeric_or_null` and `cast_year_or_null` return NULL instead of raising when a source value is not a number or not a four-digit year, which the benchmark workbooks require because every worksheet cell — figures, `-` markers and free text alike — arrives in one text column.
-- Several project vars are already defined: `claims_enabled`, `cms_alr_connector`, `provider_attribution_enabled`, `mssp_risk_score_cap` and `mssp_fixture_gap_severity` (`error`; `integration_tests` sets `warn`, see its README). `integration_tests/dbt_project.yml` is the commented inventory of every var the connector and its packages read.
+- Several project vars are already defined: `claims_enabled`, `cms_alr_connector`, `provider_attribution_enabled` and `mssp_risk_score_cap`. `integration_tests/dbt_project.yml` is the commented inventory of every var the connector and its packages read.
 - Intermediate models and final models are configured as tables in `dbt_project.yml`.
 - `macros/to_double.sql` and `macros/safe_divide.sql` exist for the final layer.
   The benchmark calculation is a chain of ratios and products over cells Excel

@@ -408,3 +408,74 @@ unit_tests:
         - {MEMBER_MONTH_ID: 'mm-M4', MEMBER_MONTH_SK: 'M4|202601', PERSON_ID: 'M4', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M4|medicare', YEAR_MONTH: '202601', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: false, ENROLLMENT_TYPE: 'disabled',  RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.2,  RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 2500, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 2600, VARIANCE_TO_FLAT: 600,   VARIANCE_TO_ENROLLMENT_TYPE: 100,   VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
         - {MEMBER_MONTH_ID: 'mm-M5', MEMBER_MONTH_SK: 'M5|202512', PERSON_ID: 'M5', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M5|medicare', YEAR_MONTH: '202512', PERFORMANCE_YEAR: 2025, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.0,  RISK_RATIO: 1.5,  FLAT_BENCHMARK_PMPM: 1500, ENROLLMENT_TYPE_BENCHMARK_PMPM: 3500, RISK_ADJUSTED_BENCHMARK_PMPM: 5250, CAP_FACTOR: 1.0,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 5250, TOTAL_PAID: 6000, VARIANCE_TO_FLAT: 4500,  VARIANCE_TO_ENROLLMENT_TYPE: 2500,  VARIANCE_TO_RISK_ADJUSTED: 750,  VARIANCE_TO_RISK_ADJUSTED_CAPPED: 750,  HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2025Q4', BENCHMARK_QUARTER_NUM: 4,    BENCHMARK_SUBMISSION_ID: 'B25', QUARTERLY_SUBMISSION_ID: 'Q25-4', IS_AGREEMENT_DEFAULTED: true}
         - {MEMBER_MONTH_ID: 'mm-M6', MEMBER_MONTH_SK: 'M6|202606', PERSON_ID: 'M6', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M6|medicare', YEAR_MONTH: '202606', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: null,        RISK_SCORE: 1.1,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: null, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: null, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 10,   VARIANCE_TO_FLAT: -1990, VARIANCE_TO_ENROLLMENT_TYPE: null,  VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+
+  - name: test_capped_rates_reconcile_with_every_enrollment_type_scored
+    model: fact_member_month_benchmark
+    description: >
+      The member-level half of fact_benchmark_aco_quarter's
+      test_cap_with_every_enrollment_type_scored, which the integration_tests
+      fixtures cannot reach (no disabled or aged/dual beneficiary is scored in
+      the ALR seeds; TUVA-126, TUVA-134). One 2025 member-month per type at
+      that test's scores, BY3 [C] (1.25, 0.75, 1.125, 1.25) and [M] / 12,
+      with its binding factor 1.03 / 1.3125 as the ACO fact's current row:
+      ratios 1.5, 1.25, 1.25, 1.25, uncapped rates 12000, 2500, 5000, 1250,
+      capped 9417.14, 1961.90, 3923.81, 980.95. The mix is a quarter per type,
+      as the ACO fact's enrollment proportions are, so the mean capped rate is
+      that test's RISK_ADJUSTED_BENCHMARK_PMPM, 4070.95 (equal to the last
+      bit or so: 4070.9523809523807 against 4070.952380952381). A dbt unit
+      test cannot chain two models, so the factor is the other test's output
+      written in, and the reconciliation itself is the arithmetic above. A
+      2024 member-month on a non-binding year (factor 1) keeps its uncapped
+      rate.
+
+    given:
+
+      - input: ref('semantic_layer', 'semantic_layer__fact_member_months')
+        rows:
+          - {member_month_id: 'mm-E1-202503', person_id: 'E1', data_source: 'medicare', year_month: '202503', year_nbr: '2025', member_month_sk: 'E1|202503', patient_source_key: 'E1|medicare', total_paid: 0}
+          - {member_month_id: 'mm-D1-202503', person_id: 'D1', data_source: 'medicare', year_month: '202503', year_nbr: '2025', member_month_sk: 'D1|202503', patient_source_key: 'D1|medicare', total_paid: 0}
+          - {member_month_id: 'mm-G1-202503', person_id: 'G1', data_source: 'medicare', year_month: '202503', year_nbr: '2025', member_month_sk: 'G1|202503', patient_source_key: 'G1|medicare', total_paid: 0}
+          - {member_month_id: 'mm-N1-202503', person_id: 'N1', data_source: 'medicare', year_month: '202503', year_nbr: '2025', member_month_sk: 'N1|202503', patient_source_key: 'N1|medicare', total_paid: 0}
+          - {member_month_id: 'mm-D1-202406', person_id: 'D1', data_source: 'medicare', year_month: '202406', year_nbr: '2024', member_month_sk: 'D1|202406', patient_source_key: 'D1|medicare', total_paid: 0}
+
+      - input: ref('int_member_month_risk')
+        rows:
+          - {PERSON_ID: 'E1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202503', IS_ASSIGNED: true, ENROLLMENT_TYPE: 'esrd', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.875, RISK_SCORE_SOURCE: 'assignment_list_type_score'}
+          - {PERSON_ID: 'D1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202503', IS_ASSIGNED: true, ENROLLMENT_TYPE: 'disabled', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 0.9375, RISK_SCORE_SOURCE: 'assignment_list_type_score'}
+          - {PERSON_ID: 'G1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202503', IS_ASSIGNED: true, ENROLLMENT_TYPE: 'aged_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.40625, RISK_SCORE_SOURCE: 'assignment_list_type_score'}
+          - {PERSON_ID: 'N1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202503', IS_ASSIGNED: true, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.5625, RISK_SCORE_SOURCE: 'assignment_list_type_score'}
+          - {PERSON_ID: 'D1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202406', IS_ASSIGNED: true, ENROLLMENT_TYPE: 'disabled', ENROLLMENT_TYPE_SOURCE: 'beur_person_year_fraction', RISK_SCORE: 0.375, RISK_SCORE_SOURCE: 'assignment_list_monthly_score'}
+
+      - input: ref('fct_projected_savings_current')
+        rows:
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, PERIOD: '2025Q3', QUARTER_NUM: 3, BENCHMARK_SUBMISSION_ID: 'B25', QUARTERLY_SUBMISSION_ID: 'Q25-3', IS_AGREEMENT_DEFAULTED: false, MEAN_PROJECTED_UPDATED_BENCHMARK_PMPM: 4000}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2024, PERIOD: '2024Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B24', QUARTERLY_SUBMISSION_ID: 'Q24-4', IS_AGREEMENT_DEFAULTED: false, MEAN_PROJECTED_UPDATED_BENCHMARK_PMPM: 1000}
+
+      - input: ref('fct_projected_benchmark_by_enrollment_type_current')
+        rows:
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, PERIOD: '2025Q3', QUARTER_NUM: 3, BENCHMARK_SUBMISSION_ID: 'B25', ENROLLMENT_TYPE: 'esrd', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 8000, TOTAL_PERSON_YEARS: 4}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, PERIOD: '2025Q3', QUARTER_NUM: 3, BENCHMARK_SUBMISSION_ID: 'B25', ENROLLMENT_TYPE: 'disabled', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 2000, TOTAL_PERSON_YEARS: 4}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, PERIOD: '2025Q3', QUARTER_NUM: 3, BENCHMARK_SUBMISSION_ID: 'B25', ENROLLMENT_TYPE: 'aged_dual', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 4000, TOTAL_PERSON_YEARS: 4}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, PERIOD: '2025Q3', QUARTER_NUM: 3, BENCHMARK_SUBMISSION_ID: 'B25', ENROLLMENT_TYPE: 'aged_non_dual', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 1000, TOTAL_PERSON_YEARS: 4}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2024, PERIOD: '2024Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B24', ENROLLMENT_TYPE: 'disabled', PROJECTED_UPDATED_BENCHMARK_EXPENDITURE_PMPM: 1000, TOTAL_PERSON_YEARS: 4}
+
+      - input: ref('fact_benchmark_aco_quarter')
+        rows:
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, PERIOD: '2025Q3', IS_CURRENT_PROJECTION: true, CAP_FACTOR: 0.7847619047619048}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2024, PERIOD: '2024Q4', IS_CURRENT_PROJECTION: true, CAP_FACTOR: 1.0}
+
+      - input: ref('int_benchmark_risk_scores')
+        rows:
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, SUBMISSION_ID: 'B25', IS_LATEST_SUBMISSION: true, ENROLLMENT_TYPE: 'esrd', BY_LABEL: 'BY3', ACO_RISK_SCORE: 1.25, FILE_DATE: '2025-10-31', FILE_PATH: 'bnmrk-25'}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, SUBMISSION_ID: 'B25', IS_LATEST_SUBMISSION: true, ENROLLMENT_TYPE: 'disabled', BY_LABEL: 'BY3', ACO_RISK_SCORE: 0.75, FILE_DATE: '2025-10-31', FILE_PATH: 'bnmrk-25'}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, SUBMISSION_ID: 'B25', IS_LATEST_SUBMISSION: true, ENROLLMENT_TYPE: 'aged_dual', BY_LABEL: 'BY3', ACO_RISK_SCORE: 1.125, FILE_DATE: '2025-10-31', FILE_PATH: 'bnmrk-25'}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, SUBMISSION_ID: 'B25', IS_LATEST_SUBMISSION: true, ENROLLMENT_TYPE: 'aged_non_dual', BY_LABEL: 'BY3', ACO_RISK_SCORE: 1.25, FILE_DATE: '2025-10-31', FILE_PATH: 'bnmrk-25'}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2024, SUBMISSION_ID: 'B24', IS_LATEST_SUBMISSION: true, ENROLLMENT_TYPE: 'disabled', BY_LABEL: 'BY3', ACO_RISK_SCORE: 0.75, FILE_DATE: '2024-10-31', FILE_PATH: 'bnmrk-24'}
+
+    expect:
+      rows:
+        - {MEMBER_MONTH_ID: 'mm-E1-202503', MEMBER_MONTH_SK: 'E1|202503', ENROLLMENT_TYPE: 'esrd', BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: 1.5, ENROLLMENT_TYPE_BENCHMARK_PMPM: 8000, RISK_ADJUSTED_BENCHMARK_PMPM: 12000.0, CAP_FACTOR: 0.7847619047619048, RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 9417.142857142857}
+        - {MEMBER_MONTH_ID: 'mm-D1-202503', MEMBER_MONTH_SK: 'D1|202503', ENROLLMENT_TYPE: 'disabled', BY3_ENROLLMENT_TYPE_RISK_SCORE: 0.75, RISK_RATIO: 1.25, ENROLLMENT_TYPE_BENCHMARK_PMPM: 2000, RISK_ADJUSTED_BENCHMARK_PMPM: 2500.0, CAP_FACTOR: 0.7847619047619048, RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 1961.904761904762}
+        - {MEMBER_MONTH_ID: 'mm-G1-202503', MEMBER_MONTH_SK: 'G1|202503', ENROLLMENT_TYPE: 'aged_dual', BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.125, RISK_RATIO: 1.25, ENROLLMENT_TYPE_BENCHMARK_PMPM: 4000, RISK_ADJUSTED_BENCHMARK_PMPM: 5000.0, CAP_FACTOR: 0.7847619047619048, RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 3923.809523809524}
+        - {MEMBER_MONTH_ID: 'mm-N1-202503', MEMBER_MONTH_SK: 'N1|202503', ENROLLMENT_TYPE: 'aged_non_dual', BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: 1.25, ENROLLMENT_TYPE_BENCHMARK_PMPM: 1000, RISK_ADJUSTED_BENCHMARK_PMPM: 1250.0, CAP_FACTOR: 0.7847619047619048, RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 980.952380952381}
+        - {MEMBER_MONTH_ID: 'mm-D1-202406', MEMBER_MONTH_SK: 'D1|202406', ENROLLMENT_TYPE: 'disabled', BY3_ENROLLMENT_TYPE_RISK_SCORE: 0.75, RISK_RATIO: 0.5, ENROLLMENT_TYPE_BENCHMARK_PMPM: 1000, RISK_ADJUSTED_BENCHMARK_PMPM: 500.0, CAP_FACTOR: 1.0, RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 500.0}
