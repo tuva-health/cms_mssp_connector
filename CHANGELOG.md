@@ -17,7 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same beneficiaries (TUVA-126), and header-only tables for the other MSSP
   sources. The benchmark path produces real projected savings, ACO-quarter and
   member-month benchmark output in this build, and every test runs at its own
-  severity.
+  severity with no warnings. `integration_tests` appends its synthetic ACO's
+  row to `mssp_aco_agreement` with a seed post-hook; the shipped seed is
+  unchanged.
+- Unit tests pinning the risk-score cap with every enrollment type scored,
+  binding and not binding, and the capped member-month rates reconciling to
+  the ACO benchmark (TUVA-126).
 - The `dbt build / duckdb` CI job, which runs that build on every pull
   request to `main` without secrets.
 - `MEMBER_MONTH_ID` on `fact_member_month_benchmark`, passed through from

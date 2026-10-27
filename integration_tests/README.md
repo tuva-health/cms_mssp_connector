@@ -59,15 +59,22 @@ The BEUR rows give 2024 member-months their enrollment type, because the
 benchmark-year ALR carries monthly scores and no type column. One BEUR row
 uses a previous MBI that only the BNEX MBI crosswalk resolves.
 
-Every test runs at its own severity. The one expected warning is
-`assert_acos_have_an_agreement_configuration`: `A0000` has no
-`mssp_aco_agreement` row, so the build runs on the documented defaults.
+Every test runs at its own severity, and the build has no warnings. The
+connector's `mssp_aco_agreement` seed ships to clients with only its
+`EXAMPLE-ACO` row, so `dbt_project.yml` here appends `A0000`'s row (variable
+MSR, ACPT at PY1) to it with a seed post-hook; a root seed of the same name
+cannot replace a package's.
 
 The ALR seeds have no disabled or aged/dual beneficiary assigned with a score
 in 2025, so `fact_benchmark_aco_quarter`'s aggregate risk ratio and cap
 factor, and `fact_member_month_benchmark`'s capped rate, are NULL by design
 here. The flat, enrollment-type and uncapped risk-adjusted rates are
-populated.
+populated. Two unit tests pin the cap with every type scored, binding and
+not binding, and the capped member rates reconciling to the ACO benchmark:
+`fact_benchmark_aco_quarter::test_cap_with_every_enrollment_type_scored` and
+`fact_member_month_benchmark::test_capped_rates_reconcile_with_every_enrollment_type_scored`.
+A follow-up adds such beneficiaries to the cclf-synth ALR fixtures for the
+next `cms_alr_connector` release.
 
 ## Local runs
 
