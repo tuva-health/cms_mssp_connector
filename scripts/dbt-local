@@ -9,6 +9,10 @@
 #
 # See integration_tests/README.md for why the seeds load first.
 #
+# The DuckDB database is integration_tests/target/cms_mssp_connector.duckdb in
+# this checkout, so checkouts and worktrees building at the same time never
+# share a file. Set DBT_DUCKDB_PATH to use another file; any name works.
+#
 # Set DBT_PROFILES_DIR (and optionally DBT_PROFILE) to use another warehouse.
 # pyproject.toml installs every warehouse adapter (DuckDB and Snowflake).
 set -euo pipefail
@@ -17,6 +21,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_DIR="${REPO_ROOT}/integration_tests"
 PROFILES_DIR="${DBT_PROFILES_DIR:-${PROJECT_DIR}/profiles/local_duckdb}"
 PROFILE="${DBT_PROFILE:-default}"
+
+if [[ -z "${DBT_DUCKDB_PATH:-}" ]]; then
+  DBT_DUCKDB_PATH="${PROJECT_DIR}/target/cms_mssp_connector.duckdb"
+  mkdir -p "$(dirname "${DBT_DUCKDB_PATH}")"
+fi
+export DBT_DUCKDB_PATH
 
 if [[ ! -f "${PROFILES_DIR}/profiles.yml" ]]; then
   echo "No dbt profiles.yml found at ${PROFILES_DIR}/profiles.yml" >&2

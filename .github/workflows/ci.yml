@@ -133,9 +133,13 @@ jobs:
       DBT_PROJECT_DIR: integration_tests
       DBT_PROFILES_DIR: integration_tests/profiles/local_duckdb
       DBT_DUCKDB_PATH: ${{ github.workspace }}/cms_mssp_connector_ci.duckdb
+      # The extensions are installed below; a missing one fails the build
+      # instead of downloading in the middle of it.
+      DBT_DUCKDB_AUTOINSTALL_EXTENSIONS: "false"
       DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
-      # The DuckDB database name is the file's stem; fixture seeds load into
-      # it and every source() reads them back.
+      # The profile attaches the file as catalog cms_mssp_connector_ci,
+      # whatever its name; fixture seeds load into it and every source()
+      # reads them back.
       CI_DBT_VARS: '{"input_database": "cms_mssp_connector_ci", "input_schema": "raw"}'
     steps:
       - uses: actions/checkout@v7
@@ -145,6 +149,31 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen
+      - name: Read the DuckDB version
+        id: duckdb
+        run: echo "version=$(uv run --frozen python -c 'import duckdb; print(duckdb.__version__)')" >> "$GITHUB_OUTPUT"
+      # DuckDB keeps extensions under ~/.duckdb/extensions/v<version>/<platform>,
+      # so a DuckDB bump starts a fresh cache.
+      - name: Cache DuckDB extensions
+        uses: actions/cache@v6
+        with:
+          path: ~/.duckdb/extensions
+          key: duckdb-extensions-${{ runner.os }}-${{ runner.arch }}-${{ steps.duckdb.outputs.version }}-httpfs
+      # Tuva Core reads its terminology seeds from S3, which needs httpfs, the
+      # only extension the build loads that the duckdb wheel does not link in.
+      # INSTALL is a no-op when the cache restored it; on a miss the download
+      # is retried here, before any dbt step runs.
+      - name: Install DuckDB extensions
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if uv run --frozen python -c "import duckdb; duckdb.sql('INSTALL httpfs; LOAD httpfs')"; then
+              exit 0
+            fi
+            echo "httpfs install attempt ${attempt} failed" >&2
+            sleep $((attempt * 10))
+          done
+          exit 1
       - name: Install dbt packages
         run: uv run --frozen dbt deps --project-dir "$DBT_PROJECT_DIR"
       - name: Parse project
