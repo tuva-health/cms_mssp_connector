@@ -183,9 +183,10 @@ contract: `scripts/verify_manifest.py` requires every one of them
 `semantic_layer`, so a manifest that drops the semantic layer fails the
 verifier before anything is released. Semantic layer 1.0 no longer has
 `dim_condition`, `fact_expected_values` or `fact_member_condition_bridge`,
-which the Tuva 0.17 semantic layer built. After a run, `fact_member_months`
-carries one row per member-month with the paid amounts and risk scores
-populated.
+which the Tuva 0.17 semantic layer built; condition flags now come from the
+CMS chronic conditions package (see [Dependencies](#dependencies)). After a
+run, `fact_member_months` carries one row per member-month with the paid
+amounts and risk scores populated.
 
 The connector adds two facts of its own to that schema, under
 `models/final/semantic_layer`:
@@ -377,6 +378,17 @@ checks a release against it.
   Core and the five marts it builds on, so `packages.yml` lists them too, all
   at `v1.0.0`: `tuva-core`, `ahrq_quality_indicators`, `ccsr`, `cms_hcc`,
   `nyu_ed_classification` and `quality_measures`.
+- Tuva's CMS chronic conditions, `tuva-health/cms_chronic_conditions`
+  `v1.0.0` (dbt package name `cms_chronic_conditions`). Tuva 1.0 retired its
+  own chronic conditions, and this package replaces them. It reads Tuva Core
+  only and builds `cms_chronic_conditions_long` (one row per person,
+  condition, evidence event and data source) and `cms_chronic_conditions_wide`
+  (one row per person and data source, a 0/1 column per condition) in the
+  `chronic_conditions` schema. Its condition hierarchy is a package seed,
+  loaded in the same `build`. `scripts/verify_manifest.py` requires both
+  models (`model.cms_chronic_conditions.cms_chronic_conditions__<name>`) to be
+  enabled and placed in `chronic_conditions`. The GitHub repository
+  `tuva-health/chronic_conditions` redirects here; pin `cms_chronic_conditions`.
 
 `dbt_project.yml` sets `require_ref_searches_node_package_before_root`, as
 Tuva Core 1.0 and the CMS connectors require. dbt reads flags only from the

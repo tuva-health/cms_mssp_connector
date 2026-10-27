@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests pinning the risk-score cap with every enrollment type scored,
   binding and not binding, and the capped member-month rates reconciling to
   the ACO benchmark (TUVA-126).
+- Tuva's CMS chronic conditions package, `tuva-health/cms_chronic_conditions`
+  `v1.0.0` (TUVA-137). Builds now produce
+  `chronic_conditions.cms_chronic_conditions_long` and
+  `chronic_conditions.cms_chronic_conditions_wide`, Tuva 1.0's replacement
+  for the chronic conditions that semantic layer 1.0 dropped with
+  `dim_condition` and `fact_member_condition_bridge`.
+  `scripts/verify_manifest.py` requires both in `chronic_conditions`.
 - The `dbt build / duckdb` CI job, which runs that build on every pull
   request to `main` without secrets.
 - `MEMBER_MONTH_ID` on `fact_member_month_benchmark`, passed through from
