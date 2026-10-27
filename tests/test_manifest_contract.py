@@ -332,7 +332,9 @@ class ManifestContractTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "cms_chronic_conditions_long" in error and "chronic_conditions'" in error
+                "cms_chronic_conditions_long" in error
+                and "found" in error
+                and "'semantic_layer'" in error
                 for error in misplaced_errors
             )
         )
