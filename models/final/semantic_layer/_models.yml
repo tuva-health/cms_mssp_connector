@@ -4,7 +4,7 @@ version: 2
 #
 # The benchmark facts in models/final/benchmark answer the ACO-level question:
 # what is the projected updated benchmark, and is the ACO under it. This fact
-# takes those answers to the member-month, on the surrogate key of the Tuva
+# takes those answers to the member-month, on the member_month_id of the Tuva
 # semantic layer's fact_member_months, so a Power BI or Dash model joins it
 # one to one and can put a benchmark beside every member's actual spend.
 #
@@ -38,7 +38,7 @@ models:
   - name: fact_member_month_benchmark
     description: >
       One row per member-month of the Tuva semantic layer's
-      `fact_member_months`, keyed on the same `MEMBER_MONTH_SK`, carrying four
+      `fact_member_months`, keyed on the same `MEMBER_MONTH_ID`, carrying four
       benchmark rates per member per month — flat, by enrollment type,
       risk-adjusted (uncapped), and risk-adjusted under the ACO's aggregate
       cap — with the member's actual total paid and the variance to each rate.
@@ -71,18 +71,31 @@ models:
       schema: semantic_layer
 
     columns:
-      - name: MEMBER_MONTH_SK
+      - name: MEMBER_MONTH_ID
         description: >
-          Surrogate key of the member-month, `person_id || '|' || year_month`,
-          exactly as `fact_member_months` builds it. The join key for the
-          semantic layer.
+          Core's member-month identifier, passed through from
+          `fact_member_months.member_month_id`. One per person, member,
+          month, payer, plan and data source: Core's coverage grain, which
+          semantic-layer 1.0 adopted. The join key for the semantic layer.
         data_tests:
           - not_null
           - unique
           - relationships:
               arguments:
                 to: ref('semantic_layer', 'semantic_layer__fact_member_months')
-                field: member_month_sk
+                field: member_month_id
+
+      - name: MEMBER_MONTH_SK
+        description: >
+          **Deprecated**; join on `MEMBER_MONTH_ID`. The pre-1.0 surrogate
+          key, `person_id || '|' || year_month`, passed through from
+          `fact_member_months`, which keeps it for compatibility only.
+          Semantic-layer 1.0 no longer guarantees it unique: a person with
+          more than one payer or plan in a month has one row per coverage and
+          the same key on each. It is unique on a single-payer CCLF build,
+          but nothing here tests that.
+        data_tests:
+          - not_null
 
       - name: PERSON_ID
         description: Tuva person identifier.
@@ -119,11 +132,15 @@ models:
 
       - name: IS_ASSIGNED
         description: >
-          True when the assignment list carries a row for this member-month,
-          from `int_member_month_risk`. The rates are filled whether or not
-          the month is assigned; the reconciliation tests restrict to assigned
-          member-months because that is the population the benchmark report
-          counts.
+          True when the assignment list of the month's own performance year
+          carries a row for this member-month, from `int_member_month_risk`,
+          whose description gives the rule. The rates are filled whether or
+          not the month is assigned; the reconciliation tests restrict to
+          assigned member-months because that is the population the benchmark
+          report counts. Some member-months Tuva counts are unassigned here
+          by design: initial-assignment lookback months and months only the
+          next performance year's quarterly covers. So the assigned count is
+          lower than the row count, and lower than Tuva Core's member-months.
         data_tests:
           - not_null
 
@@ -330,12 +347,12 @@ unit_tests:
 
       - input: ref('semantic_layer', 'semantic_layer__fact_member_months')
         rows:
-          - {person_id: 'M1', data_source: 'medicare', year_month: '202603', year_nbr: '2026', member_month_sk: 'M1|202603', patient_source_key: 'M1|medicare', total_paid: 5000}
-          - {person_id: 'M2', data_source: 'medicare', year_month: '202605', year_nbr: '2026', member_month_sk: 'M2|202605', patient_source_key: 'M2|medicare', total_paid: 0}
-          - {person_id: 'M3', data_source: 'medicare', year_month: '202402', year_nbr: '2024', member_month_sk: 'M3|202402', patient_source_key: 'M3|medicare', total_paid: 100}
-          - {person_id: 'M4', data_source: 'medicare', year_month: '202601', year_nbr: '2026', member_month_sk: 'M4|202601', patient_source_key: 'M4|medicare', total_paid: 2600}
-          - {person_id: 'M5', data_source: 'medicare', year_month: '202512', year_nbr: '2025', member_month_sk: 'M5|202512', patient_source_key: 'M5|medicare', total_paid: 6000}
-          - {person_id: 'M6', data_source: 'medicare', year_month: '202606', year_nbr: '2026', member_month_sk: 'M6|202606', patient_source_key: 'M6|medicare', total_paid: 10}
+          - {member_month_id: 'mm-M1', person_id: 'M1', data_source: 'medicare', year_month: '202603', year_nbr: '2026', member_month_sk: 'M1|202603', patient_source_key: 'M1|medicare', total_paid: 5000}
+          - {member_month_id: 'mm-M2', person_id: 'M2', data_source: 'medicare', year_month: '202605', year_nbr: '2026', member_month_sk: 'M2|202605', patient_source_key: 'M2|medicare', total_paid: 0}
+          - {member_month_id: 'mm-M3', person_id: 'M3', data_source: 'medicare', year_month: '202402', year_nbr: '2024', member_month_sk: 'M3|202402', patient_source_key: 'M3|medicare', total_paid: 100}
+          - {member_month_id: 'mm-M4', person_id: 'M4', data_source: 'medicare', year_month: '202601', year_nbr: '2026', member_month_sk: 'M4|202601', patient_source_key: 'M4|medicare', total_paid: 2600}
+          - {member_month_id: 'mm-M5', person_id: 'M5', data_source: 'medicare', year_month: '202512', year_nbr: '2025', member_month_sk: 'M5|202512', patient_source_key: 'M5|medicare', total_paid: 6000}
+          - {member_month_id: 'mm-M6', person_id: 'M6', data_source: 'medicare', year_month: '202606', year_nbr: '2026', member_month_sk: 'M6|202606', patient_source_key: 'M6|medicare', total_paid: 10}
 
       - input: ref('int_member_month_risk')
         rows:
@@ -383,9 +400,9 @@ unit_tests:
 
     expect:
       rows:
-        - {MEMBER_MONTH_SK: 'M1|202603', PERSON_ID: 'M1', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M1|medicare', YEAR_MONTH: '202603', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: 1.2,  FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 4000, RISK_ADJUSTED_BENCHMARK_PMPM: 4800, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 2400, TOTAL_PAID: 5000, VARIANCE_TO_FLAT: 3000,  VARIANCE_TO_ENROLLMENT_TYPE: 1000,  VARIANCE_TO_RISK_ADJUSTED: 200,  VARIANCE_TO_RISK_ADJUSTED_CAPPED: 2600, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
-        - {MEMBER_MONTH_SK: 'M2|202605', PERSON_ID: 'M2', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M2|medicare', YEAR_MONTH: '202605', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 4000, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 0,    VARIANCE_TO_FLAT: -2000, VARIANCE_TO_ENROLLMENT_TYPE: -4000, VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
-        - {MEMBER_MONTH_SK: 'M3|202402', PERSON_ID: 'M3', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M3|medicare', YEAR_MONTH: '202402', PERFORMANCE_YEAR: 2024, ACO_ID: null, IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'disabled',  RISK_SCORE: 0.9,  RISK_SCORE_SOURCE: 'assignment_list_monthly_score', BY3_ENROLLMENT_TYPE_RISK_SCORE: null, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: null, ENROLLMENT_TYPE_BENCHMARK_PMPM: null, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: null, RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 100,  VARIANCE_TO_FLAT: null,  VARIANCE_TO_ENROLLMENT_TYPE: null,  VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: false, BENCHMARK_PERIOD: null,     BENCHMARK_QUARTER_NUM: null, BENCHMARK_SUBMISSION_ID: null,  QUARTERLY_SUBMISSION_ID: null,    IS_AGREEMENT_DEFAULTED: null}
-        - {MEMBER_MONTH_SK: 'M4|202601', PERSON_ID: 'M4', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M4|medicare', YEAR_MONTH: '202601', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: false, ENROLLMENT_TYPE: 'disabled',  RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.2,  RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 2500, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 2600, VARIANCE_TO_FLAT: 600,   VARIANCE_TO_ENROLLMENT_TYPE: 100,   VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
-        - {MEMBER_MONTH_SK: 'M5|202512', PERSON_ID: 'M5', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M5|medicare', YEAR_MONTH: '202512', PERFORMANCE_YEAR: 2025, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.0,  RISK_RATIO: 1.5,  FLAT_BENCHMARK_PMPM: 1500, ENROLLMENT_TYPE_BENCHMARK_PMPM: 3500, RISK_ADJUSTED_BENCHMARK_PMPM: 5250, CAP_FACTOR: 1.0,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 5250, TOTAL_PAID: 6000, VARIANCE_TO_FLAT: 4500,  VARIANCE_TO_ENROLLMENT_TYPE: 2500,  VARIANCE_TO_RISK_ADJUSTED: 750,  VARIANCE_TO_RISK_ADJUSTED_CAPPED: 750,  HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2025Q4', BENCHMARK_QUARTER_NUM: 4,    BENCHMARK_SUBMISSION_ID: 'B25', QUARTERLY_SUBMISSION_ID: 'Q25-4', IS_AGREEMENT_DEFAULTED: true}
-        - {MEMBER_MONTH_SK: 'M6|202606', PERSON_ID: 'M6', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M6|medicare', YEAR_MONTH: '202606', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: null,        RISK_SCORE: 1.1,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: null, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: null, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 10,   VARIANCE_TO_FLAT: -1990, VARIANCE_TO_ENROLLMENT_TYPE: null,  VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+        - {MEMBER_MONTH_ID: 'mm-M1', MEMBER_MONTH_SK: 'M1|202603', PERSON_ID: 'M1', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M1|medicare', YEAR_MONTH: '202603', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: 1.2,  FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 4000, RISK_ADJUSTED_BENCHMARK_PMPM: 4800, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 2400, TOTAL_PAID: 5000, VARIANCE_TO_FLAT: 3000,  VARIANCE_TO_ENROLLMENT_TYPE: 1000,  VARIANCE_TO_RISK_ADJUSTED: 200,  VARIANCE_TO_RISK_ADJUSTED_CAPPED: 2600, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+        - {MEMBER_MONTH_ID: 'mm-M2', MEMBER_MONTH_SK: 'M2|202605', PERSON_ID: 'M2', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M2|medicare', YEAR_MONTH: '202605', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.25, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 4000, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 0,    VARIANCE_TO_FLAT: -2000, VARIANCE_TO_ENROLLMENT_TYPE: -4000, VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+        - {MEMBER_MONTH_ID: 'mm-M3', MEMBER_MONTH_SK: 'M3|202402', PERSON_ID: 'M3', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M3|medicare', YEAR_MONTH: '202402', PERFORMANCE_YEAR: 2024, ACO_ID: null, IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'disabled',  RISK_SCORE: 0.9,  RISK_SCORE_SOURCE: 'assignment_list_monthly_score', BY3_ENROLLMENT_TYPE_RISK_SCORE: null, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: null, ENROLLMENT_TYPE_BENCHMARK_PMPM: null, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: null, RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 100,  VARIANCE_TO_FLAT: null,  VARIANCE_TO_ENROLLMENT_TYPE: null,  VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: false, BENCHMARK_PERIOD: null,     BENCHMARK_QUARTER_NUM: null, BENCHMARK_SUBMISSION_ID: null,  QUARTERLY_SUBMISSION_ID: null,    IS_AGREEMENT_DEFAULTED: null}
+        - {MEMBER_MONTH_ID: 'mm-M4', MEMBER_MONTH_SK: 'M4|202601', PERSON_ID: 'M4', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M4|medicare', YEAR_MONTH: '202601', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: false, ENROLLMENT_TYPE: 'disabled',  RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.2,  RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: 2500, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 2600, VARIANCE_TO_FLAT: 600,   VARIANCE_TO_ENROLLMENT_TYPE: 100,   VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}
+        - {MEMBER_MONTH_ID: 'mm-M5', MEMBER_MONTH_SK: 'M5|202512', PERSON_ID: 'M5', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M5|medicare', YEAR_MONTH: '202512', PERFORMANCE_YEAR: 2025, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: 1.0,  RISK_RATIO: 1.5,  FLAT_BENCHMARK_PMPM: 1500, ENROLLMENT_TYPE_BENCHMARK_PMPM: 3500, RISK_ADJUSTED_BENCHMARK_PMPM: 5250, CAP_FACTOR: 1.0,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: 5250, TOTAL_PAID: 6000, VARIANCE_TO_FLAT: 4500,  VARIANCE_TO_ENROLLMENT_TYPE: 2500,  VARIANCE_TO_RISK_ADJUSTED: 750,  VARIANCE_TO_RISK_ADJUSTED_CAPPED: 750,  HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2025Q4', BENCHMARK_QUARTER_NUM: 4,    BENCHMARK_SUBMISSION_ID: 'B25', QUARTERLY_SUBMISSION_ID: 'Q25-4', IS_AGREEMENT_DEFAULTED: true}
+        - {MEMBER_MONTH_ID: 'mm-M6', MEMBER_MONTH_SK: 'M6|202606', PERSON_ID: 'M6', DATA_SOURCE: 'medicare', PATIENT_SOURCE_KEY: 'M6|medicare', YEAR_MONTH: '202606', PERFORMANCE_YEAR: 2026, ACO_ID: 'A1', IS_ASSIGNED: true,  ENROLLMENT_TYPE: null,        RISK_SCORE: 1.1,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    BY3_ENROLLMENT_TYPE_RISK_SCORE: null, RISK_RATIO: null, FLAT_BENCHMARK_PMPM: 2000, ENROLLMENT_TYPE_BENCHMARK_PMPM: null, RISK_ADJUSTED_BENCHMARK_PMPM: null, CAP_FACTOR: 0.5,  RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED: null, TOTAL_PAID: 10,   VARIANCE_TO_FLAT: -1990, VARIANCE_TO_ENROLLMENT_TYPE: null,  VARIANCE_TO_RISK_ADJUSTED: null, VARIANCE_TO_RISK_ADJUSTED_CAPPED: null, HAS_BENCHMARK: true,  BENCHMARK_PERIOD: '2026Q2', BENCHMARK_QUARTER_NUM: 2,    BENCHMARK_SUBMISSION_ID: 'B26', QUARTERLY_SUBMISSION_ID: 'Q26-2', IS_AGREEMENT_DEFAULTED: false}

@@ -96,6 +96,48 @@ per-ACO minimum savings rate election and agreement performance year. The second
 ships with a synthetic example row only; an ACO with no row takes documented
 defaults and every output row it produces is flagged `IS_AGREEMENT_DEFAULTED`.
 
+### Which member-months count as assigned
+
+`int_member_month_risk` and `cms_alr_connector` read the same assignment
+lists but ask different questions, so they do not always agree. The
+difference is deliberate (decision D1, TUVA-127).
+
+- **ALR asks "what is the best data for this person-month?"** For each month,
+  `aalr_governing_file` picks one file among those that cover it: the earliest
+  performance year first, then the benchmark file, then the latest
+  quarterly. Its `enrollment` model carries every month that some file
+  governs. CCLF eligibility, and therefore Tuva's `core__member_month`, are
+  built from it.
+- **This connector asks "was this person assigned in the performance year
+  that contains this month?"** An assignment-list row counts only if its file
+  reports the month's own calendar year: the `Y<YYYY>` or `<YYYY>Q<N>` token
+  in the file name, otherwise the `D<YY>` delivery stamp. Among those files,
+  only the earliest delivery that reports the year counts.
+
+The connector asks its question because the benchmark is set per performance
+year. A member-month is benchmarked against the projection for its own
+calendar year, and its risk score must be on that year's model and
+normalisation basis. Taking rows from another year's package would mix two
+performance years' scores and over-count assigned member-months.
+
+Where both rules pick a row, they pick the same file. They disagree on two
+kinds of month:
+
+| Months | ALR v1.0.0 | This connector |
+| --- | --- | --- |
+| The lookback window of an initial assignment file that no earlier performance year covers. For example, PY2025's initial AALR covers 2023-10..2024-09 and governs 2023-10..12 | enrolled, from the initial file | `IS_ASSIGNED = false`, NULL score |
+| Months covered only by the next performance year's quarterly. For example, PY2026's `2026Q1` covers 2025-04..2026-03 and governs 2025-10..12 when no PY2025 file covers them | enrolled, from that quarterly | `IS_ASSIGNED = false`, NULL score |
+
+Consumers will see those member-months in `core__member_month`,
+`fact_member_months` and `fact_member_month_benchmark`, because the spine is
+never filtered. On these rows the enrollment type comes from the BEUR or
+eligibility fallback, and the risk-adjusted rate is NULL. So the connector's
+assigned member-month count is lower than Tuva Core's member-month count for
+the same period. Count assigned member-months with `IS_ASSIGNED`, not with
+rows. The unit test
+`test_month_rule_assigns_only_from_the_months_own_performance_year` pins both
+groups and the months on which the rules agree.
+
 ### Tuva semantic layer
 
 The Tuva semantic layer is a separate package in Tuva 1.0:
@@ -120,8 +162,10 @@ The connector adds two facts of its own to that schema, under
 `models/final/semantic_layer`:
 
 - `fact_member_month_benchmark` — the benchmark applied to every member-month,
-  keyed on the same `MEMBER_MONTH_SK` as `fact_member_months` so Power BI and
-  Dash join the two one to one. Three per-member-per-month rates: the flat
+  keyed on the same `MEMBER_MONTH_ID` as `fact_member_months` so Power BI and
+  Dash join the two one to one. `MEMBER_MONTH_SK` is still carried but is
+  deprecated: semantic layer 1.0 no longer guarantees it unique, so join on
+  `MEMBER_MONTH_ID`. Three per-member-per-month rates: the flat
   rate (`[P] / 12`, the ACO mean projected updated benchmark, identical for
   every member), the enrollment-type rate (`[M] / 12` for the member's type),
   and the risk-adjusted rate (the enrollment-type rate times the member's CMS

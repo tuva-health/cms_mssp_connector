@@ -45,6 +45,21 @@ models:
       score. `ALR_DELIVERY_PERFORMANCE_YEAR` and `ALR_REPORT_YEAR` show the
       delivery each assigned row came from.
 
+      This rule differs from `cms_alr_connector`'s on purpose (decision D1).
+      ALR v1.0.0 asks "what is the best data for this person-month?" and
+      keeps, per month, the governing file: the earliest performance year
+      that covers the month, then the benchmark file, then the latest
+      quarterly. This model asks "was this person assigned in the
+      performance year that contains this month?", because the benchmark is
+      set per performance year and the score must be on that year's basis.
+      The rules agree wherever both pick a row. They disagree on the
+      lookback months of an initial assignment file that no earlier
+      performance year covers, and on months covered only by the next
+      performance year's quarterly file. ALR, and therefore
+      `core__member_month`, counts those months; here they keep their row
+      with `IS_ASSIGNED` false and a NULL `RISK_SCORE`. Count assigned
+      member-months with `IS_ASSIGNED`, not with rows.
+
     config:
       schema: _int_input_layer
 
@@ -97,7 +112,9 @@ models:
           carries an assignment-list row for this member-month. The
           `enrollment` model keeps only months with a positive enrollment
           flag, so presence is assignment; rows from other deliveries do not
-          count.
+          count. False on initial-assignment lookback months and on months
+          only the next performance year's quarterly covers, even though
+          ALR's governing file, and so `core__member_month`, counts them.
         data_tests:
           - not_null
 
