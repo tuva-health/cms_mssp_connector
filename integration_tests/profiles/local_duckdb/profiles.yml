@@ -4,8 +4,10 @@ default:
     ci:
       type: duckdb
       # The database file is DBT_DUCKDB_PATH, attached under the fixed catalog
-      # name cms_mssp_connector_ci, so the file can have any name and
+      # name cms_mssp_connector_ci, so dbt accepts a file of any name and
       # var('input_database') still names the catalog the seeds load into.
+      # Views name that catalog: outside dbt, open a file with another stem
+      # by attaching it AS cms_mssp_connector_ci.
       # scripts/dbt-local sets a per-checkout default; CI sets its own. There
       # is no shared fallback: without the variable dbt stops here.
       path: ":memory:"

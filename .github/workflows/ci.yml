@@ -151,7 +151,11 @@ jobs:
       - run: uv sync --frozen
       - name: Read the DuckDB version
         id: duckdb
-        run: echo "version=$(uv run --frozen python -c 'import duckdb; print(duckdb.__version__)')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="$(uv run --frozen python -c 'import duckdb; print(duckdb.__version__)')"
+          test -n "$version" || { echo "Could not read the DuckDB version" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       # DuckDB keeps extensions under ~/.duckdb/extensions/v<version>/<platform>,
       # so a DuckDB bump starts a fresh cache.
       - name: Cache DuckDB extensions

@@ -20,9 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   severity with no warnings. `integration_tests` appends its synthetic ACO's
   row to `mssp_aco_agreement` with a seed post-hook; the shipped seed is
   unchanged. Each checkout builds into its own DuckDB file,
-  `integration_tests/target/cms_mssp_connector.duckdb`, so worktrees can
-  build at the same time; `DBT_DUCKDB_PATH` overrides it with a file of any
-  name (TUVA-133).
+  `integration_tests/target/cms_mssp_connector_ci.duckdb`, so worktrees can
+  build at the same time; `DBT_DUCKDB_PATH` overrides it with any path. A
+  file with another stem must be attached as `cms_mssp_connector_ci` to
+  read its views outside dbt (TUVA-133).
 - Unit tests pinning the risk-score cap with every enrollment type scored,
   binding and not binding, and the capped member-month rates reconciling to
   the ACO benchmark (TUVA-126).

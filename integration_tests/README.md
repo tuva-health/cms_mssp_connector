@@ -28,7 +28,7 @@ and local runs use `--project-dir integration_tests`.
 - `profiles/local_duckdb`: the DuckDB profile for local runs and the
   `dbt build / duckdb` CI job. It attaches the file `DBT_DUCKDB_PATH` names
   as catalog `cms_mssp_connector_ci`, the `input_database` the seeds load
-  into, so the file can have any name. It has no default path:
+  into, so dbt accepts any file name. It has no default path:
   `scripts/dbt-local` and CI each set one (see Local runs).
 
 ## Fixtures
@@ -103,11 +103,23 @@ have to exist first. To run them alone after a build:
 `scripts/dbt-local test --select "package:cms_mssp_connector,test_type:unit"`.
 
 Each checkout builds into its own database,
-`integration_tests/target/cms_mssp_connector.duckdb` (git-ignored, and
+`integration_tests/target/cms_mssp_connector_ci.duckdb` (git-ignored, and
 removed by `scripts/dbt-local clean`), so two worktrees can seed and build
-at the same time without touching each other's file. Set `DBT_DUCKDB_PATH`
-to use another file; any name works, because the profile fixes the catalog
-name. Point it at a shared path only if nothing else builds there.
+at the same time without touching each other's file. Point
+`DBT_DUCKDB_PATH` at a shared path only if nothing else builds there.
+
+`DBT_DUCKDB_PATH` takes any path; `scripts/dbt-local` creates its folder and
+refuses a path containing `'`, which dbt-duckdb does not escape in its
+`ATTACH`. dbt reads the file under the catalog name `cms_mssp_connector_ci`
+whatever it is called, and every view it creates names that catalog. A tool
+that opens the file directly names the catalog after the file's stem, so
+the default file, and any file named `cms_mssp_connector_ci.duckdb`, opens as
+is. Attach a file with another stem under the fixed name, or its views fail
+with `Catalog "cms_mssp_connector_ci" does not exist`:
+
+```sh
+duckdb -cmd "ATTACH '/path/to/other.duckdb' AS cms_mssp_connector_ci; USE cms_mssp_connector_ci"
+```
 
 Set `DBT_PROFILES_DIR` (and `DBT_PROFILE`) to use another warehouse.
 
