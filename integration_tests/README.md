@@ -91,4 +91,4 @@ Set `DBT_PROFILES_DIR` (and `DBT_PROFILE`) to use another warehouse.
 ## CI
 
 The `dbt build / duckdb` job in `.github/workflows/ci.yml` runs the same
-three steps on every pull request, with no secrets.
+three steps on every pull request to `main`, with no secrets.

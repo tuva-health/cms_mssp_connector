@@ -142,6 +142,8 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - run: uv sync --frozen
       - name: Install dbt packages
         run: uv run --frozen dbt deps --project-dir "$DBT_PROJECT_DIR"

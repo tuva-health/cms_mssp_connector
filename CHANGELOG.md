@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `integration_tests/`, a dbt project that builds the connector and
+  everything under it on local DuckDB from synthetic fixture seeds, with no
+  credentials, and `scripts/dbt-local` to run it (TUVA-124). The seeds are
+  `cms_alr_connector` v1.0.0's synthetic ALR and CCLF fixtures, the
+  `cms_mssp_pipeline` synthetic workbook relations, and header-only tables
+  for the other MSSP sources.
+- The `dbt build / duckdb` CI job, which runs that build on every pull
+  request to `main` without secrets.
+- The `fixture_gap` tag and `mssp_fixture_gap_severity` var (default `error`)
+  on the seven benchmark tests that the synthetic workbooks cannot pass yet.
+  `integration_tests` sets the var to `warn`. TUVA-126 removes both.
+
 ### Changed
 
 - **Breaking:** the package stack moves to Tuva 1.0 (TUVA-124).
@@ -29,9 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads `semantic_layer__fact_member_months` from that package, and
   `int_member_month_risk` uses Tuva 1.0's `core__member_month` spine
   (renamed from `core__member_months`).
-- dbt-core stays at 1.11.14, not the 1.10.20 that `cms_alr_connector` and
-  `medicare_cclf_connector` pin. dbt-core 1.10.20 requires sqlparse below
-  0.5.5, which would drop this project's `sqlparse>=0.6.0` security floor.
+- dbt-core is unchanged at 1.11.14, so no action is needed. It is not the
+  1.10.20 that `cms_alr_connector` and `medicare_cclf_connector` pin:
+  dbt-core 1.10.20 requires sqlparse below 0.5.5, which would drop this
+  project's `sqlparse>=0.6.0` security floor.
 
 ### Removed
 
@@ -44,20 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   MSSP output contract is 20 staging outputs, down from 22.
 - The `demo_data_only` and `semantic_layer_enabled` vars, which nothing
   reads any more.
-
-### Added
-
-- `integration_tests/`, a dbt project that builds the connector and
-  everything under it on local DuckDB from synthetic fixture seeds, with no
-  credentials, and `scripts/dbt-local` to run it (TUVA-124). The seeds are
-  `cms_alr_connector` v1.0.0's synthetic ALR and CCLF fixtures, the
-  `cms_mssp_pipeline` synthetic workbook relations, and header-only tables
-  for the other MSSP sources.
-- The `dbt build / duckdb` CI job, which runs that build on every pull
-  request without secrets.
-- The `fixture_gap` tag and `mssp_fixture_gap_severity` var (default `error`)
-  on the seven benchmark tests that the synthetic workbooks cannot pass yet.
-  `integration_tests` sets the var to `warn`. TUVA-126 removes both.
 
 ## [0.3.0] - 2026-10-08
 
