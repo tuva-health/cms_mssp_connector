@@ -7,3 +7,4 @@ logs
 target
 tests
 config/.user.yml
+integration_tests
