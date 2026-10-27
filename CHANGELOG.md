@@ -12,14 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `integration_tests/`, a dbt project that builds the connector and
   everything under it on local DuckDB from synthetic fixture seeds, with no
   credentials, and `scripts/dbt-local` to run it (TUVA-124). The seeds are
-  `cms_alr_connector` v1.0.0's synthetic ALR and CCLF fixtures, the
-  `cms_mssp_pipeline` synthetic workbook relations, and header-only tables
-  for the other MSSP sources.
+  `cms_alr_connector` v1.0.0's synthetic ALR and CCLF fixtures,
+  CMS-consistent synthetic benchmark workbooks with BEUR and BNEX rows for the
+  same beneficiaries (TUVA-126), and header-only tables for the other MSSP
+  sources. The benchmark path produces real projected savings, ACO-quarter and
+  member-month benchmark output in this build, and every test runs at its own
+  severity.
 - The `dbt build / duckdb` CI job, which runs that build on every pull
   request to `main` without secrets.
-- The `fixture_gap` tag and `mssp_fixture_gap_severity` var (default `error`)
-  on the seven benchmark tests that the synthetic workbooks cannot pass yet.
-  `integration_tests` sets the var to `warn`. TUVA-126 removes both.
 - `MEMBER_MONTH_ID` on `fact_member_month_benchmark`, passed through from
   the semantic layer's `fact_member_months` (TUVA-127). It is the fact's key:
   the `not_null`, `unique` and relationships tests and the one-to-one test

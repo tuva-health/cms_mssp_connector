@@ -30,7 +30,7 @@ uv run --frozen python -m unittest discover -s tests
 uv lock --check
 ```
 
-The build covers this connector, both CMS connectors, Tuva Core and the semantic-layer stack. The benchmark tests tagged `fixture_gap` warn in `integration_tests`, because the synthetic workbooks are shape-valid but not CMS-consistent. They stay at `error` everywhere else. TUVA-126 brings CMS-consistent fixtures and removes the tag and the `mssp_fixture_gap_severity` var. Don't relax any other test to make a build pass.
+The build covers this connector, both CMS connectors, Tuva Core and the semantic-layer stack. The fixtures are CMS-consistent, so every test runs at its own severity; don't relax a test to make a build pass. The one expected warning is `assert_acos_have_an_agreement_configuration`: the synthetic ACO `A0000` has no `mssp_aco_agreement` row, so the build exercises the documented defaults.
 
 ## Data rules
 
@@ -38,7 +38,7 @@ This repository is public. Commit synthetic data only:
 
 - No PHI, no real beneficiary, provider or ACO identifiers, and no counts, totals or other aggregates from real data. That applies to commits, PR bodies and issues alike.
 - When you profile real deliveries locally, use aggregate-only scripts and never print rows. Real column headers are fine; read the header line only.
-- Fixtures come from the `cclf-synth` generator, a local-only repo that is not in this repository and has no remote (on the maintainer's machine at `~/Code/clients/tuvahealth/cclf-synth`; ask the maintainer for access), or from `cms_mssp_pipeline`'s synthetic builders (`integration_tests/scripts/export_workbook_seeds.py`). Never hand-edit a generated fixture; regenerate it. Copy the ALR and CCLF seeds from `cms_alr_connector` at the pinned tag.
+- Fixtures come from the `cclf-synth` generator, a local-only repo that is not in this repository and has no remote (on the maintainer's machine at `~/Code/clients/tuvahealth/cclf-synth`; ask the maintainer for access): `cclf-synth generate-mssp` writes the workbook relations and the BEUR / BNEX rows (see `integration_tests/README.md`). Never hand-edit a generated fixture; regenerate it. Copy the ALR and CCLF seeds from `cms_alr_connector` at the pinned tag.
 - Run the `cclf-synth` leak-check on every CSV you commit (`mise exec --cd ~/Code/clients/tuvahealth/cclf-synth -- uv run leak-check <absolute path>`), and commit only when it passes.
 
 ## Raw-table contract with cms_mssp_pipeline
