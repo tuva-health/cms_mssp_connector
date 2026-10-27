@@ -213,6 +213,28 @@ def placement_database(nodes: dict, database: Optional[str]) -> Tuple[Optional[s
     return observed.pop(), []
 
 
+def placement_errors(
+    nodes: dict,
+    database: str,
+    prefix: str,
+    names: Tuple[str, ...],
+    schema: str,
+    label: str,
+) -> List[str]:
+    """Require each `<prefix><name>` model enabled at (database, schema, name)."""
+    errors: List[str] = []
+    for name in names:
+        node = enabled_model(nodes, f"{prefix}{name}")
+        if node is None:
+            errors.append(f"required enabled {label} is missing: {name}")
+            continue
+        expected = (database, schema, name)
+        actual = (node.get("database"), node.get("schema"), node.get("alias"))
+        if actual != expected:
+            errors.append(f"{name} relation placement must be {expected}, found {actual}")
+    return errors
+
+
 def verify(manifest: dict, lock: str, database: Optional[str] = None) -> List[str]:
     errors: List[str] = []
     nodes = manifest.get("nodes", {})
@@ -234,38 +256,25 @@ def verify(manifest: dict, lock: str, database: Optional[str] = None) -> List[st
     if database is None:
         return errors
 
-    for name in MSSP_OUTPUTS + BENCHMARK_STAGING_OUTPUTS:
-        unique_id = f"model.cms_mssp_connector.{name}"
-        node = enabled_model(nodes, unique_id)
-        if node is None:
-            errors.append(f"required enabled MSSP relation is missing: {name}")
-            continue
-        expected = (database, "_stg_input_layer", name)
-        actual = (node.get("database"), node.get("schema"), node.get("alias"))
-        if actual != expected:
-            errors.append(f"{name} relation placement must be {expected}, found {actual}")
-
-    for name in BENCHMARK_FACT_OUTPUTS + BENCHMARK_CURRENT_OUTPUTS:
-        unique_id = f"model.cms_mssp_connector.{name}"
-        node = enabled_model(nodes, unique_id)
-        if node is None:
-            errors.append(f"required enabled benchmark fact is missing: {name}")
-            continue
-        expected = (database, "input_layer", name)
-        actual = (node.get("database"), node.get("schema"), node.get("alias"))
-        if actual != expected:
-            errors.append(f"{name} relation placement must be {expected}, found {actual}")
-
-    for name in CONNECTOR_SEMANTIC_LAYER_OUTPUTS:
-        unique_id = f"model.cms_mssp_connector.{name}"
-        node = enabled_model(nodes, unique_id)
-        if node is None:
-            errors.append(f"required enabled semantic layer fact is missing: {name}")
-            continue
-        expected = (database, "semantic_layer", name)
-        actual = (node.get("database"), node.get("schema"), node.get("alias"))
-        if actual != expected:
-            errors.append(f"{name} relation placement must be {expected}, found {actual}")
+    connector = "model.cms_mssp_connector."
+    errors.extend(
+        placement_errors(
+            nodes, database, connector, MSSP_OUTPUTS + BENCHMARK_STAGING_OUTPUTS,
+            "_stg_input_layer", "MSSP relation",
+        )
+    )
+    errors.extend(
+        placement_errors(
+            nodes, database, connector, BENCHMARK_FACT_OUTPUTS + BENCHMARK_CURRENT_OUTPUTS,
+            "input_layer", "benchmark fact",
+        )
+    )
+    errors.extend(
+        placement_errors(
+            nodes, database, connector, CONNECTOR_SEMANTIC_LAYER_OUTPUTS,
+            "semantic_layer", "semantic layer fact",
+        )
+    )
 
     for unique_id, (alias, schema) in BOUNDARY_OUTPUTS.items():
         node = enabled_model(nodes, unique_id)
@@ -279,27 +288,18 @@ def verify(manifest: dict, lock: str, database: Optional[str] = None) -> List[st
         if not reaches_enabled_tuva(nodes, unique_id):
             errors.append(f"enabled Tuva dependency path is missing from {unique_id}")
 
-    for name in SEMANTIC_LAYER_OUTPUTS:
-        unique_id = f"model.semantic_layer.semantic_layer__{name}"
-        node = enabled_model(nodes, unique_id)
-        if node is None:
-            errors.append(f"required enabled semantic layer relation is missing: {name}")
-            continue
-        expected = (database, "semantic_layer", name)
-        actual = (node.get("database"), node.get("schema"), node.get("alias"))
-        if actual != expected:
-            errors.append(f"{name} relation placement must be {expected}, found {actual}")
-
-    for name in CHRONIC_CONDITIONS_OUTPUTS:
-        unique_id = f"model.cms_chronic_conditions.cms_chronic_conditions__{name}"
-        node = enabled_model(nodes, unique_id)
-        if node is None:
-            errors.append(f"required enabled chronic conditions relation is missing: {name}")
-            continue
-        expected = (database, "chronic_conditions", name)
-        actual = (node.get("database"), node.get("schema"), node.get("alias"))
-        if actual != expected:
-            errors.append(f"{name} relation placement must be {expected}, found {actual}")
+    errors.extend(
+        placement_errors(
+            nodes, database, "model.semantic_layer.semantic_layer__", SEMANTIC_LAYER_OUTPUTS,
+            "semantic_layer", "semantic layer relation",
+        )
+    )
+    errors.extend(
+        placement_errors(
+            nodes, database, "model.cms_chronic_conditions.cms_chronic_conditions__",
+            CHRONIC_CONDITIONS_OUTPUTS, "chronic_conditions", "chronic conditions relation",
+        )
+    )
 
     return errors
 
