@@ -38,8 +38,8 @@ before it is committed.
 | Seeds | Source tables | Origin |
 | --- | --- | --- |
 | `seeds/alr_cclf/` | the six ALR tables (source `cms_ssp_reports`) and the CCLF tables (source `medicare_cclf`) | Copied unchanged from `cms_alr_connector` v1.0.0 `integration_tests/seeds/`, which the `cclf-synth` generator builds. Shared fake beneficiaries `9TT0FK…`, ACO `A0000`. Copy them again when the ALR pin moves. |
-| `seeds/workbooks/` | the twenty BNMRK / AEXPU / QEXPU relations of the workbook export contract `cclf-synth generate-mssp`: CMS-consistent synthetic workbooks for ACO `A0000`, PY2025 (see below). |
-| `seeds/mssp/` | the other `mssp_raw` tables: BEUR, BAIP, NCBP, MCQM, BNEX, the participant lists and the shadow bundles BEUR, `beneficiary_exclusions` and `excluded_beneficiary_mbi_xref` carry rows from `cclf-synth generate-mssp` for the ALR fixture beneficiaries; the rest are header only. `seeds/mssp/_seeds.yml` names the source of each header. |
+| `seeds/workbooks/` | the twenty BNMRK / AEXPU / QEXPU relations of the workbook export contract | `cclf-synth generate-mssp`: CMS-consistent synthetic workbooks for ACO `A0000`, PY2025 (see below). |
+| `seeds/mssp/` | the other `mssp_raw` tables: BEUR, BAIP, NCBP, MCQM, BNEX, the participant lists and the shadow bundles | BEUR, `beneficiary_exclusions` and `excluded_beneficiary_mbi_xref` carry rows from `cclf-synth generate-mssp` for the ALR fixture beneficiaries; the rest are header only. `seeds/mssp/_seeds.yml` names the source of each header. |
 
 The workbook relations follow the delivered CMS workbooks' grammar: the
 labels, the cells CMS leaves empty or writes `-` in, and the sheets each
@@ -73,7 +73,7 @@ populated. Two unit tests pin the cap with every type scored, binding and
 not binding, and the capped member rates reconciling to the ACO benchmark:
 `fact_benchmark_aco_quarter::test_cap_with_every_enrollment_type_scored` and
 `fact_member_month_benchmark::test_capped_rates_reconcile_with_every_enrollment_type_scored`.
-A follow-up adds such beneficiaries to the cclf-synth ALR fixtures for the
+TUVA-134 adds such beneficiaries to the cclf-synth ALR fixtures for the
 next `cms_alr_connector` release.
 
 ## Local runs

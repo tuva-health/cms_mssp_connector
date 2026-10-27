@@ -506,8 +506,8 @@ so rename one only together with the rule:
   `medicare_cclf_connector`, Tuva Core and the semantic-layer stack, with the
   connector's unit and data tests. The fixtures are CMS-consistent (see
   `integration_tests/README.md`), so the benchmark path produces real
-  output and every test runs at its own severity. The check name matches the CMS connectors'
-  DuckDB jobs. It is new; adding it to the protection rule is TUVA-129.
+  output and every test runs at its own severity. The check name matches the
+  CMS connectors' DuckDB jobs. It is new; adding it to the protection rule is TUVA-129.
 
 `dbt build / duckdb` is the only job that runs dbt against data, and only
 synthetic data. Runs against a warehouse with real data remain in the client
