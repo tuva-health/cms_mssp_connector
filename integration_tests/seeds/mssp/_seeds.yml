@@ -12,16 +12,16 @@ version: 2
 # string.
 #
 # Header sources:
-#   baip_beneficiary_advanced_investment_payment: header of the real QBAIP CSV (PY2025 quarterly deliveries); identical to the CMS PY 2026 report template BAIP.csv
+#   baip_beneficiary_advanced_investment_payment: header of the real QBAIP CSV; identical to the CMS PY 2026 report template BAIP.csv
 #   beneficiary_exclusions: the column list cms_mssp_pipeline bnex_processor.py selects from the BNEX XML
-#   beur_beneficiary_expenditure_utilization_report: header of the real QBEUR CSV (PY2025 quarterly deliveries); identical to the CMS PY 2026 report template BEUR.csv
+#   beur_beneficiary_expenditure_utilization_report: header of the real QBEUR CSV; identical to the CMS PY 2026 report template BEUR.csv
 #   excluded_beneficiary_mbi_xref: the fixed-width layout in cms_mssp_pipeline bnex_mbi_xref_file_defs.py
-#   mcqm_bcs_112ssp: header row of the real MCQM workbook sheet BCS_112SSP (PY2025 Q1-Q3, union by name)
-#   mcqm_beneficiaries: header row of the real MCQM workbook sheet Medicare_CQM_Beneficiaries (PY2025 Q1-Q3, union by name)
-#   mcqm_dep_134ssp: header row of the real MCQM workbook sheet DEP_134SSP (PY2025 Q1-Q3, union by name)
-#   mcqm_dm_001ssp: header row of the real MCQM workbook sheet DM_001SSP (PY2025 Q1-Q3, union by name)
-#   mcqm_htn_236ssp: header row of the real MCQM workbook sheet HTN_236SSP (PY2025 Q1-Q3, union by name)
-#   ncbp_non_claims_based_payments: header of the real QNCBP CSV (PY2025 quarterly deliveries)
+#   mcqm_bcs_112ssp: header row of the real MCQM workbook sheet BCS_112SSP (union by name across deliveries)
+#   mcqm_beneficiaries: header row of the real MCQM workbook sheet Medicare_CQM_Beneficiaries (union by name across deliveries)
+#   mcqm_dep_134ssp: header row of the real MCQM workbook sheet DEP_134SSP (union by name across deliveries)
+#   mcqm_dm_001ssp: header row of the real MCQM workbook sheet DM_001SSP (union by name across deliveries)
+#   mcqm_htn_236ssp: header row of the real MCQM workbook sheet HTN_236SSP (union by name across deliveries)
+#   ncbp_non_claims_based_payments: header of the real QNCBP CSV
 #   participants_list: metadata columns only (no file or spec on hand)
 #   provider_and_supplier_list: metadata columns only (no file or spec on hand)
 #   shadow_bundles_dm: metadata columns only (no file or spec on hand)

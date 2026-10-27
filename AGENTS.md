@@ -38,8 +38,8 @@ This repository is public. Commit synthetic data only:
 
 - No PHI, no real beneficiary, provider or ACO identifiers, and no counts, totals or other aggregates from real data. That applies to commits, PR bodies and issues alike.
 - When you profile real deliveries locally, use aggregate-only scripts and never print rows. Real column headers are fine; read the header line only.
-- Fixtures come from the local-only `cclf-synth` generator, or from `cms_mssp_pipeline`'s synthetic builders (`integration_tests/scripts/export_workbook_seeds.py`). Never hand-edit a generated fixture; regenerate it. Copy the ALR and CCLF seeds from `cms_alr_connector` at the pinned tag.
-- Run the `cclf-synth` leak-check on every CSV you commit, and commit only when it passes.
+- Fixtures come from the `cclf-synth` generator, a local-only repo that is not in this repository and has no remote (on the maintainer's machine at `~/Code/clients/tuvahealth/cclf-synth`; ask the maintainer for access), or from `cms_mssp_pipeline`'s synthetic builders (`integration_tests/scripts/export_workbook_seeds.py`). Never hand-edit a generated fixture; regenerate it. Copy the ALR and CCLF seeds from `cms_alr_connector` at the pinned tag.
+- Run the `cclf-synth` leak-check on every CSV you commit (`mise exec --cd ~/Code/clients/tuvahealth/cclf-synth -- uv run leak-check <absolute path>`), and commit only when it passes.
 
 ## Raw-table contract with cms_mssp_pipeline
 
