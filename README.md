@@ -47,7 +47,7 @@ deliveries without choosing between them:
 They calculate nothing. Deriving the benchmark from these inputs is the job of
 the final layer.
 
-`int_member_month_risk` sits alongside them on the `core__member_months` grain
+`int_member_month_risk` sits alongside them on the `core__member_month` grain
 (person, data source, month). It states which MSSP enrollment type the member
 is in — from the populated score column on the 2025+ assignment list, else the
 BEUR person-year fractions, else the Tuva eligibility codes, with

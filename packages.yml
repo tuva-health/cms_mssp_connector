@@ -1,9 +1,27 @@
 packages:
   - package: dbt-labs/dbt_utils
     version: [">=0.9.2"]
-  # Pinned to a commit, not the default branch, so a lock regeneration cannot pull
-  # whatever is on cms_alr_connector main. 24302c5 = merge of
-  # tuva-health/cms_alr_connector#4, which itself pins medicare_cclf_connector to
-  # 603a258. cms_alr_connector has no release tags. Bump deliberately.
+  # cms_alr_connector v1.0.0 brings medicare_cclf_connector v1.0.0 and Tuva
+  # Core v1.0.0 (tuva-health/tuva-core, dbt package name the_tuva_project)
+  # transitively. Every pin below is a release tag; bump them deliberately and
+  # together.
   - git: "https://github.com/tuva-health/cms_alr_connector.git"
-    revision: 24302c5b931575937e715170ac4bb4c4e5cf37af
+    revision: "v1.0.0"
+  # The Tuva semantic layer is a separate package in Tuva 1.0 (dbt package
+  # name semantic_layer). fact_member_month_benchmark reads its
+  # semantic_layer__fact_member_months. Its README asks the root project to
+  # declare Tuva Core and the five marts it builds on, at the same tag.
+  - git: "https://github.com/tuva-health/tuva-core.git"
+    revision: "v1.0.0"
+  - git: "https://github.com/tuva-health/ahrq_quality_indicators.git"
+    revision: "v1.0.0"
+  - git: "https://github.com/tuva-health/ccsr.git"
+    revision: "v1.0.0"
+  - git: "https://github.com/tuva-health/cms_hcc.git"
+    revision: "v1.0.0"
+  - git: "https://github.com/tuva-health/nyu_ed_classification.git"
+    revision: "v1.0.0"
+  - git: "https://github.com/tuva-health/quality_measures.git"
+    revision: "v1.0.0"
+  - git: "https://github.com/tuva-health/semantic-layer.git"
+    revision: "v1.0.0"

@@ -6,7 +6,7 @@ version: 2
 # aged/non-dual — and CMS assigns every beneficiary a prospective HCC risk
 # score under the model for that type. Applying the benchmark to a member
 # therefore needs, for every month, which type the member is in and which
-# score CMS gave them. This model states both on the core__member_months
+# score CMS gave them. This model states both on the core__member_month
 # grain, and says where each answer came from.
 #
 # The enrollment type resolves in a fixed priority order, and the score comes
@@ -23,7 +23,7 @@ models:
       enrollment type the member is in and the CMS prospective HCC risk score
       the assignment list supplies for them.
 
-      The spine is `core__member_months`; every member-month has a row whether
+      The spine is `core__member_month`; every member-month has a row whether
       or not the assignment list covers it, and `IS_ASSIGNED` says which.
 
       The assignment list is keyed on MBI and Tuva on `person_id`, and the two
@@ -58,17 +58,17 @@ models:
 
     columns:
       - name: PERSON_ID
-        description: Tuva person identifier from `core__member_months`.
+        description: Tuva person identifier from `core__member_month`.
         data_tests:
           - not_null
 
       - name: DATA_SOURCE
-        description: Tuva data source from `core__member_months`.
+        description: Tuva data source from `core__member_month`.
         data_tests:
           - not_null
 
       - name: YEAR_MONTH
-        description: Calendar month as `YYYYMM`, from `core__member_months`.
+        description: Calendar month as `YYYYMM`, from `core__member_month`.
         data_tests:
           - not_null
 
@@ -259,7 +259,7 @@ unit_tests:
 
     given:
 
-      - input: ref('the_tuva_project', 'core__member_months')
+      - input: ref('the_tuva_project', 'core__member_month')
         rows:
           - {person_id: 'P1', member_id: 'P1', year_month: '202501', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
           - {person_id: 'P2', member_id: 'P2', year_month: '202502', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}

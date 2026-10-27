@@ -72,13 +72,13 @@ BENCHMARK_FACT_OUTPUTS = (
     "fct_projected_benchmark_by_enrollment_type",
     "fct_projected_savings",
 )
-# The Tuva semantic layer: the facts and dimensions the connector build
-# materialises in the semantic_layer schema because dbt_project.yml sets
-# semantic_layer_enabled. Package model names are semantic_layer__<name> with
+# The Tuva semantic layer: the facts and dimensions the semantic_layer package
+# (tuva-health/semantic-layer, installed by packages.yml) materialises in the
+# semantic_layer schema. Package model names are semantic_layer__<name> with
 # alias <name>; the semantic_layer__stg_* staging models feed these and are not
-# part of the contract.
+# part of the contract. Semantic layer 1.0 dropped dim_condition,
+# fact_expected_values and fact_member_condition_bridge.
 SEMANTIC_LAYER_OUTPUTS = (
-    "dim_condition",
     "dim_data_source",
     "dim_date",
     "dim_encounter_group",
@@ -92,9 +92,7 @@ SEMANTIC_LAYER_OUTPUTS = (
     "fact_ed_visits",
     "fact_encounter_service_bridge",
     "fact_encounters",
-    "fact_expected_values",
     "fact_hcc_gaps",
-    "fact_member_condition_bridge",
     "fact_member_months",
     "fact_pharmacy_claims",
     "fact_quality_measures",
@@ -275,7 +273,7 @@ def verify(manifest: dict, lock: str, database: Optional[str] = None) -> List[st
             errors.append(f"enabled Tuva dependency path is missing from {unique_id}")
 
     for name in SEMANTIC_LAYER_OUTPUTS:
-        unique_id = f"model.the_tuva_project.semantic_layer__{name}"
+        unique_id = f"model.semantic_layer.semantic_layer__{name}"
         node = enabled_model(nodes, unique_id)
         if node is None:
             errors.append(f"required enabled semantic layer relation is missing: {name}")

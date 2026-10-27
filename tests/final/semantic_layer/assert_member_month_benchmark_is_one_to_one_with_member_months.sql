@@ -18,7 +18,7 @@
 with member_months as (
 
     select member_month_sk as MEMBER_MONTH_SK
-    from {{ ref('the_tuva_project', 'semantic_layer__fact_member_months') }}
+    from {{ ref('semantic_layer', 'semantic_layer__fact_member_months') }}
 
 ),
 

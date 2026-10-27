@@ -10,15 +10,19 @@ version: '1.0.0'
 # overlay (git-ignored); see config/profiles.example.yml for the env-var contract.
 profile: 'cms_mssp_connector'
 
+flags:
+  # Tuva Core 1.0 resolves refs inside a package before the root project, as
+  # the cms_alr_connector and medicare_cclf_connector READMEs require. dbt
+  # reads flags only from the root project, so integration_tests sets it too.
+  require_ref_searches_node_package_before_root: true
+
 vars:
   input_database: tuva
   input_schema: raw_data
 
-  demo_data_only: false
   claims_enabled: true
   cms_alr_connector: true
   provider_attribution_enabled: true
-  semantic_layer_enabled: true
 
   # Cap on the ACO's aggregate PY-to-BY3 prospective HCC risk ratio applied
   # by fact_benchmark_aco_quarter: 0.03 is the 3 percentage points of

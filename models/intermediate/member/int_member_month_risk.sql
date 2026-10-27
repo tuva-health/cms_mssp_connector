@@ -2,7 +2,7 @@
     Enrollment type and CMS prospective HCC risk score, one row per Tuva
     person, data source and month.
 
-    The spine is core__member_months and nothing filters it: a month the
+    The spine is core__member_month and nothing filters it: a month the
     assignment list does not cover keeps its row with IS_ASSIGNED false, so the
     benchmark can be applied to every member-month and the ones it cannot be
     applied to are visible rather than absent.
@@ -57,7 +57,7 @@ with member_months as (
         cast(person_id as {{ dbt.type_string() }})          as PERSON_ID,
         cast(data_source as {{ dbt.type_string() }})        as DATA_SOURCE,
         cast(year_month as {{ dbt.type_string() }})         as YEAR_MONTH
-    from {{ ref('the_tuva_project', 'core__member_months') }}
+    from {{ ref('the_tuva_project', 'core__member_month') }}
 
 ),
 

@@ -1,23 +1,32 @@
 packages:
   - name: dbt_utils
     package: dbt-labs/dbt_utils
-    version: 1.3.3
+    version: 1.4.1
   - git: https://github.com/tuva-health/cms_alr_connector.git
     name: cms_aalr_connector
-    revision: 24302c5b931575937e715170ac4bb4c4e5cf37af
+    revision: 30ae87eed128fa11bb02998a9cf5ce7ddeb108b5
+  - git: https://github.com/tuva-health/tuva-core.git
+    name: the_tuva_project
+    revision: 131d12a5225282563917b76af92718b555c24d4d
+  - git: https://github.com/tuva-health/ahrq_quality_indicators.git
+    name: ahrq_quality_indicators
+    revision: ea6ee7b14d1cb2d789354cfd0d0807bbfb6b2e95
+  - git: https://github.com/tuva-health/ccsr.git
+    name: ccsr
+    revision: 114156b7e1d93de3b59665151d17287a5d654a0d
+  - git: https://github.com/tuva-health/cms_hcc.git
+    name: cms_hcc
+    revision: 6343066e5d3e9326e4b42529b76cf22db9b5cc14
+  - git: https://github.com/tuva-health/nyu_ed_classification.git
+    name: nyu_ed_classification
+    revision: 4cb5a09e3b76b4cd9732160f0fd7eff778095bbe
+  - git: https://github.com/tuva-health/quality_measures.git
+    name: quality_measures
+    revision: 18af7484c86c0c3ad756071dbd774f59b068d469
+  - git: https://github.com/tuva-health/semantic-layer.git
+    name: semantic_layer
+    revision: a88efcccd47ad74ce42bd95e536890bf0bde0a6d
   - git: https://github.com/tuva-health/medicare_cclf_connector.git
     name: medicare_cclf_connector
-    revision: 603a258e3c649d6a4eb7d0835e8efc7d79371204
-  - git: https://github.com/tuva-health/the_tuva_project.git
-    name: the_tuva_project
-    revision: cc3b8ce89bc43925e8c493bf92d8eb1c36da6061
-  - name: dbt_expectations
-    package: metaplane/dbt_expectations
-    version: 0.10.10
-  - git: https://github.com/tuva-health/dbt-data-reliability.git
-    name: elementary
-    revision: 382c570ccf4f8733e5323ae21aa4aa9fa849fedd
-  - name: dbt_date
-    package: godatadriven/dbt_date
-    version: 0.17.2
-sha1_hash: 30b4d5882447b28635800769a6de89160df4d41a
+    revision: 1deb35646069679bffeee7abf12ce9ab0bf3e29c
+sha1_hash: 16631c8fdf4c6f662cb16862faca9aa18590e795

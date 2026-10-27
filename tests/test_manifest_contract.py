@@ -64,11 +64,10 @@ BENCHMARK_FACT_OUTPUTS = (
     "fct_projected_benchmark_by_enrollment_type",
     "fct_projected_savings",
 )
-# The Tuva semantic layer: the facts and dimensions the connector build
-# materialises in the semantic_layer schema once semantic_layer_enabled is set.
+# The Tuva semantic layer: the facts and dimensions the semantic_layer package
+# (tuva-health/semantic-layer) materialises in the semantic_layer schema.
 # Model names are semantic_layer__<name> with alias <name>.
 SEMANTIC_LAYER_OUTPUTS = (
-    "dim_condition",
     "dim_data_source",
     "dim_date",
     "dim_encounter_group",
@@ -82,9 +81,7 @@ SEMANTIC_LAYER_OUTPUTS = (
     "fact_ed_visits",
     "fact_encounter_service_bridge",
     "fact_encounters",
-    "fact_expected_values",
     "fact_hcc_gaps",
-    "fact_member_condition_bridge",
     "fact_member_months",
     "fact_pharmacy_claims",
     "fact_quality_measures",
@@ -171,9 +168,9 @@ def valid_manifest() -> dict:
     for unique_id, (package, name, schema) in BOUNDARY_OUTPUTS.items():
         nodes[unique_id] = model(package, name, schema)
     for name in SEMANTIC_LAYER_OUTPUTS:
-        node = model("the_tuva_project", f"semantic_layer__{name}", "semantic_layer")
+        node = model("semantic_layer", f"semantic_layer__{name}", "semantic_layer")
         node["alias"] = name
-        nodes[f"model.the_tuva_project.semantic_layer__{name}"] = node
+        nodes[f"model.semantic_layer.semantic_layer__{name}"] = node
     nodes["model.medicare_cclf_connector.eligibility"]["depends_on"]["nodes"] = [
         "model.cms_aalr_connector.enrollment"
     ]
@@ -266,13 +263,13 @@ class ManifestContractTests(unittest.TestCase):
 
     def test_rejects_missing_disabled_or_misplaced_semantic_layer_relation(self) -> None:
         missing = valid_manifest()
-        del missing["nodes"]["model.the_tuva_project.semantic_layer__fact_member_months"]
+        del missing["nodes"]["model.semantic_layer.semantic_layer__fact_member_months"]
         disabled = valid_manifest()
-        disabled["nodes"]["model.the_tuva_project.semantic_layer__dim_member"]["config"][
+        disabled["nodes"]["model.semantic_layer.semantic_layer__dim_member"]["config"][
             "enabled"
         ] = False
         misplaced = valid_manifest()
-        misplaced["nodes"]["model.the_tuva_project.semantic_layer__fact_claims"][
+        misplaced["nodes"]["model.semantic_layer.semantic_layer__fact_claims"][
             "schema"
         ] = "input_layer"
 
@@ -395,7 +392,7 @@ class ManifestContractTests(unittest.TestCase):
 
     def test_rejects_an_unapproved_package_revision(self) -> None:
         lock = (REPOSITORY_ROOT / "package-lock.yml").read_text(encoding="ascii")
-        errors = self.verify(valid_manifest(), lock.replace("cc3b8ce89bc43925e8c493bf92d8eb1c36da6061", "0" * 40, 1))
+        errors = self.verify(valid_manifest(), lock.replace("131d12a5225282563917b76af92718b555c24d4d", "0" * 40, 1))
 
         self.assertTrue(any("the_tuva_project" in error for error in errors))
 
