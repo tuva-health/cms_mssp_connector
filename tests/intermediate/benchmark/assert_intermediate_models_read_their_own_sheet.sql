@@ -1,4 +1,4 @@
-{{ config(severity = var('mssp_fixture_gap_severity', 'error'), tags = ['fixture_gap']) }}
+{{ config(severity = var('mssp_fixture_gap_severity'), tags = ['fixture_gap']) }}
 {#-
     Binds every benchmark intermediate model to the worksheet it is supposed to
     read — the intermediate counterpart of

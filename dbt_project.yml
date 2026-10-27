@@ -29,6 +29,11 @@ vars:
   # 42 CFR 425.605(a)(1)(ii)(A). Swap in a published factor by overriding it.
   mssp_risk_score_cap: 0.03
 
+  # Severity of the benchmark tests tagged fixture_gap. error everywhere but
+  # integration_tests, whose synthetic workbooks cannot pass them yet and
+  # which sets warn. TUVA-126 removes the tag and this var.
+  mssp_fixture_gap_severity: error
+
 # These configurations specify where dbt should look for different types of files.
 # The `model-paths` config, for example, states that models in this project can be
 # found in the "models/" directory. You probably won't need to change these!

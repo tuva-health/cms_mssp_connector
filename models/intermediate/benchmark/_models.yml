@@ -449,7 +449,7 @@ models:
               arguments:
                 values: ['BY1', 'BY2', 'BY3']
               config:
-                severity: "{{ var('mssp_fixture_gap_severity', 'error') }}"
+                severity: "{{ var('mssp_fixture_gap_severity') }}"
                 tags: ['fixture_gap']
 
       - name: VALUE_TEXT
@@ -573,7 +573,7 @@ models:
               arguments:
                 values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual']
               config:
-                severity: "{{ var('mssp_fixture_gap_severity', 'error') }}"
+                severity: "{{ var('mssp_fixture_gap_severity') }}"
                 tags: ['fixture_gap']
 
       - name: ENROLLMENT_TYPE_LABEL
@@ -593,7 +593,7 @@ models:
               arguments:
                 values: ['BY1', 'BY2', 'BY3']
               config:
-                severity: "{{ var('mssp_fixture_gap_severity', 'error') }}"
+                severity: "{{ var('mssp_fixture_gap_severity') }}"
                 tags: ['fixture_gap']
 
       - name: ACO_ROW_LABEL

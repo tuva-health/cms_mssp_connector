@@ -573,7 +573,7 @@ With `upstream` as the fork's remote for this repository:
 
 - Staging models are configured as views in `dbt_project.yml`.
 - The project includes adapter-dispatched macros in `macros/` for safer cross-database casting. `cast_numeric_or_null` and `cast_year_or_null` return NULL instead of raising when a source value is not a number or not a four-digit year, which the benchmark workbooks require because every worksheet cell — figures, `-` markers and free text alike — arrives in one text column.
-- Several project vars are already defined: `claims_enabled`, `cms_alr_connector`, `provider_attribution_enabled` and `mssp_risk_score_cap`. `integration_tests/dbt_project.yml` is the commented inventory of every var the connector and its packages read.
+- Several project vars are already defined: `claims_enabled`, `cms_alr_connector`, `provider_attribution_enabled`, `mssp_risk_score_cap` and `mssp_fixture_gap_severity` (`error`; `integration_tests` sets `warn`, see its README). `integration_tests/dbt_project.yml` is the commented inventory of every var the connector and its packages read.
 - Intermediate models and final models are configured as tables in `dbt_project.yml`.
 - `macros/to_double.sql` and `macros/safe_divide.sql` exist for the final layer.
   The benchmark calculation is a chain of ratios and products over cells Excel
