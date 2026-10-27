@@ -384,8 +384,9 @@ checks a release against it.
   only and builds `cms_chronic_conditions_long` (one row per person,
   condition, evidence event and data source) and `cms_chronic_conditions_wide`
   (one row per person and data source, a 0/1 column per condition) in the
-  `chronic_conditions` schema. Its condition hierarchy is a package seed,
-  loaded in the same `build`. `scripts/verify_manifest.py` requires both
+  `chronic_conditions` schema. That schema also gets the package's condition
+  hierarchy seed (`cms_chronic_conditions_hierarchy`, loaded in the same
+  `build`) and its three `stg_cms_chronic_condition_*` staging tables. `scripts/verify_manifest.py` requires both
   models (`model.cms_chronic_conditions.cms_chronic_conditions__<name>`) to be
   enabled and placed in `chronic_conditions`. The GitHub repository
   `tuva-health/chronic_conditions` redirects here; pin `cms_chronic_conditions`.
