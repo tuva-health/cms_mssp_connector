@@ -86,6 +86,13 @@ SEMANTIC_LAYER_OUTPUTS = (
     "fact_risk_factors",
     "fact_risk_scores",
 )
+# CMS chronic conditions (tuva-health/cms_chronic_conditions): model names are
+# cms_chronic_conditions__<name> with alias <name>, in the chronic_conditions
+# schema.
+CHRONIC_CONDITIONS_OUTPUTS = (
+    "cms_chronic_conditions_long",
+    "cms_chronic_conditions_wide",
+)
 
 # The two current-projection models over those facts: the same figures
 # filtered to the latest calculable benchmark delivery and carrying PMPM
@@ -169,6 +176,14 @@ def valid_manifest() -> dict:
         node = model("semantic_layer", f"semantic_layer__{name}", "semantic_layer")
         node["alias"] = name
         nodes[f"model.semantic_layer.semantic_layer__{name}"] = node
+    for name in CHRONIC_CONDITIONS_OUTPUTS:
+        node = model(
+            "cms_chronic_conditions",
+            f"cms_chronic_conditions__{name}",
+            "chronic_conditions",
+        )
+        node["alias"] = name
+        nodes[f"model.cms_chronic_conditions.cms_chronic_conditions__{name}"] = node
     nodes["model.medicare_cclf_connector.eligibility"]["depends_on"]["nodes"] = [
         "model.cms_aalr_connector.enrollment"
     ]
@@ -285,6 +300,39 @@ class ManifestContractTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "fact_claims" in error and "semantic_layer" in error
+                for error in misplaced_errors
+            )
+        )
+
+    def test_rejects_missing_disabled_or_misplaced_chronic_conditions_relation(self) -> None:
+        prefix = "model.cms_chronic_conditions.cms_chronic_conditions__"
+        missing = valid_manifest()
+        del missing["nodes"][f"{prefix}cms_chronic_conditions_long"]
+        disabled = valid_manifest()
+        disabled["nodes"][f"{prefix}cms_chronic_conditions_wide"]["config"][
+            "enabled"
+        ] = False
+        misplaced = valid_manifest()
+        misplaced["nodes"][f"{prefix}cms_chronic_conditions_long"][
+            "schema"
+        ] = "semantic_layer"
+
+        missing_errors = self.verify(missing)
+        disabled_errors = self.verify(disabled)
+        misplaced_errors = self.verify(misplaced)
+
+        self.assertTrue(
+            any(
+                "chronic conditions" in error and "cms_chronic_conditions_long" in error
+                for error in missing_errors
+            )
+        )
+        self.assertTrue(
+            any(error.endswith(": cms_chronic_conditions_wide") for error in disabled_errors)
+        )
+        self.assertTrue(
+            any(
+                "cms_chronic_conditions_long" in error and "chronic_conditions'" in error
                 for error in misplaced_errors
             )
         )

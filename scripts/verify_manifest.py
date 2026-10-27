@@ -97,6 +97,15 @@ SEMANTIC_LAYER_OUTPUTS = (
     "fact_risk_factors",
     "fact_risk_scores",
 )
+# CMS chronic conditions (tuva-health/cms_chronic_conditions, installed by
+# packages.yml): Tuva's replacement for the chronic conditions retired in 1.0.
+# Package model names are cms_chronic_conditions__<name> with alias <name>,
+# materialised in the chronic_conditions schema; the staging models feed these
+# and are not part of the contract.
+CHRONIC_CONDITIONS_OUTPUTS = (
+    "cms_chronic_conditions_long",
+    "cms_chronic_conditions_wide",
+)
 
 # The two current-projection models over those facts: the same figures
 # filtered to the latest calculable benchmark delivery and carrying PMPM
@@ -281,6 +290,17 @@ def verify(manifest: dict, lock: str, database: Optional[str] = None) -> List[st
         if actual != expected:
             errors.append(f"{name} relation placement must be {expected}, found {actual}")
 
+    for name in CHRONIC_CONDITIONS_OUTPUTS:
+        unique_id = f"model.cms_chronic_conditions.cms_chronic_conditions__{name}"
+        node = enabled_model(nodes, unique_id)
+        if node is None:
+            errors.append(f"required enabled chronic conditions relation is missing: {name}")
+            continue
+        expected = (database, "chronic_conditions", name)
+        actual = (node.get("database"), node.get("schema"), node.get("alias"))
+        if actual != expected:
+            errors.append(f"{name} relation placement must be {expected}, found {actual}")
+
     return errors
 
 
@@ -315,7 +335,8 @@ def main() -> int:
         f"{len(BOUNDARY_OUTPUTS)} package outputs, "
         f"{len(BOUNDARY_OUTPUTS)} Tuva boundary paths, "
         f"{len(SEMANTIC_LAYER_OUTPUTS)} semantic layer outputs, "
-        f"{len(CONNECTOR_SEMANTIC_LAYER_OUTPUTS)} connector semantic layer facts"
+        f"{len(CONNECTOR_SEMANTIC_LAYER_OUTPUTS)} connector semantic layer facts, "
+        f"{len(CHRONIC_CONDITIONS_OUTPUTS)} chronic conditions outputs"
     )
     return 0
 
