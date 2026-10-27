@@ -59,6 +59,7 @@ vars:
 # after it loads. With it, assert_acos_have_an_agreement_configuration has
 # nothing to report and the fixtures run as a configured ACO: variable MSR,
 # ACPT read at PY1, as the synthetic BNMRK workbooks assume.
+# The column list mirrors ../seeds/mssp_aco_agreement.csv; change both together.
 seeds:
   cms_mssp_connector:
     mssp_aco_agreement:
