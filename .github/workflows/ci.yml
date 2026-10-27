@@ -156,9 +156,7 @@ jobs:
           uv run --frozen dbt seed --full-refresh --project-dir "$DBT_PROJECT_DIR" --vars "$CI_DBT_VARS"
           --select package:integration_tests
       # Unit tests run inside the build, after their mocked parents exist:
-      # dbt reads a mocked relation's columns from the warehouse. The
-      # benchmark tests tagged fixture_gap warn here (integration_tests
-      # README); every other test fails the job.
+      # dbt reads a mocked relation's columns from the warehouse.
       - name: Build
         run: >-
           uv run --frozen dbt build --full-refresh --project-dir "$DBT_PROJECT_DIR" --vars "$CI_DBT_VARS"
