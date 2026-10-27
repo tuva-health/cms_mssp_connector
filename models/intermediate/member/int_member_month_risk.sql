@@ -35,6 +35,14 @@
     are ignored for that month: a member known only to an off-year delivery
     is unassigned there, takes the type fallbacks and carries a NULL score.
 
+    This is deliberately not cms_alr_connector's governing-file rule
+    (TUVA-127, decision D1): ALR asks for the best data for a person-month,
+    this model asks whether the person was assigned in the performance year
+    containing it. The two disagree only while a benchmark-year file or the
+    year's own Q4 list is missing. README, "Which member-months count as
+    assigned", has the full explanation; the test_month_rule_* unit tests pin
+    it.
+
     Two ranks keep the grain total against inputs that enforce nothing. Two
     assignment-list MBIs can resolve to one person in one month once a retired
     MBI is crosswalked, and the same person-year can appear in the BEUR under

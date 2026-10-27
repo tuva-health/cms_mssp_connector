@@ -1,7 +1,11 @@
 {#-
     The benchmark applied to every member-month of the Tuva semantic layer,
-    on the surrogate key fact_member_months already carries, so a report model
-    joins the two one to one and reads a benchmark beside each member's spend.
+    on the key fact_member_months already carries, MEMBER_MONTH_ID, so a
+    report model joins the two one to one and reads a benchmark beside each
+    member's spend. MEMBER_MONTH_SK is carried too, for joins written before
+    semantic-layer 1.0, which deprecated it: it is person_id|year_month and is
+    no longer unique once Core carries more than one payer or plan for a
+    person-month.
 
     Three rates per member per month, each one step more specific than the
     last: [P]/12, the ACO mean projected updated benchmark, the same number
@@ -51,6 +55,7 @@
 with member_months as (
 
     select
+        member_month_id                                     as MEMBER_MONTH_ID,
         member_month_sk                                     as MEMBER_MONTH_SK,
         person_id                                           as PERSON_ID,
         data_source                                         as DATA_SOURCE,
@@ -169,6 +174,7 @@ cap_factors as (
 rates as (
 
     select
+        member_months.MEMBER_MONTH_ID                       as MEMBER_MONTH_ID,
         member_months.MEMBER_MONTH_SK                       as MEMBER_MONTH_SK,
         member_months.PERSON_ID                             as PERSON_ID,
         member_months.DATA_SOURCE                           as DATA_SOURCE,
@@ -252,6 +258,7 @@ capped as (
 )
 
 select
+    MEMBER_MONTH_ID,
     MEMBER_MONTH_SK,
     PERSON_ID,
     DATA_SOURCE,

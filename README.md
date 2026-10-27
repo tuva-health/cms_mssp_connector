@@ -96,6 +96,77 @@ per-ACO minimum savings rate election and agreement performance year. The second
 ships with a synthetic example row only; an ACO with no row takes documented
 defaults and every output row it produces is flagged `IS_AGREEMENT_DEFAULTED`.
 
+### Which member-months count as assigned
+
+`int_member_month_risk` and `cms_alr_connector` read the same assignment
+lists but ask different questions (decision D1, TUVA-127). This section is
+the canonical explanation; the model docs point here.
+
+- **ALR asks "what is the best data for this person-month?"** For each ACO
+  and month, `aalr_governing_file` takes one file from those delivered that
+  cover the month. It chooses in this order:
+  1. the earliest performance year;
+  2. within that year, the benchmark-year file, then the quarterly lists
+     from Q4 back to Q1, with the initial assignment file last;
+  3. the latest redelivery.
+
+  A beneficiary that file doesn't list isn't enrolled that month. ALR's
+  `enrollment` model feeds CCLF eligibility, and so Tuva's
+  `core__member_month`.
+- **This connector asks "was this person assigned in the performance year
+  that contains this month?"** An assignment-list row counts for a month
+  only if its file reports that month's year, and only from the earliest
+  package that reports the year. The year a file reports is the year in its
+  name. `AALR.Y2024` reports 2024 and `QALR.2026Q1` reports 2026. A file
+  with neither, such as PY2025's initial assignment file `AALR.D25…`,
+  reports its package year, 2025. So the 2025 rows on `QALR.2026Q1` don't
+  count for 2025.
+
+The connector asks its question because the benchmark is set per
+performance year. A member-month is benchmarked against its own year's
+projection, so the risk score has to be on that year's model and
+normalisation basis.
+
+**With a complete file history, the two rules agree on every month.**
+ALR picks one file per ACO and month, not per beneficiary. Every month of
+year Y is covered by PY Y's own quarterly lists, and Q4 covers the whole
+year. No earlier performance year covers it, so ALR picks a PY Y file.
+Months before the ACO's first performance year are covered by that
+package's benchmark-year files, which outrank the initial file. In both
+cases the governing file reports the month's own year, and this connector
+takes the same row. If a beneficiary isn't on the governing file, both
+rules leave the month unassigned. One example is a member newly assigned
+in PY2026 who isn't on PY2025's Q4 list.
+
+**They disagree only while a file is missing.** ALR then governs from a
+file that reports another year:
+
+| File missing | Months affected (example) | ALR governs from | This connector, and why |
+| --- | --- | --- | --- |
+| A benchmark-year file | 2023-10..12 when a PY2025 package has no `AALR.Y2023` | PY2025's initial file, which covers 2023-10..2024-09 | Unassigned. These months are the lookback window CMS used to assign for PY2025. They are not assignment in 2023, and the scores are on PY2025's basis. |
+| The year's own Q4 list | 2025-10..12 before `QALR.2025Q4` arrives, once PY2026 has delivered `QALR.2026Q1` or `AALR.Y2025` | the PY2026 file | Unassigned. That file lists PY2026 assignment on PY2026's model, and PY2025's benchmark counts PY2025 assignment. |
+
+When the missing file arrives, both rules switch to it and agree.
+
+**What an analyst sees.** Those member-months still appear in
+`core__member_month`, `fact_member_months` and
+`fact_member_month_benchmark`, because the spine is never filtered. They
+carry `IS_ASSIGNED = false`, a NULL risk score and risk-adjusted rate, and
+an enrollment type from the BEUR or eligibility fallback. Count assigned
+member-months with `IS_ASSIGNED`, not with rows.
+
+For example, take a store holding PY2025's Q1 to Q3 lists and PY2026's
+`2026Q1`, but not yet PY2025's Q4. A member on all of them has 12
+member-months for 2025 in Tuva but 9 assigned here, January to September.
+When `QALR.2025Q4` lands, all 12 are assigned.
+
+The synthetic fixtures have no `Y2023` file and no `2025Q4`, so 173 of
+their 916 ALR person-months fall in these two groups. TUVA-130 measures
+the gap on real deliveries. The unit tests
+`test_month_rule_leaves_off_year_governing_rows_unassigned` and
+`test_month_rule_agrees_with_alr_on_a_complete_file_history` pin both
+sides.
+
 ### Tuva semantic layer
 
 The Tuva semantic layer is a separate package in Tuva 1.0:
@@ -120,8 +191,10 @@ The connector adds two facts of its own to that schema, under
 `models/final/semantic_layer`:
 
 - `fact_member_month_benchmark` — the benchmark applied to every member-month,
-  keyed on the same `MEMBER_MONTH_SK` as `fact_member_months` so Power BI and
-  Dash join the two one to one. Three per-member-per-month rates: the flat
+  keyed on the same `MEMBER_MONTH_ID` as `fact_member_months` so Power BI and
+  Dash join the two one to one. `MEMBER_MONTH_SK` is still carried but is
+  deprecated: semantic layer 1.0 no longer guarantees it unique, so join on
+  `MEMBER_MONTH_ID`. Three per-member-per-month rates: the flat
   rate (`[P] / 12`, the ACO mean projected updated benchmark, identical for
   every member), the enrollment-type rate (`[M] / 12` for the member's type),
   and the risk-adjusted rate (the enrollment-type rate times the member's CMS
