@@ -26,8 +26,10 @@ and local runs use `--project-dir integration_tests`.
 - `macros/`: schema naming and `ensure_unit_test_schemas` (an on-run-start
   hook that creates the schemas unit tests need).
 - `profiles/local_duckdb`: the DuckDB profile for local runs and the
-  `dbt build / duckdb` CI job (`/tmp/cms_mssp_connector_ci.duckdb` unless
-  `DBT_DUCKDB_PATH` is set).
+  `dbt build / duckdb` CI job. It attaches the file `DBT_DUCKDB_PATH` names
+  as catalog `cms_mssp_connector_ci`, the `input_database` the seeds load
+  into, so the file can have any name. It has no default path:
+  `scripts/dbt-local` and CI each set one (see Local runs).
 
 ## Fixtures
 
@@ -100,9 +102,23 @@ reads each mocked relation's columns from the warehouse, so their parents
 have to exist first. To run them alone after a build:
 `scripts/dbt-local test --select "package:cms_mssp_connector,test_type:unit"`.
 
+Each checkout builds into its own database,
+`integration_tests/target/cms_mssp_connector.duckdb` (git-ignored, and
+removed by `scripts/dbt-local clean`), so two worktrees can seed and build
+at the same time without touching each other's file. Set `DBT_DUCKDB_PATH`
+to use another file; any name works, because the profile fixes the catalog
+name. Point it at a shared path only if nothing else builds there.
+
 Set `DBT_PROFILES_DIR` (and `DBT_PROFILE`) to use another warehouse.
 
 ## CI
 
 The `dbt build / duckdb` job in `.github/workflows/ci.yml` runs the same
-three steps on every pull request to `main`, with no secrets.
+three steps on every pull request to `main`, with no secrets, on
+`$GITHUB_WORKSPACE/cms_mssp_connector_ci.duckdb`. Before dbt runs, it
+installs DuckDB's `httpfs` extension (Tuva Core's terminology seeds are read
+from S3) and caches `~/.duckdb/extensions` keyed on the DuckDB version. It
+sets `DBT_DUCKDB_AUTOINSTALL_EXTENSIONS=false`, which the profile passes to
+DuckDB as `autoinstall_known_extensions`, so the build loads extensions only
+from that cache and never downloads one mid-run. If the build needs another
+extension, add it to that install step. Local runs leave auto-install on.

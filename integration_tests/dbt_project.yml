@@ -23,8 +23,8 @@ vars:
   # tables (source cms_ssp_reports, read by cms_alr_connector) and the CCLF
   # tables (source medicare_cclf, read by medicare_cclf_connector). In this
   # project the fixture seeds in seeds/ are loaded there, so these must name
-  # the seeds' database and schema. The database is the DuckDB file's stem
-  # (profiles/local_duckdb).
+  # the seeds' database and schema. The database is the catalog
+  # profiles/local_duckdb attaches the DuckDB file as, whatever the file's name.
   input_database: cms_mssp_connector_ci
   input_schema: raw
 

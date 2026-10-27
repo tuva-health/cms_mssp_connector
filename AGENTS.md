@@ -30,6 +30,8 @@ uv run --frozen python -m unittest discover -s tests
 uv lock --check
 ```
 
+`scripts/dbt-local` builds into this checkout's own DuckDB file, `integration_tests/target/cms_mssp_connector.duckdb`, so parallel worktrees never share a database; don't point `DBT_DUCKDB_PATH` at a shared file. The profile attaches whatever file `DBT_DUCKDB_PATH` names as catalog `cms_mssp_connector_ci`, so the file name doesn't matter.
+
 The build covers this connector, both CMS connectors, Tuva Core, the semantic-layer stack and CMS chronic conditions. The fixtures are CMS-consistent, so every test runs at its own severity; don't relax a test to make a build pass. The synthetic ACO `A0000`'s agreement row is appended to the `mssp_aco_agreement` seed by a post-hook in `integration_tests/dbt_project.yml`; never add it to the shipped seed.
 
 ## Data rules
