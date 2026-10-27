@@ -22,8 +22,6 @@ MSSP_OUTPUTS = (
     "stg_shadow_bundles_ip",
     "stg_beneficiary_exclusions",
     "stg_excluded_beneficiary_mbi_xref",
-    "stg_claims_benefit_enhancement_and_demonstration_code_file_cclfa",
-    "stg_cclfb_claims_benefit_enhancement_and_demonstration_code_file_cclfb",
     "stg_baip_beneficiary_advanced_investment_payment",
     "stg_beur_beneficiary_expenditure_utilization_report",
     "stg_ncbp_non_claims_based_payments",

@@ -16,7 +16,6 @@ Current staging groups:
 - `bnex`: beneficiary exclusions and excluded beneficiary MBI crosswalks
 - `mcqm`: beneficiary and quality measure files
 - `mssp`: MSSP payment and utilization files
-- `cclf`: claims benefit enhancement / demonstration code files
 - `shadow_bundles`: shadow bundle source files
 - `benchmark`: historical benchmark and expenditure/utilization workbooks
 
@@ -243,8 +242,6 @@ Expected source tables include:
 - `baip_beneficiary_advanced_investment_payment`
 - `beur_beneficiary_expenditure_utilization_report`
 - `ncbp_non_claims_based_payments`
-- `claims_benefit_enhancement_and_demonstration_code_file_cclfa`
-- `cclfb_claims_benefit_enhancement_and_demonstration_code_file_cclfb`
 - `shadow_bundles_dm`
 - `shadow_bundles_epi`
 - `shadow_bundles_hh`
@@ -565,7 +562,6 @@ With `upstream` as the fork's remote for this repository:
 |   `-- staging/
 |       |-- benchmark/
 |       |-- bnex/
-|       |-- cclf/
 |       |-- mcqm/
 |       |-- mssp/
 |       |-- participants/
