@@ -24,12 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the semantic layer's `fact_member_months` (TUVA-127). It is the fact's key:
   the `not_null`, `unique` and relationships tests and the one-to-one test
   against `fact_member_months` now use it. Join the two facts on it.
-- A scenario unit test and README section for the rule that decides which
+- Scenario unit tests and a README section for the rule that decides which
   member-months count as assigned (TUVA-127, decision D1). The rule is
   unchanged. It differs from `cms_alr_connector` v1.0.0's governing-file rule
-  on purpose: initial-assignment lookback months, and months covered only by
-  the next performance year's quarterly, are member-months in Tuva Core but
-  `IS_ASSIGNED = false` with a NULL score here.
+  on purpose. With a complete file history the two agree. While a
+  benchmark-year file or the year's own Q4 list is missing, ALR governs some
+  months from a file that reports another year. Those months are
+  member-months in Tuva Core but `IS_ASSIGNED = false` with a NULL score
+  here.
 
 ### Changed
 
@@ -63,7 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MEMBER_MONTH_SK` on `fact_member_month_benchmark` (TUVA-127). It is still
   populated, but semantic layer 1.0 no longer guarantees it unique: a
   person-month with more than one payer or plan has one row per coverage,
-  all with the same key. Its `unique` and relationships tests are dropped.
+  all with the same key. Its relationships test is dropped, and its `unique`
+  test now warns instead of failing.
 
 ### Removed
 

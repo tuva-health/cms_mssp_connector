@@ -45,20 +45,10 @@ models:
       score. `ALR_DELIVERY_PERFORMANCE_YEAR` and `ALR_REPORT_YEAR` show the
       delivery each assigned row came from.
 
-      This rule differs from `cms_alr_connector`'s on purpose (decision D1).
-      ALR v1.0.0 asks "what is the best data for this person-month?" and
-      keeps, per month, the governing file: the earliest performance year
-      that covers the month, then the benchmark file, then the latest
-      quarterly. This model asks "was this person assigned in the
-      performance year that contains this month?", because the benchmark is
-      set per performance year and the score must be on that year's basis.
-      The rules agree wherever both pick a row. They disagree on the
-      lookback months of an initial assignment file that no earlier
-      performance year covers, and on months covered only by the next
-      performance year's quarterly file. ALR, and therefore
-      `core__member_month`, counts those months; here they keep their row
-      with `IS_ASSIGNED` false and a NULL `RISK_SCORE`. Count assigned
-      member-months with `IS_ASSIGNED`, not with rows.
+      This is not `cms_alr_connector`'s governing-file rule, by design
+      (decision D1). The two disagree only while a benchmark-year file or the
+      year's own Q4 list is missing. See README, "Which member-months count
+      as assigned".
 
     config:
       schema: _int_input_layer
@@ -112,9 +102,8 @@ models:
           carries an assignment-list row for this member-month. The
           `enrollment` model keeps only months with a positive enrollment
           flag, so presence is assignment; rows from other deliveries do not
-          count. False on initial-assignment lookback months and on months
-          only the next performance year's quarterly covers, even though
-          ALR's governing file, and so `core__member_month`, counts them.
+          count. See README, "Which member-months count as assigned", for
+          when this differs from ALR's enrollment.
         data_tests:
           - not_null
 
@@ -354,47 +343,34 @@ unit_tests:
         - {PERSON_ID: 'P11', DATA_SOURCE: 'medicare', YEAR_MONTH: '202601', ALR_BENE_MBI_ID: 'P11',  MBI_CROSSWALK_SOURCE: 'direct',                        IS_ASSIGNED: true,  IS_NEW_ENROLLEE: false, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.0,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    ALR_DELIVERY_PERFORMANCE_YEAR: 2026, ALR_REPORT_YEAR: 2026}
 
   # -------------------------------------------------------------------------
-  # The month rule, pinned against ALR's governing-file rule (TUVA-127, D1).
-  #
-  # Since cms_alr_connector v1.0.0, `enrollment` carries one row per
-  # beneficiary-month, from the file that governs the month: the earliest
-  # performance year covering it, then the benchmark file, then the latest
-  # quarterly. Every assignment-list row below is such a governing row, so
-  # each scenario is a month ALR v1.0.0 and Tuva Core count as enrolled.
-  # This model asks a different question — was the person assigned in the
-  # performance year that contains the month — and the two rules disagree on
-  # two groups of months, which must stay unassigned here:
-  #
-  #   lookback   the initial assignment file's months before the benchmark
-  #              year it shares a package with (PY2025's initial AALR covers
-  #              2023-10..2024-09; ALR governs 2023-10..12 from it). That is
-  #              the prospective-assignment lookback window, not a PY.
-  #   next-PY    months of a year covered only by the next performance year's
-  #              quarterly file (PY2026 2026Q1 covers 2025-04..2026-03; ALR
-  #              governs 2025-10..12 from it when no PY2025 file covers them).
-  #
-  # The other months, where both rules pick the same file, must stay
-  # assigned, from that file. A change that treated either divergent group
-  # as assigned, or that dropped an agreeing month, fails this test.
+  # The month rule against ALR's governing file (TUVA-127, decision D1).
+  # README, "Which member-months count as assigned", explains both rules and
+  # when they disagree. Every assignment-list row below is one ALR v1.0.0's
+  # `enrollment` would carry: a row of the file that governs that month.
   # -------------------------------------------------------------------------
 
-  - name: test_month_rule_assigns_only_from_the_months_own_performance_year
+  - name: test_month_rule_leaves_off_year_governing_rows_unassigned
     model: int_member_month_risk
     description: >
-      L1  202310 and 202312, governed in ALR by the PY2025 initial file
-          (AALR.D25, no Y token, so it reports 2025). Lookback months:
-          unassigned, NULL score, no ALR provenance. L1's 202409, governed
-          by the Y2024 benchmark file of the same package, is assigned:
-          both rules agree on it.
-      N1  202510 and 202512, governed in ALR by the PY2026 2026Q1 quarterly,
-          the only file covering them. Next-PY months: unassigned, NULL
-          score. N1's 202601 on the same file is 2026's own delivery and is
-          assigned: the file is not dropped, only its off-year months.
-      A1  202501 on the PY2025 2025Q1 quarterly: assigned.
-      A2  202509 on the 2025Q3 redelivery (later T-stamp): assigned, from
-          that file.
+      A file history with gaps: PY2025 has no Y2023 benchmark file and no
+      2025Q4 yet; PY2026 has delivered 2026Q1 and its Y2025 benchmark file.
+      ALR then governs some months from a file that reports another year,
+      and those months must stay unassigned here.
+
+      L1  202310 and 202312 come from the PY2025 initial file (AALR.D25, no
+          Y token, so it reports 2025). These are lookback months: unassigned,
+          NULL score, no ALR provenance. L1's 202409, from the Y2024
+          benchmark file, is assigned because both rules agree.
+      N1  202510 and 202512 come from PY2026's 2026Q1, which reports 2026.
+          Unassigned. N1's 202601, on the same file, is assigned: only the
+          off-year months are dropped, not the file.
+      B1  202511 comes from PY2026's Y2025 benchmark file. It reports 2025,
+          but PY2025's own package (D25) reported 2025 first, so the D26
+          rows don't count. Unassigned.
+      A1  202501, from PY2025's 2025Q1: assigned.
+      A2  202509, from PY2025's 2025Q3: assigned.
       The unassigned months keep their spine rows and take the eligibility
-      fallback for type, so the member-month is visible, not absent.
+      fallback for type.
 
     given:
 
@@ -406,24 +382,21 @@ unit_tests:
           - {person_id: 'N1', member_id: 'N1', year_month: '202510', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
           - {person_id: 'N1', member_id: 'N1', year_month: '202512', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
           - {person_id: 'N1', member_id: 'N1', year_month: '202601', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'B1', member_id: 'B1', year_month: '202511', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
           - {person_id: 'A1', member_id: 'A1', year_month: '202501', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
           - {person_id: 'A2', member_id: 'A2', year_month: '202509', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
 
       - input: ref('cms_aalr_connector', 'enrollment')
         rows:
-          # lookback: the PY2025 initial file governs these 2023 months in ALR.
           - {current_bene_mbi_id: 'L1', bene_member_month: '202310', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 1.01, file_name: 'P.A0000.ACO.AALR.D259999.T0000000_1-1.csv', file_date: '2024-09-30'}
           - {current_bene_mbi_id: 'L1', bene_member_month: '202312', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 1.02, file_name: 'P.A0000.ACO.AALR.D259999.T0000000_1-1.csv', file_date: '2024-09-30'}
-          # agreeing: the Y2024 benchmark file governs 2024 in both rules.
           - {current_bene_mbi_id: 'L1', bene_member_month: '202409', assignment_type: 1, new_enrollee: 0, hcc_version: 'V24', bene_rsk_r_scre_09: 1.09, file_name: 'P.A0000.ACO.AALR.Y2024.D259999.T1111111_1-1.csv', file_date: '2024-12-31'}
-          # next-PY: the PY2026 2026Q1 file is the only one covering these 2025 months.
           - {current_bene_mbi_id: 'N1', bene_member_month: '202510', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 2.10, file_name: 'P.A0000.ACO.QALR.2026Q1.D269999.T0100000_1-1.csv', file_date: '2026-03-31'}
           - {current_bene_mbi_id: 'N1', bene_member_month: '202512', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 2.12, file_name: 'P.A0000.ACO.QALR.2026Q1.D269999.T0100000_1-1.csv', file_date: '2026-03-31'}
-          # agreeing: the same file's own-year month.
           - {current_bene_mbi_id: 'N1', bene_member_month: '202601', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 2.01, file_name: 'P.A0000.ACO.QALR.2026Q1.D269999.T0100000_1-1.csv', file_date: '2026-03-31'}
-          # agreeing: PY2025's own quarterlies.
+          - {current_bene_mbi_id: 'B1', bene_member_month: '202511', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 2.11, file_name: 'P.A0000.ACO.AALR.Y2025.D269999.T1111111_1-1.csv', file_date: '2025-12-31'}
           - {current_bene_mbi_id: 'A1', bene_member_month: '202501', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 1.25, file_name: 'P.A0000.ACO.QALR.2025Q1.D259999.T0100000_1-1.csv', file_date: '2025-03-31'}
-          - {current_bene_mbi_id: 'A2', bene_member_month: '202509', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 1.29, file_name: 'P.A0000.ACO.QALR.2025Q3.D259999.T0310000_1-1.csv', file_date: '2025-09-30'}
+          - {current_bene_mbi_id: 'A2', bene_member_month: '202509', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 1.29, file_name: 'P.A0000.ACO.QALR.2025Q3.D259999.T0300000_1-1.csv', file_date: '2025-09-30'}
 
       - input: ref('medicare_cclf_connector', 'int_beneficiary_xref_deduped')
         rows: []
@@ -438,6 +411,7 @@ unit_tests:
         rows:
           - {person_id: 'L1', data_source: 'medicare', enrollment_start_date: '2023-01-01', enrollment_end_date: '2024-12-31', medicare_status_code: '20', original_reason_entitlement_code: '1', dual_status_code: '00'}
           - {person_id: 'N1', data_source: 'medicare', enrollment_start_date: '2025-01-01', enrollment_end_date: '2026-12-31', medicare_status_code: '20', original_reason_entitlement_code: '1', dual_status_code: '00'}
+          - {person_id: 'B1', data_source: 'medicare', enrollment_start_date: '2025-01-01', enrollment_end_date: '2025-12-31', medicare_status_code: '20', original_reason_entitlement_code: '1', dual_status_code: '00'}
 
     expect:
       rows:
@@ -447,5 +421,62 @@ unit_tests:
         - {PERSON_ID: 'N1', YEAR_MONTH: '202510', IS_ASSIGNED: false, ALR_FILE_NAME: null,                                              ALR_DELIVERY_PERFORMANCE_YEAR: null, ALR_REPORT_YEAR: null, RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'eligibility_codes'}
         - {PERSON_ID: 'N1', YEAR_MONTH: '202512', IS_ASSIGNED: false, ALR_FILE_NAME: null,                                              ALR_DELIVERY_PERFORMANCE_YEAR: null, ALR_REPORT_YEAR: null, RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'eligibility_codes'}
         - {PERSON_ID: 'N1', YEAR_MONTH: '202601', IS_ASSIGNED: true,  ALR_FILE_NAME: 'P.A0000.ACO.QALR.2026Q1.D269999.T0100000_1-1.csv', ALR_DELIVERY_PERFORMANCE_YEAR: 2026, ALR_REPORT_YEAR: 2026, RISK_SCORE: 2.01, RISK_SCORE_SOURCE: 'assignment_list_type_score',    ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column'}
+        - {PERSON_ID: 'B1', YEAR_MONTH: '202511', IS_ASSIGNED: false, ALR_FILE_NAME: null,                                              ALR_DELIVERY_PERFORMANCE_YEAR: null, ALR_REPORT_YEAR: null, RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'eligibility_codes'}
         - {PERSON_ID: 'A1', YEAR_MONTH: '202501', IS_ASSIGNED: true,  ALR_FILE_NAME: 'P.A0000.ACO.QALR.2025Q1.D259999.T0100000_1-1.csv', ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2025, RISK_SCORE: 1.25, RISK_SCORE_SOURCE: 'assignment_list_type_score',    ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column'}
-        - {PERSON_ID: 'A2', YEAR_MONTH: '202509', IS_ASSIGNED: true,  ALR_FILE_NAME: 'P.A0000.ACO.QALR.2025Q3.D259999.T0310000_1-1.csv', ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2025, RISK_SCORE: 1.29, RISK_SCORE_SOURCE: 'assignment_list_type_score',    ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column'}
+        - {PERSON_ID: 'A2', YEAR_MONTH: '202509', IS_ASSIGNED: true,  ALR_FILE_NAME: 'P.A0000.ACO.QALR.2025Q3.D259999.T0300000_1-1.csv', ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2025, RISK_SCORE: 1.29, RISK_SCORE_SOURCE: 'assignment_list_type_score',    ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column'}
+
+  - name: test_month_rule_agrees_with_alr_on_a_complete_file_history
+    model: int_member_month_risk
+    description: >
+      A complete file history: PY2025's package includes its Y2023 and Y2024
+      benchmark files and 2025Q4, and PY2026 has delivered 2026Q1. ALR's
+      governing file for every month here reports the month's own year, and
+      every month it governs is assigned here, from that same file.
+
+      C1  202311 comes from PY2025's Y2023 benchmark file. It outranks the
+          initial file for this lookback month, so the month is assigned
+          and reports 2023.
+      C2  202409 comes from the Y2024 benchmark file: assigned.
+      C3  202511 comes from PY2025's 2025Q4, which outranks PY2026's 2026Q1
+          for 2025: assigned.
+      G1  Newly assigned in PY2026 and not on PY2025's 2025Q4. Governance is
+          per ACO-month, so 2025Q4 governs 202511 for everyone, and ALR
+          gives G1 no row for that month. Both rules leave it unassigned.
+          G1's 202601 on 2026Q1 is assigned.
+
+    given:
+
+      - input: ref('the_tuva_project', 'core__member_month')
+        rows:
+          - {person_id: 'C1', member_id: 'C1', year_month: '202311', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'C2', member_id: 'C2', year_month: '202409', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'C3', member_id: 'C3', year_month: '202511', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'G1', member_id: 'G1', year_month: '202511', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'G1', member_id: 'G1', year_month: '202601', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+
+      - input: ref('cms_aalr_connector', 'enrollment')
+        rows:
+          - {current_bene_mbi_id: 'C1', bene_member_month: '202311', assignment_type: 1, new_enrollee: 0, hcc_version: 'V24', bene_rsk_r_scre_11: 1.11, file_name: 'P.A0000.ACO.AALR.Y2023.D259999.T1111111_1-1.csv', file_date: '2023-12-31'}
+          - {current_bene_mbi_id: 'C2', bene_member_month: '202409', assignment_type: 1, new_enrollee: 0, hcc_version: 'V24', bene_rsk_r_scre_09: 1.09, file_name: 'P.A0000.ACO.AALR.Y2024.D259999.T1111111_1-1.csv', file_date: '2024-12-31'}
+          - {current_bene_mbi_id: 'C3', bene_member_month: '202511', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 1.31, file_name: 'P.A0000.ACO.QALR.2025Q4.D259999.T0400000_1-1.csv', file_date: '2025-12-31'}
+          - {current_bene_mbi_id: 'G1', bene_member_month: '202601', assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', agnd_score: 2.01, file_name: 'P.A0000.ACO.QALR.2026Q1.D269999.T0100000_1-1.csv', file_date: '2026-03-31'}
+
+      - input: ref('medicare_cclf_connector', 'int_beneficiary_xref_deduped')
+        rows: []
+
+      - input: ref('stg_excluded_beneficiary_mbi_xref')
+        rows: []
+
+      - input: ref('stg_beur_beneficiary_expenditure_utilization_report')
+        rows: []
+
+      - input: ref('the_tuva_project', 'core__eligibility')
+        rows: []
+
+    expect:
+      rows:
+        - {PERSON_ID: 'C1', YEAR_MONTH: '202311', IS_ASSIGNED: true,  ALR_FILE_NAME: 'P.A0000.ACO.AALR.Y2023.D259999.T1111111_1-1.csv',  ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2023, RISK_SCORE: 1.11}
+        - {PERSON_ID: 'C2', YEAR_MONTH: '202409', IS_ASSIGNED: true,  ALR_FILE_NAME: 'P.A0000.ACO.AALR.Y2024.D259999.T1111111_1-1.csv',  ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2024, RISK_SCORE: 1.09}
+        - {PERSON_ID: 'C3', YEAR_MONTH: '202511', IS_ASSIGNED: true,  ALR_FILE_NAME: 'P.A0000.ACO.QALR.2025Q4.D259999.T0400000_1-1.csv', ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2025, RISK_SCORE: 1.31}
+        - {PERSON_ID: 'G1', YEAR_MONTH: '202511', IS_ASSIGNED: false, ALR_FILE_NAME: null,                                              ALR_DELIVERY_PERFORMANCE_YEAR: null, ALR_REPORT_YEAR: null, RISK_SCORE: null}
+        - {PERSON_ID: 'G1', YEAR_MONTH: '202601', IS_ASSIGNED: true,  ALR_FILE_NAME: 'P.A0000.ACO.QALR.2026Q1.D269999.T0100000_1-1.csv', ALR_DELIVERY_PERFORMANCE_YEAR: 2026, ALR_REPORT_YEAR: 2026, RISK_SCORE: 2.01}

@@ -35,30 +35,13 @@
     are ignored for that month: a member known only to an off-year delivery
     is unassigned there, takes the type fallbacks and carries a NULL score.
 
-    This is deliberately not cms_alr_connector's rule (TUVA-127, decision
-    D1). ALR v1.0.0 asks "what is the best data for this person-month?": its
-    aalr_governing_file picks, for each month, the file of the earliest
-    performance year that covers it, then the benchmark file, then the
-    latest quarterly, and its enrollment model carries every month some file
-    governs. That is what CCLF eligibility and core__member_month are built
-    from. This model asks "was this person assigned in the performance year
-    that contains this month?", because the benchmark it feeds is per
-    performance year and the score must be on that year's basis. The two
-    agree wherever both pick a row, and disagree on two kinds of month, which
-    ALR counts and this model leaves unassigned:
-
-      - the lookback window of an initial assignment file, where no earlier
-        performance year covers it (PY2025's initial AALR covers
-        2023-10..2024-09, and governs 2023-10..12 in ALR): a prospective-
-        assignment lookback, not a performance year;
-      - months covered only by the next performance year's quarterly file
-        (PY2026's 2026Q1 covers 2025-04..2026-03, and governs 2025-10..12
-        in ALR when no PY2025 file does): scored on the PY2026 basis.
-
-    Those member-months stay on the spine, so Tuva's member-month count is
-    higher than the assigned count here. The unit test
-    test_month_rule_assigns_only_from_the_months_own_performance_year pins
-    both groups and the months the rules agree on.
+    This is deliberately not cms_alr_connector's governing-file rule
+    (TUVA-127, decision D1): ALR asks for the best data for a person-month,
+    this model asks whether the person was assigned in the performance year
+    containing it. The two disagree only while a benchmark-year file or the
+    year's own Q4 list is missing. README, "Which member-months count as
+    assigned", has the full explanation; the test_month_rule_* unit tests pin
+    it.
 
     Two ranks keep the grain total against inputs that enforce nothing. Two
     assignment-list MBIs can resolve to one person in one month once a retired

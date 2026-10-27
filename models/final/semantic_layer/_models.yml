@@ -92,10 +92,14 @@ models:
           `fact_member_months`, which keeps it for compatibility only.
           Semantic-layer 1.0 no longer guarantees it unique: a person with
           more than one payer or plan in a month has one row per coverage and
-          the same key on each. It is unique on a single-payer CCLF build,
-          but nothing here tests that.
+          the same key on each. It is unique on a single-payer CCLF build;
+          the warn-level `unique` test says when a build stops being one, so
+          a join still written on it would fan out.
         data_tests:
           - not_null
+          - unique:
+              config:
+                severity: warn
 
       - name: PERSON_ID
         description: Tuva person identifier.
@@ -137,10 +141,8 @@ models:
           whose description gives the rule. The rates are filled whether or
           not the month is assigned; the reconciliation tests restrict to
           assigned member-months because that is the population the benchmark
-          report counts. Some member-months Tuva counts are unassigned here
-          by design: initial-assignment lookback months and months only the
-          next performance year's quarterly covers. So the assigned count is
-          lower than the row count, and lower than Tuva Core's member-months.
+          report counts. Count assigned member-months with this flag, not
+          with rows: see README, "Which member-months count as assigned".
         data_tests:
           - not_null
 

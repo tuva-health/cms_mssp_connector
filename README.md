@@ -99,44 +99,73 @@ defaults and every output row it produces is flagged `IS_AGREEMENT_DEFAULTED`.
 ### Which member-months count as assigned
 
 `int_member_month_risk` and `cms_alr_connector` read the same assignment
-lists but ask different questions, so they do not always agree. The
-difference is deliberate (decision D1, TUVA-127).
+lists but ask different questions (decision D1, TUVA-127). This section is
+the canonical explanation; the model docs point here.
 
-- **ALR asks "what is the best data for this person-month?"** For each month,
-  `aalr_governing_file` picks one file among those that cover it: the earliest
-  performance year first, then the benchmark file, then the latest
-  quarterly. Its `enrollment` model carries every month that some file
-  governs. CCLF eligibility, and therefore Tuva's `core__member_month`, are
-  built from it.
+- **ALR asks "what is the best data for this person-month?"** For each ACO
+  and month, `aalr_governing_file` takes one file from those delivered that
+  cover the month. It chooses in this order:
+  1. the earliest performance year;
+  2. within that year, the benchmark-year file, then the quarterly lists
+     from Q4 back to Q1, with the initial assignment file last;
+  3. the latest redelivery.
+
+  A beneficiary that file doesn't list isn't enrolled that month. ALR's
+  `enrollment` model feeds CCLF eligibility, and so Tuva's
+  `core__member_month`.
 - **This connector asks "was this person assigned in the performance year
-  that contains this month?"** An assignment-list row counts only if its file
-  reports the month's own calendar year: the `Y<YYYY>` or `<YYYY>Q<N>` token
-  in the file name, otherwise the `D<YY>` delivery stamp. Among those files,
-  only the earliest delivery that reports the year counts.
+  that contains this month?"** An assignment-list row counts for a month
+  only if its file reports that month's year, and only from the earliest
+  package that reports the year. The year a file reports is the year in its
+  name. `AALR.Y2024` reports 2024 and `QALR.2026Q1` reports 2026. A file
+  with neither, such as PY2025's initial assignment file `AALR.D25…`,
+  reports its package year, 2025. So the 2025 rows on `QALR.2026Q1` don't
+  count for 2025.
 
-The connector asks its question because the benchmark is set per performance
-year. A member-month is benchmarked against the projection for its own
-calendar year, and its risk score must be on that year's model and
-normalisation basis. Taking rows from another year's package would mix two
-performance years' scores and over-count assigned member-months.
+The connector asks its question because the benchmark is set per
+performance year. A member-month is benchmarked against its own year's
+projection, so the risk score has to be on that year's model and
+normalisation basis.
 
-Where both rules pick a row, they pick the same file. They disagree on two
-kinds of month:
+**With a complete file history, the two rules agree on every month.**
+ALR picks one file per ACO and month, not per beneficiary. Every month of
+year Y is covered by PY Y's own quarterly lists, and Q4 covers the whole
+year. No earlier performance year covers it, so ALR picks a PY Y file.
+Months before the ACO's first performance year are covered by that
+package's benchmark-year files, which outrank the initial file. In both
+cases the governing file reports the month's own year, and this connector
+takes the same row. If a beneficiary isn't on the governing file, both
+rules leave the month unassigned. One example is a member newly assigned
+in PY2026 who isn't on PY2025's Q4 list.
 
-| Months | ALR v1.0.0 | This connector |
-| --- | --- | --- |
-| The lookback window of an initial assignment file that no earlier performance year covers. For example, PY2025's initial AALR covers 2023-10..2024-09 and governs 2023-10..12 | enrolled, from the initial file | `IS_ASSIGNED = false`, NULL score |
-| Months covered only by the next performance year's quarterly. For example, PY2026's `2026Q1` covers 2025-04..2026-03 and governs 2025-10..12 when no PY2025 file covers them | enrolled, from that quarterly | `IS_ASSIGNED = false`, NULL score |
+**They disagree only while a file is missing.** ALR then governs from a
+file that reports another year:
 
-Consumers will see those member-months in `core__member_month`,
-`fact_member_months` and `fact_member_month_benchmark`, because the spine is
-never filtered. On these rows the enrollment type comes from the BEUR or
-eligibility fallback, and the risk-adjusted rate is NULL. So the connector's
-assigned member-month count is lower than Tuva Core's member-month count for
-the same period. Count assigned member-months with `IS_ASSIGNED`, not with
-rows. The unit test
-`test_month_rule_assigns_only_from_the_months_own_performance_year` pins both
-groups and the months on which the rules agree.
+| File missing | Months affected (example) | ALR governs from | This connector, and why |
+| --- | --- | --- | --- |
+| A benchmark-year file | 2023-10..12 when a PY2025 package has no `AALR.Y2023` | PY2025's initial file, which covers 2023-10..2024-09 | Unassigned. These months are the lookback window CMS used to assign for PY2025. They are not assignment in 2023, and the scores are on PY2025's basis. |
+| The year's own Q4 list | 2025-10..12 before `QALR.2025Q4` arrives, once PY2026 has delivered `QALR.2026Q1` or `AALR.Y2025` | the PY2026 file | Unassigned. That file lists PY2026 assignment on PY2026's model, and PY2025's benchmark counts PY2025 assignment. |
+
+When the missing file arrives, both rules switch to it and agree.
+
+**What an analyst sees.** Those member-months still appear in
+`core__member_month`, `fact_member_months` and
+`fact_member_month_benchmark`, because the spine is never filtered. They
+carry `IS_ASSIGNED = false`, a NULL risk score and risk-adjusted rate, and
+an enrollment type from the BEUR or eligibility fallback. Count assigned
+member-months with `IS_ASSIGNED`, not with rows.
+
+For example, take a store holding PY2025's Q1 to Q3 lists and PY2026's
+`2026Q1`, but not yet PY2025's Q4. A member on all of them has 12
+member-months for 2025 in Tuva but 9 assigned here, January to September.
+When `QALR.2025Q4` lands, all 12 are assigned.
+
+The synthetic fixtures have no `Y2023` file and no `2025Q4`, so 173 of
+their 916 ALR person-months fall in these two groups. TUVA-130 measures
+the gap on real deliveries. The unit tests
+`test_month_rule_leaves_off_year_governing_rows_unassigned` and
+`test_month_rule_agrees_with_alr_on_a_complete_file_history` pin both
+sides.
 
 ### Tuva semantic layer
 
