@@ -52,6 +52,22 @@ vars:
   # dev_mike_input_layer. Unset in local and DuckDB CI runs.
   # tuva_schema_prefix: dev_mike
 
+# The synthetic ACO's agreement row. The connector's mssp_aco_agreement seed
+# ships to clients with only its EXAMPLE-ACO row, and a root-project seed of
+# the same name cannot replace it (the connector's ref resolves inside the
+# package first), so this project appends A0000's row to the package seed
+# after it loads. With it, assert_acos_have_an_agreement_configuration has
+# nothing to report and the fixtures run as a configured ACO: variable MSR,
+# ACPT read at PY1, as the synthetic BNMRK workbooks assume.
+seeds:
+  cms_mssp_connector:
+    mssp_aco_agreement:
+      +post-hook:
+        - >-
+          insert into {{ this }}
+            (ACO_ID, PERFORMANCE_YEAR, MSR_TYPE, FIXED_MSR_RATE, ACO_TRACK, ACPT_PERFORMANCE_YEAR_LABEL)
+          values ('A0000', 2025, 'Variable', null, 'BASIC Level E', 'PY1')
+
 model-paths: ["models"]
 seed-paths: ["seeds"]
 test-paths: ["tests"]
