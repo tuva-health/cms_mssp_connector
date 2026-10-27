@@ -26,7 +26,10 @@ packages:
   - git: https://github.com/tuva-health/semantic-layer.git
     name: semantic_layer
     revision: a88efcccd47ad74ce42bd95e536890bf0bde0a6d
+  - git: https://github.com/tuva-health/cms_chronic_conditions.git
+    name: cms_chronic_conditions
+    revision: 322d6b08b86eaeef35f8ef188802a0527469d88b
   - git: https://github.com/tuva-health/medicare_cclf_connector.git
     name: medicare_cclf_connector
     revision: 1deb35646069679bffeee7abf12ce9ab0bf3e29c
-sha1_hash: 16631c8fdf4c6f662cb16862faca9aa18590e795
+sha1_hash: 1663fb41fb0b671c498c71781dccb13e4109a005
