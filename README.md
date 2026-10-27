@@ -16,7 +16,6 @@ Current staging groups:
 - `bnex`: beneficiary exclusions and excluded beneficiary MBI crosswalks
 - `mcqm`: beneficiary and quality measure files
 - `mssp`: MSSP payment and utilization files
-- `cclf`: claims benefit enhancement / demonstration code files
 - `shadow_bundles`: shadow bundle source files
 - `benchmark`: historical benchmark and expenditure/utilization workbooks
 
@@ -47,7 +46,7 @@ deliveries without choosing between them:
 They calculate nothing. Deriving the benchmark from these inputs is the job of
 the final layer.
 
-`int_member_month_risk` sits alongside them on the `core__member_months` grain
+`int_member_month_risk` sits alongside them on the `core__member_month` grain
 (person, data source, month). It states which MSSP enrollment type the member
 is in — from the populated score column on the 2025+ assignment list, else the
 BEUR person-year fractions, else the Tuva eligibility codes, with
@@ -99,17 +98,23 @@ defaults and every output row it produces is flagged `IS_AGREEMENT_DEFAULTED`.
 
 ### Tuva semantic layer
 
-`dbt_project.yml` sets `semantic_layer_enabled: true`, so the same `build`
-phase that populates the Tuva marts also builds the Tuva semantic layer: 22
-facts and dimensions (`fact_member_months`, `fact_claims`, `fact_risk_scores`,
-`dim_member`, `dim_date`, and the rest) plus their `semantic_layer__stg_*`
-staging models and three value-set seeds, all placed in the `semantic_layer`
-schema. The 22 facts and dimensions are part of the build contract:
-`scripts/verify_manifest.py` requires every one of them to be enabled and
-placed in `semantic_layer`, so a manifest that drops the semantic layer fails
-the verifier before anything is released. After a run, `fact_member_months`
-carries one row per person, data source, and month with the paid amounts and
-risk scores populated.
+The Tuva semantic layer is a separate package in Tuva 1.0:
+`tuva-health/semantic-layer` (dbt package name `semantic_layer`), installed by
+`packages.yml` together with the marts it builds on (see
+[Dependencies](#dependencies)). Installing it is the opt-in; there is no
+`semantic_layer_enabled` var any more. The same `build` phase that populates
+the Tuva marts builds it: 19 facts and dimensions (`fact_member_months`,
+`fact_claims`, `fact_risk_scores`, `dim_member`, `dim_date`, and the rest)
+plus their `semantic_layer__stg_*` staging models, all placed in the
+`semantic_layer` schema. The 19 facts and dimensions are part of the build
+contract: `scripts/verify_manifest.py` requires every one of them
+(`model.semantic_layer.semantic_layer__<name>`) to be enabled and placed in
+`semantic_layer`, so a manifest that drops the semantic layer fails the
+verifier before anything is released. Semantic layer 1.0 no longer has
+`dim_condition`, `fact_expected_values` or `fact_member_condition_bridge`,
+which the Tuva 0.17 semantic layer built. After a run, `fact_member_months`
+carries one row per member-month with the paid amounts and risk scores
+populated.
 
 The connector adds two facts of its own to that schema, under
 `models/final/semantic_layer`:
@@ -243,8 +248,6 @@ Expected source tables include:
 - `baip_beneficiary_advanced_investment_payment`
 - `beur_beneficiary_expenditure_utilization_report`
 - `ncbp_non_claims_based_payments`
-- `claims_benefit_enhancement_and_demonstration_code_file_cclfa`
-- `cclfb_claims_benefit_enhancement_and_demonstration_code_file_cclfb`
 - `shadow_bundles_dm`
 - `shadow_bundles_epi`
 - `shadow_bundles_hh`
@@ -288,10 +291,24 @@ years only.
 
 ## Dependencies
 
-This project depends on:
+`packages.yml` pins every dbt package to a release tag; `package-lock.yml`
+records the commits they resolved to, and `scripts/verify_manifest.py`
+checks a release against it.
 
 - `dbt-labs/dbt_utils`
-- `tuva-health/cms_alr_connector`
+- `tuva-health/cms_alr_connector` `v1.0.0`, which brings
+  `tuva-health/medicare_cclf_connector` `v1.0.0` and Tuva Core `v1.0.0`
+  (`tuva-health/tuva-core`, dbt package name `the_tuva_project`)
+- the Tuva semantic layer, `tuva-health/semantic-layer` `v1.0.0` (dbt package
+  name `semantic_layer`). Its README asks the root project to declare Tuva
+  Core and the five marts it builds on, so `packages.yml` lists them too, all
+  at `v1.0.0`: `tuva-core`, `ahrq_quality_indicators`, `ccsr`, `cms_hcc`,
+  `nyu_ed_classification` and `quality_measures`.
+
+`dbt_project.yml` sets `require_ref_searches_node_package_before_root`, as
+Tuva Core 1.0 and the CMS connectors require. dbt reads flags only from the
+root project, so a client project that installs this connector as a package
+must set it too.
 
 Install packages with:
 
@@ -344,6 +361,15 @@ Run tests:
 dbt test
 ```
 
+Build and test everything on a local DuckDB file from the synthetic fixtures,
+with no warehouse and no credentials (see `integration_tests/README.md`):
+
+```bash
+scripts/dbt-local deps
+scripts/dbt-local seed --full-refresh --select package:integration_tests
+scripts/dbt-local build --full-refresh --exclude package:integration_tests,resource_type:seed
+```
+
 Generate docs:
 
 ```bash
@@ -379,10 +405,10 @@ uv run --frozen scripts/build_release_image.sh <registry>/<repository> <release-
 ## Continuous Integration
 
 `.github/workflows/ci.yml` runs on every pull request to `main` and on every
-push to `main`, with no warehouse access and no client secrets. Changes land
+push to `main`, with no warehouse access and no secrets. Changes land
 on `main` only through a pull request whose required checks are green on a
 branch that is up to date with `main` (no approvals required; no force-push or
-deletion; merge commits and squash merges, not rebase merges). Its five jobs
+deletion; merge commits and squash merges, not rebase merges). Its six jobs
 are those required checks; their names are what the protection rule matches,
 so rename one only together with the rule:
 
@@ -401,9 +427,18 @@ so rename one only together with the rule:
   same build arguments as `scripts/build_release_image.sh`, without a push.
   The Dockerfile copies `config/profiles.yml` into the image, so the job
   renders the same placeholder profile into the build context first.
+- `dbt build / duckdb` — the `integration_tests` project on a local DuckDB
+  file: `dbt deps`, `dbt parse`, `dbt seed` of the synthetic fixtures, then
+  `dbt build` of this connector, `cms_alr_connector`,
+  `medicare_cclf_connector`, Tuva Core and the semantic-layer stack, with the
+  connector's unit and data tests. The benchmark tests tagged `fixture_gap`
+  warn there until TUVA-126 brings CMS-consistent workbook fixtures (see
+  `integration_tests/README.md`). The check name matches the CMS connectors'
+  DuckDB jobs. It is new; adding it to the protection rule is TUVA-129.
 
-Live `dbt build` and `dbt test` runs against a warehouse remain in the client
-repositories; this workflow never runs them.
+`dbt build / duckdb` is the only job that runs dbt against data, and only
+synthetic data. Runs against a warehouse with real data remain in the client
+repositories.
 
 `.github/workflows/release.yml` is the release gate (see [Releases](#releases)).
 Any trigger other than a tag push is a dry run: `workflow_dispatch`, or a pull
@@ -538,7 +573,7 @@ With `upstream` as the fork's remote for this repository:
 
 - Staging models are configured as views in `dbt_project.yml`.
 - The project includes adapter-dispatched macros in `macros/` for safer cross-database casting. `cast_numeric_or_null` and `cast_year_or_null` return NULL instead of raising when a source value is not a number or not a four-digit year, which the benchmark workbooks require because every worksheet cell — figures, `-` markers and free text alike — arrives in one text column.
-- Several project vars are already defined: `claims_enabled`, `cms_alr_connector`, and `provider_attribution_enabled`.
+- Several project vars are already defined: `claims_enabled`, `cms_alr_connector`, `provider_attribution_enabled`, `mssp_risk_score_cap` and `mssp_fixture_gap_severity` (`error`; `integration_tests` sets `warn`, see its README). `integration_tests/dbt_project.yml` is the commented inventory of every var the connector and its packages read.
 - Intermediate models and final models are configured as tables in `dbt_project.yml`.
 - `macros/to_double.sql` and `macros/safe_divide.sql` exist for the final layer.
   The benchmark calculation is a chain of ratios and products over cells Excel
@@ -565,12 +600,13 @@ With `upstream` as the fork's remote for this repository:
 |   `-- staging/
 |       |-- benchmark/
 |       |-- bnex/
-|       |-- cclf/
 |       |-- mcqm/
 |       |-- mssp/
 |       |-- participants/
 |       `-- shadow_bundles/
+|-- integration_tests/   # local DuckDB + CI harness, synthetic fixtures
 |-- macros/
+|-- scripts/
 |-- seeds/
 |-- tests/
 `-- dbt_project.yml

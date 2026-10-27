@@ -58,7 +58,7 @@ with member_months as (
         year_month                                          as YEAR_MONTH,
         {{ cast_year_or_null('year_nbr') }}                 as PERFORMANCE_YEAR,
         total_paid                                          as TOTAL_PAID
-    from {{ ref('the_tuva_project', 'semantic_layer__fact_member_months') }}
+    from {{ ref('semantic_layer', 'semantic_layer__fact_member_months') }}
 
 ),
 

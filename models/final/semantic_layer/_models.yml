@@ -81,7 +81,7 @@ models:
           - unique
           - relationships:
               arguments:
-                to: ref('the_tuva_project', 'semantic_layer__fact_member_months')
+                to: ref('semantic_layer', 'semantic_layer__fact_member_months')
                 field: member_month_sk
 
       - name: PERSON_ID
@@ -328,7 +328,7 @@ unit_tests:
 
     given:
 
-      - input: ref('the_tuva_project', 'semantic_layer__fact_member_months')
+      - input: ref('semantic_layer', 'semantic_layer__fact_member_months')
         rows:
           - {person_id: 'M1', data_source: 'medicare', year_month: '202603', year_nbr: '2026', member_month_sk: 'M1|202603', patient_source_key: 'M1|medicare', total_paid: 5000}
           - {person_id: 'M2', data_source: 'medicare', year_month: '202605', year_nbr: '2026', member_month_sk: 'M2|202605', patient_source_key: 'M2|medicare', total_paid: 0}

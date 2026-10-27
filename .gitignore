@@ -3,7 +3,6 @@ dbt_packages/
 logs/
 .direnv/
 .envrc
-CLAUDE.md
 .venv/
 .claude
 .pi/
@@ -13,3 +12,8 @@ release-metadata/
 __pycache__/
 config/profiles.yml
 config/.user.yml
+# integration_tests resolves its packages from ../packages.yml on every
+# `dbt deps`; see integration_tests/README.md.
+integration_tests/package-lock.yml
+# dbt writes an anonymous user id next to whichever profiles.yml it uses.
+.user.yml

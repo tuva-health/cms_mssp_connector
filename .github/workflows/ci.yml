@@ -1,9 +1,10 @@
 # PR gate for the canonical connector. Everything here runs without warehouse
-# access: the Snowflake profile is a placeholder rendered from
-# config/profiles.example.yml, `dbt parse` never opens a connection, and the
-# image is built but not pushed. Live dbt runs stay in the client repositories.
+# access or secrets: the Snowflake profile is a placeholder rendered from
+# config/profiles.example.yml, `dbt parse` never opens a connection, the image
+# is built but not pushed, and `dbt build / duckdb` builds the integration_tests
+# project on a local DuckDB file from synthetic fixture seeds.
 #
-# The five job names are the checks to require on `main`; keep them stable.
+# The six job names are the checks to require on `main`; keep them stable.
 name: CI
 
 on:
@@ -118,3 +119,47 @@ jobs:
             --build-arg "RELEASE_ID=ci-${GITHUB_RUN_ID}" \
             --tag cms-mssp-connector:ci \
             .
+
+  # Builds the connector and everything under it (cms_alr_connector,
+  # medicare_cclf_connector, Tuva Core and the semantic-layer stack) from the
+  # synthetic seeds in integration_tests/, the same steps as scripts/dbt-local
+  # (see integration_tests/README.md). No secrets. The check name matches the
+  # cms_alr_connector and medicare_cclf_connector DuckDB jobs.
+  duckdb:
+    name: dbt build / duckdb
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DBT_PROJECT_DIR: integration_tests
+      DBT_PROFILES_DIR: integration_tests/profiles/local_duckdb
+      DBT_DUCKDB_PATH: ${{ github.workspace }}/cms_mssp_connector_ci.duckdb
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+      # The DuckDB database name is the file's stem; fixture seeds load into
+      # it and every source() reads them back.
+      CI_DBT_VARS: '{"input_database": "cms_mssp_connector_ci", "input_schema": "raw"}'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - name: Install dbt packages
+        run: uv run --frozen dbt deps --project-dir "$DBT_PROJECT_DIR"
+      - name: Parse project
+        run: uv run --frozen dbt parse --project-dir "$DBT_PROJECT_DIR" --vars "$CI_DBT_VARS"
+      # Before the build: the connectors' staging views read the seeded
+      # tables, and DuckDB binds a view's tables when it is created.
+      - name: Load fixture seeds
+        run: >-
+          uv run --frozen dbt seed --full-refresh --project-dir "$DBT_PROJECT_DIR" --vars "$CI_DBT_VARS"
+          --select package:integration_tests
+      # Unit tests run inside the build, after their mocked parents exist:
+      # dbt reads a mocked relation's columns from the warehouse. The
+      # benchmark tests tagged fixture_gap warn here (integration_tests
+      # README); every other test fails the job.
+      - name: Build
+        run: >-
+          uv run --frozen dbt build --full-refresh --project-dir "$DBT_PROJECT_DIR" --vars "$CI_DBT_VARS"
+          --exclude package:integration_tests,resource_type:seed

@@ -1,5 +1,5 @@
 {#-
-    Every member-month in Tuva's core__member_months has exactly one row here.
+    Every member-month in Tuva's core__member_month has exactly one row here.
 
     The model is a left join from that spine, so a missing row can only mean a
     join fanned in the wrong direction or a filter crept in. The benchmark is
@@ -17,7 +17,7 @@ with spine as (
         cast(person_id as {{ dbt.type_string() }})     as PERSON_ID,
         cast(data_source as {{ dbt.type_string() }})   as DATA_SOURCE,
         cast(year_month as {{ dbt.type_string() }})    as YEAR_MONTH
-    from {{ ref('the_tuva_project', 'core__member_months') }}
+    from {{ ref('the_tuva_project', 'core__member_month') }}
 
 )
 

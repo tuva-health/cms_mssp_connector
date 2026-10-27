@@ -1,0 +1,456 @@
+version: 2
+
+# The other raw MSSP relations (source mssp_raw), header only: no rows. The
+# staging models over them are select * or plain casts and nothing downstream
+# needs their rows in CI, so these exist to make every source resolve with
+# the columns the pipeline actually writes. Each header is the delivered
+# file's header (read as the header line only, never a data row) or the
+# pipeline's own column list, plus the metadata columns the pipeline appends
+# (FILE_PATH, DIRECTORY_NAME, FILE_NAME, FILE_DATE; MCQM also PERIOD). No
+# sample file or spec of the participant lists or the shadow bundles is on
+# hand, so those carry the metadata columns only. Every column loads as a
+# string.
+#
+# Header sources:
+#   baip_beneficiary_advanced_investment_payment: header of the real QBAIP CSV; identical to the CMS PY 2026 report template BAIP.csv
+#   beneficiary_exclusions: the column list cms_mssp_pipeline bnex_processor.py selects from the BNEX XML
+#   beur_beneficiary_expenditure_utilization_report: header of the real QBEUR CSV; identical to the CMS PY 2026 report template BEUR.csv
+#   excluded_beneficiary_mbi_xref: the fixed-width layout in cms_mssp_pipeline bnex_mbi_xref_file_defs.py
+#   mcqm_bcs_112ssp: header row of the real MCQM workbook sheet BCS_112SSP (union by name across deliveries)
+#   mcqm_beneficiaries: header row of the real MCQM workbook sheet Medicare_CQM_Beneficiaries (union by name across deliveries)
+#   mcqm_dep_134ssp: header row of the real MCQM workbook sheet DEP_134SSP (union by name across deliveries)
+#   mcqm_dm_001ssp: header row of the real MCQM workbook sheet DM_001SSP (union by name across deliveries)
+#   mcqm_htn_236ssp: header row of the real MCQM workbook sheet HTN_236SSP (union by name across deliveries)
+#   ncbp_non_claims_based_payments: header of the real QNCBP CSV
+#   participants_list: metadata columns only (no file or spec on hand)
+#   provider_and_supplier_list: metadata columns only (no file or spec on hand)
+#   shadow_bundles_dm: metadata columns only (no file or spec on hand)
+#   shadow_bundles_epi: metadata columns only (no file or spec on hand)
+#   shadow_bundles_hh: metadata columns only (no file or spec on hand)
+#   shadow_bundles_hs: metadata columns only (no file or spec on hand)
+#   shadow_bundles_ip: metadata columns only (no file or spec on hand)
+#   shadow_bundles_opl: metadata columns only (no file or spec on hand)
+#   shadow_bundles_pb: metadata columns only (no file or spec on hand)
+#   shadow_bundles_sn: metadata columns only (no file or spec on hand)
+
+seeds:
+  - name: baip_beneficiary_advanced_investment_payment
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        BENE_MBI_ID: varchar
+        BENE_1ST_NAME: varchar
+        BENE_LAST_NAME: varchar
+        BENE_SEX_CD: varchar
+        BENE_BIRTH_DT: varchar
+        BENE_DEATH_DT: varchar
+        ADI_NATRANK: varchar
+        BENE_LIS_DUAL_STATUS: varchar
+        AIP_RISK_FACTORS_BASED_SCORE: varchar
+        PER_BENE_AIP: varchar
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: beneficiary_exclusions
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        MBI: varchar
+        HICN: varchar
+        FIRSTNAME: varchar
+        MIDDLENAME: varchar
+        LASTNAME: varchar
+        DOB: varchar
+        GENDER: varchar
+        BENEEXCREASONS: varchar
+        HEADERCODE: varchar
+        FILECREATIONDATE: varchar
+        PERFORMANCEYEAR: varchar
+        REPORTMONTH: varchar
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: beur_beneficiary_expenditure_utilization_report
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        ACOID: varchar
+        PRFMNC_YR_NUM: varchar
+        RPT_YR_NUM: varchar
+        RPT_QTR_NUM: varchar
+        BENE_MBI_ID: varchar
+        BENE_1ST_NAME: varchar
+        BENE_LAST_NAME: varchar
+        BENE_SEX_CD: varchar
+        BENE_BRTH_DT: varchar
+        BENE_DEATH_DT: varchar
+        TOT_FRAC: varchar
+        ESRD_FRAC: varchar
+        DSBL_FRAC: varchar
+        AGDU_FRAC: varchar
+        AGND_FRAC: varchar
+        TOT_CAP_ANN_EXP: varchar
+        ESRD_CAP_ANN_EXP: varchar
+        DSBL_CAP_ANN_EXP: varchar
+        AGDU_CAP_ANN_EXP: varchar
+        AGND_CAP_ANN_EXP: varchar
+        CAP_ANN_INP_ALL: varchar
+        CAP_ANN_INP_S_TRM: varchar
+        CAP_ANN_INP_L_TRM: varchar
+        CAP_ANN_INP_REHAB: varchar
+        CAP_ANN_INP_PSYCH: varchar
+        CAP_ANN_SNF: varchar
+        CAP_ANN_OP_ALL: varchar
+        CAP_ANN_OP_DEPT: varchar
+        CAP_ANN_OP_DIAL: varchar
+        CAP_ANN_PB_ALL: varchar
+        CAP_ANN_PB_EVALMAN: varchar
+        CAP_ANN_PB_PROC: varchar
+        CAP_ANN_PB_TSALL: varchar
+        CAP_ANN_PB_TSPT: varchar
+        CAP_ANN_PB_TSOT: varchar
+        CAP_ANN_PB_TSST: varchar
+        CAP_ANN_PB_TRT: varchar
+        CAP_ANN_PB_IMAG: varchar
+        CAP_ANN_PB_LABTESTS: varchar
+        CAP_ANN_PB_CHM_RAD: varchar
+        CAP_ANN_PB_INJ_DRG: varchar
+        CAP_ANN_PB_AMB: varchar
+        CAP_ANN_HHA: varchar
+        CAP_ANN_DME: varchar
+        CAP_ANN_HSP: varchar
+        TOT_HOSP_DSCHRG_CNT: varchar
+        SHRT_TERM_HOSP_CNT: varchar
+        LT_HOSP_CNT: varchar
+        REHAB_HOSP_CNT: varchar
+        PSYCH_HOSP_CNT: varchar
+        EMER_DEPT_VISIT_CNT: varchar
+        EMER_DEPT_LEAD_HSPLZTN_CNT: varchar
+        OBS_STAYS: varchar
+        CT_EVNT_CNT: varchar
+        MRI_EVNT_CNT: varchar
+        PRMRY_CARE_SRVC_TOT_CNT: varchar
+        PCP_VISIT_CNT: varchar
+        SPCLST_PHYSN_VISIT_CNT: varchar
+        NRS_VISIT_CNT: varchar
+        FQHC_RHC_VISIT_CNT: varchar
+        SAHS_BILLING_ACTIVITY: varchar
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: excluded_beneficiary_mbi_xref
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        performance_year: varchar
+        report_month: varchar
+        current_bene_mbi: varchar
+        previous_bene_mbi: varchar
+        previous_identifier_effective_date: varchar
+        previous_identifier_obsolete_date: varchar
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: mcqm_bcs_112ssp
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        BENE_MBI_ID: varchar
+        BENE_1ST_NAME: varchar
+        BENE_LAST_NAME: varchar
+        BENE_SEX_CD: varchar
+        BENE_BRTH_DT: varchar
+        BENE_DEATH_DT: varchar
+        VA_SELECTION_ONLY: varchar
+        BCS_AGE: varchar
+        BCS_ENCOUNTER: varchar
+        BCS_FEMALE: varchar
+        BCS_EXCLUSION: varchar
+        BCS_FILTER: varchar
+        PROVIDER_1_NPI: varchar
+        PROVIDER_2_NPI: varchar
+        PROVIDER_3_NPI: varchar
+        TOP_CLINIC_ID: varchar
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+        PERIOD: varchar
+
+  - name: mcqm_beneficiaries
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        BENE_MBI_ID: varchar
+        BENE_1ST_NAME: varchar
+        BENE_LAST_NAME: varchar
+        BENE_SEX_CD: varchar
+        BENE_BRTH_DT: varchar
+        BENE_DEATH_DT: varchar
+        VA_SELECTION_ONLY: varchar
+        DM_AGE: varchar
+        DM_DX: varchar
+        DM_ENCOUNTER: varchar
+        DM_EXCLUSION: varchar
+        DM_FILTER: varchar
+        BCS_AGE: varchar
+        BCS_ENCOUNTER: varchar
+        BCS_FEMALE: varchar
+        BCS_EXCLUSION: varchar
+        BCS_FILTER: varchar
+        DEP_AGE: varchar
+        DEP_ENCOUNTER: varchar
+        DEP_EXCLUSION: varchar
+        DEP_FILTER: varchar
+        HTN_AGE: varchar
+        HTN_DX: varchar
+        HTN_ENCOUNTER: varchar
+        HTN_EXCLUSION: varchar
+        HTN_FILTER: varchar
+        PROVIDER_1_NPI: varchar
+        PROVIDER_2_NPI: varchar
+        PROVIDER_3_NPI: varchar
+        TOP_CLINIC_ID: varchar
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+        PERIOD: varchar
+
+  - name: mcqm_dep_134ssp
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        BENE_MBI_ID: varchar
+        BENE_1ST_NAME: varchar
+        BENE_LAST_NAME: varchar
+        BENE_SEX_CD: varchar
+        BENE_BRTH_DT: varchar
+        BENE_DEATH_DT: varchar
+        VA_SELECTION_ONLY: varchar
+        DEP_AGE: varchar
+        DEP_ENCOUNTER: varchar
+        DEP_EXCLUSION: varchar
+        DEP_FILTER: varchar
+        PROVIDER_1_NPI: varchar
+        PROVIDER_2_NPI: varchar
+        PROVIDER_3_NPI: varchar
+        TOP_CLINIC_ID: varchar
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+        PERIOD: varchar
+
+  - name: mcqm_dm_001ssp
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        BENE_MBI_ID: varchar
+        BENE_1ST_NAME: varchar
+        BENE_LAST_NAME: varchar
+        BENE_SEX_CD: varchar
+        BENE_BRTH_DT: varchar
+        BENE_DEATH_DT: varchar
+        VA_SELECTION_ONLY: varchar
+        DM_AGE: varchar
+        DM_DX: varchar
+        DM_ENCOUNTER: varchar
+        DM_EXCLUSION: varchar
+        DM_FILTER: varchar
+        PROVIDER_1_NPI: varchar
+        PROVIDER_2_NPI: varchar
+        PROVIDER_3_NPI: varchar
+        TOP_CLINIC_ID: varchar
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+        PERIOD: varchar
+
+  - name: mcqm_htn_236ssp
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        BENE_MBI_ID: varchar
+        BENE_1ST_NAME: varchar
+        BENE_LAST_NAME: varchar
+        BENE_SEX_CD: varchar
+        BENE_BRTH_DT: varchar
+        BENE_DEATH_DT: varchar
+        VA_SELECTION_ONLY: varchar
+        HTN_AGE: varchar
+        HTN_DX: varchar
+        HTN_ENCOUNTER: varchar
+        HTN_EXCLUSION: varchar
+        HTN_FILTER: varchar
+        PROVIDER_1_NPI: varchar
+        PROVIDER_2_NPI: varchar
+        PROVIDER_3_NPI: varchar
+        TOP_CLINIC_ID: varchar
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+        PERIOD: varchar
+
+  - name: ncbp_non_claims_based_payments
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        MBI: varchar
+        HICN: varchar
+        FNAME: varchar
+        MI: varchar
+        LNAME: varchar
+        SEX: varchar
+        DOB: varchar
+        PROGID: varchar
+        PYMTTYPE: varchar
+        PAYAMT: varchar
+        PYMTSTDT: varchar
+        PYMTENDDT: varchar
+        PYMTDT: varchar
+        PYMTFINAL: varchar
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: participants_list
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: provider_and_supplier_list
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: shadow_bundles_dm
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: shadow_bundles_epi
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: shadow_bundles_hh
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: shadow_bundles_hs
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: shadow_bundles_ip
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: shadow_bundles_opl
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: shadow_bundles_pb
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar
+
+  - name: shadow_bundles_sn
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        FILE_PATH: varchar
+        DIRECTORY_NAME: varchar
+        FILE_NAME: varchar
+        FILE_DATE: varchar

@@ -1,0 +1,8 @@
+default:
+  target: ci
+  outputs:
+    ci:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', '/tmp/cms_mssp_connector_ci.duckdb') }}"
+      schema: "{{ env_var('DBT_DUCKDB_SCHEMA', 'main') }}"
+      threads: 4

@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `integration_tests/`, a dbt project that builds the connector and
+  everything under it on local DuckDB from synthetic fixture seeds, with no
+  credentials, and `scripts/dbt-local` to run it (TUVA-124). The seeds are
+  `cms_alr_connector` v1.0.0's synthetic ALR and CCLF fixtures, the
+  `cms_mssp_pipeline` synthetic workbook relations, and header-only tables
+  for the other MSSP sources.
+- The `dbt build / duckdb` CI job, which runs that build on every pull
+  request to `main` without secrets.
+- The `fixture_gap` tag and `mssp_fixture_gap_severity` var (default `error`)
+  on the seven benchmark tests that the synthetic workbooks cannot pass yet.
+  `integration_tests` sets the var to `warn`. TUVA-126 removes both.
+
+### Changed
+
+- **Breaking:** the package stack moves to Tuva 1.0 (TUVA-124).
+  `cms_alr_connector` is pinned to `v1.0.0` (from commit `24302c5`), which
+  brings `medicare_cclf_connector` `v1.0.0` and Tuva Core `v1.0.0`
+  (`tuva-health/tuva-core`, replacing the `the_tuva_project` repository at
+  v0.17.2). `packages.yml` also declares Tuva Core and the semantic-layer
+  stack, all at `v1.0.0`: `semantic_layer`, `ahrq_quality_indicators`,
+  `ccsr`, `cms_hcc`, `nyu_ed_classification` and `quality_measures`. The
+  regenerated lock no longer has `elementary`, `dbt_expectations` or
+  `dbt_date`. A client project that installs this connector must set the
+  `require_ref_searches_node_package_before_root` flag, which
+  `dbt_project.yml` now sets.
+- **Breaking:** the Tuva semantic layer comes from the separate
+  `semantic_layer` package, and its build contract is 19 outputs, down from
+  22. Semantic layer 1.0 dropped `dim_condition`, `fact_expected_values` and
+  `fact_member_condition_bridge`, so those tables are no longer built.
+  `scripts/verify_manifest.py` now expects the unique ids
+  `model.semantic_layer.semantic_layer__*`. `fact_member_month_benchmark`
+  reads `semantic_layer__fact_member_months` from that package, and
+  `int_member_month_risk` uses Tuva 1.0's `core__member_month` spine
+  (renamed from `core__member_months`).
+- dbt-core is unchanged at 1.11.14, so no action is needed. It is not the
+  1.10.20 that `cms_alr_connector` and `medicare_cclf_connector` pin:
+  dbt-core 1.10.20 requires sqlparse below 0.5.5, which would drop this
+  project's `sqlparse>=0.6.0` security floor.
+
+### Removed
+
+- **Breaking:** the `stg_claims_benefit_enhancement_and_demonstration_code_file_cclfa`
+  and `stg_cclfb_claims_benefit_enhancement_and_demonstration_code_file_cclfb`
+  staging models and their two sources. Nothing read them, and their casts
+  followed the pipeline's CCLFB layout, which is not CCLF IP v43.
+  `medicare_cclf_connector` v1.0.0 reads Part A and Part B demonstration
+  codes from its own `parta_demo_codes` and `partb_demo_codes` sources. The
+  MSSP output contract is 20 staging outputs, down from 22.
+- The `demo_data_only` and `semantic_layer_enabled` vars, which nothing
+  reads any more.
+
 ## [0.3.0] - 2026-10-08
 
 ### Added
