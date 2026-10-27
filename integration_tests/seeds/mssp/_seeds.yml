@@ -1,8 +1,11 @@
 version: 2
 
-# The other raw MSSP relations (source mssp_raw), header only: no rows. The
-# staging models over them are select * or plain casts and nothing downstream
-# needs their rows in CI, so these exist to make every source resolve with
+# The other raw MSSP relations (source mssp_raw). BEUR, beneficiary_exclusions
+# and excluded_beneficiary_mbi_xref carry synthetic rows from cclf-synth
+# (`generate-mssp`, TUVA-126) for the ALR fixture beneficiaries;
+# int_member_month_risk reads BEUR and the BNEX crosswalk. The rest are header
+# only: their staging models are select * or plain casts and nothing downstream
+# needs their rows in CI, so they exist to make every source resolve with
 # the columns the pipeline actually writes. Each header is the delivered
 # file's header (read as the header line only, never a data row) or the
 # pipeline's own column list, plus the metadata columns the pipeline appends
