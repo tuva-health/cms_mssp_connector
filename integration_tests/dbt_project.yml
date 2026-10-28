@@ -47,6 +47,16 @@ vars:
   # dbt_project.yml; set it here only to test another value.
   # mssp_risk_score_cap: 0.03
 
+  ## cms_chronic_conditions
+  # Unset here: the package reads Tuva Core's core__patient, core__encounter,
+  # core__condition, core__procedure and core__pharmacy_claim and builds in
+  # the chronic_conditions schema of the target database. A client can set:
+  # cms_chronic_conditions_database: analytics     # default tuva_database, then target.database
+  # cms_chronic_conditions_schema: chronic_conditions
+  # cms_chronic_conditions_<input>_override, or core_<input>_override, for
+  # <input> in patient, encounter, condition, procedure, pharmacy_claim:
+  # a relation to read instead of the Tuva Core model.
+
   ## Schema naming
   # Optional prefix for output schemas, shared with the packages, e.g.
   # dev_mike_input_layer. Unset in local and DuckDB CI runs.

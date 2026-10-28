@@ -25,3 +25,10 @@ packages:
     revision: "v1.0.0"
   - git: "https://github.com/tuva-health/semantic-layer.git"
     revision: "v1.0.0"
+  # CMS chronic conditions (dbt package name cms_chronic_conditions) replaces
+  # the Tuva-defined chronic conditions retired in 1.0, which semantic layer
+  # 1.0 dropped with dim_condition and fact_member_condition_bridge. It reads
+  # Tuva Core only. tuva-health/chronic_conditions is a GitHub redirect to
+  # this repo; pin the canonical name.
+  - git: "https://github.com/tuva-health/cms_chronic_conditions.git"
+    revision: "v1.0.0"

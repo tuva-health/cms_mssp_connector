@@ -4,8 +4,8 @@
 `cms_mssp_connector`. It installs the connector as a local package
 (`packages.yml` → `local: ../`), which brings in `cms_alr_connector` v1.0.0,
 `medicare_cclf_connector` v1.0.0, Tuva Core v1.0.0 (dbt package name
-`the_tuva_project`) and the semantic-layer stack. It loads synthetic fixture
-seeds where every `source()` expects raw tables and builds the whole stack
+`the_tuva_project`), the semantic-layer stack and CMS chronic conditions. It
+loads synthetic fixture seeds where every `source()` expects raw tables and builds the whole stack
 against them on local DuckDB, with no warehouse and no credentials. All CI
 and local runs use `--project-dir integration_tests`.
 
@@ -91,8 +91,8 @@ Load the seeds first. The connectors' staging views read the seeded tables,
 and on an empty database a plain `build` starts them before the seeds have
 loaded. Once the seeds are in place, `scripts/dbt-local build` on its own
 also works. The build covers everything a client builds: this connector,
-both CMS connectors, Tuva Core and the semantic-layer stack. It takes a few
-minutes, most of it Tuva Core, and needs network access the first time
+both CMS connectors, Tuva Core, the semantic-layer stack and CMS chronic
+conditions. It takes a few minutes, most of it Tuva Core, and needs network access the first time
 because Tuva loads its terminology seeds from a public bucket.
 
 The connector's unit tests run inside the build: they mock refs, and dbt

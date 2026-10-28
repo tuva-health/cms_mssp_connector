@@ -4,7 +4,7 @@ This file provides guidance to Agents when working with code in this repository.
 
 ## Project Overview
 
-This is a dbt project (`cms_mssp_connector`, repo [tuva-health/cms_mssp_connector](https://github.com/tuva-health/cms_mssp_connector)) that stages the raw CMS Medicare Shared Savings Program files [cms_mssp_pipeline](https://github.com/tuva-health/cms_mssp_pipeline) loads, derives the benchmark and projected-savings facts from the CMS benchmark workbooks, and adds member-month benchmark facts beside the Tuva semantic layer. `packages.yml` pins [cms_alr_connector](https://github.com/tuva-health/cms_alr_connector) `v1.0.0`, which brings [medicare_cclf_connector](https://github.com/tuva-health/medicare_cclf_connector) `v1.0.0` and [Tuva Core](https://github.com/tuva-health/tuva-core) `v1.0.0` (dbt package name `the_tuva_project`). It also pins the semantic-layer package and the five marts it builds on, all at `v1.0.0`; move these pins together. The release is a container image (see the README). Client forks deploy it.
+This is a dbt project (`cms_mssp_connector`, repo [tuva-health/cms_mssp_connector](https://github.com/tuva-health/cms_mssp_connector)) that stages the raw CMS Medicare Shared Savings Program files [cms_mssp_pipeline](https://github.com/tuva-health/cms_mssp_pipeline) loads, derives the benchmark and projected-savings facts from the CMS benchmark workbooks, and adds member-month benchmark facts beside the Tuva semantic layer. `packages.yml` pins [cms_alr_connector](https://github.com/tuva-health/cms_alr_connector) `v1.0.0`, which brings [medicare_cclf_connector](https://github.com/tuva-health/medicare_cclf_connector) `v1.0.0` and [Tuva Core](https://github.com/tuva-health/tuva-core) `v1.0.0` (dbt package name `the_tuva_project`). It also pins the semantic-layer package, the five marts it builds on and [CMS chronic conditions](https://github.com/tuva-health/cms_chronic_conditions), all at `v1.0.0`; move these pins together. The release is a container image (see the README). Client forks deploy it.
 
 ## Before you start
 
@@ -30,7 +30,7 @@ uv run --frozen python -m unittest discover -s tests
 uv lock --check
 ```
 
-The build covers this connector, both CMS connectors, Tuva Core and the semantic-layer stack. The fixtures are CMS-consistent, so every test runs at its own severity; don't relax a test to make a build pass. The synthetic ACO `A0000`'s agreement row is appended to the `mssp_aco_agreement` seed by a post-hook in `integration_tests/dbt_project.yml`; never add it to the shipped seed.
+The build covers this connector, both CMS connectors, Tuva Core, the semantic-layer stack and CMS chronic conditions. The fixtures are CMS-consistent, so every test runs at its own severity; don't relax a test to make a build pass. The synthetic ACO `A0000`'s agreement row is appended to the `mssp_aco_agreement` seed by a post-hook in `integration_tests/dbt_project.yml`; never add it to the shipped seed.
 
 ## Data rules
 
