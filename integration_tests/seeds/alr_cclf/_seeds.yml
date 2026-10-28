@@ -1,6 +1,7 @@
 version: 2
 
-# Copied from cms_alr_connector v1.0.0 integration_tests/seeds/: every CSV
+# Copied from cms_alr_connector mike/tuva-134-disabled-aged-dual-fixtures
+# (59045df; v1.1.0 once tagged) integration_tests/seeds/: every CSV
 # beside this file unchanged, and these seed configs unchanged apart from
 # this comment. They are the synthetic ALR + CCLF fixtures the connector this
 # project pins was released with (see integration_tests/README.md). Generated
