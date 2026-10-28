@@ -4,10 +4,10 @@
 
     The fallbacks exist for the 2022-2024 layout, which carries monthly scores
     and no type columns, and for member-months the assignment list does not
-    cover at all. Once the layout carries a type column, the BEUR fraction and
-    the eligibility codes are inferences standing in for a fact CMS has stated
-    outright, and a 2025+ row resolving through either means the model has
-    read past the column it should have used.
+    cover at all. Once the layout carries a type column, it outranks the
+    enrollment flag and the eligibility codes, and a 2025+ row resolving
+    through either means the model has read past the column it should have
+    used.
 
     Rows CMS shipped without any type score — about two percent of the 2025+
     rows in the client's data, all with NEW_ENROLLEE empty — are excluded,

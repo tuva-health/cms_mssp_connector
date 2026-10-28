@@ -5,8 +5,11 @@ packages:
   # Core v1.0.0 (tuva-health/tuva-core, dbt package name the_tuva_project)
   # transitively. Every pin below is a release tag; bump them deliberately and
   # together.
+  # TEMP (TUVA-138): unreleased cms_alr_connector branch carrying the
+  # enrollment enroll_flag (TUVA-143) and TUVA-134's fixture beneficiaries.
+  # Swap for revision "v1.1.0" once it is tagged.
   - git: "https://github.com/tuva-health/cms_alr_connector.git"
-    revision: "v1.0.0"
+    revision: "mike/tuva-134-disabled-aged-dual-fixtures"
   # The Tuva semantic layer is a separate package in Tuva 1.0 (dbt package
   # name semantic_layer). fact_member_month_benchmark reads its
   # semantic_layer__fact_member_months. Its README asks the root project to
