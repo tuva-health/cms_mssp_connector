@@ -4,7 +4,7 @@ packages:
     version: 1.4.1
   - git: https://github.com/tuva-health/cms_alr_connector.git
     name: cms_aalr_connector
-    revision: 30ae87eed128fa11bb02998a9cf5ce7ddeb108b5
+    revision: 59045dff1cd44ac1f6d00caf7ce3278ab648c364
   - git: https://github.com/tuva-health/tuva-core.git
     name: the_tuva_project
     revision: 131d12a5225282563917b76af92718b555c24d4d
@@ -32,4 +32,4 @@ packages:
   - git: https://github.com/tuva-health/medicare_cclf_connector.git
     name: medicare_cclf_connector
     revision: 1deb35646069679bffeee7abf12ce9ab0bf3e29c
-sha1_hash: 1663fb41fb0b671c498c71781dccb13e4109a005
+sha1_hash: e0d60c619b3c371bc36342f2c96d84973cd8df1d
