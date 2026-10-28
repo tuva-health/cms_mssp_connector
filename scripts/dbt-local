@@ -9,6 +9,12 @@
 #
 # See integration_tests/README.md for why the seeds load first.
 #
+# The DuckDB database is integration_tests/target/cms_mssp_connector_ci.duckdb
+# in this checkout, so checkouts and worktrees building at the same time never
+# share a file. Set DBT_DUCKDB_PATH to use another file. dbt accepts any name;
+# a reader that opens a file with another stem outside dbt must
+# ATTACH '<path>' AS cms_mssp_connector_ci (see integration_tests/README.md).
+#
 # Set DBT_PROFILES_DIR (and optionally DBT_PROFILE) to use another warehouse.
 # pyproject.toml installs every warehouse adapter (DuckDB and Snowflake).
 set -euo pipefail
@@ -17,6 +23,15 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_DIR="${REPO_ROOT}/integration_tests"
 PROFILES_DIR="${DBT_PROFILES_DIR:-${PROJECT_DIR}/profiles/local_duckdb}"
 PROFILE="${DBT_PROFILE:-default}"
+
+DBT_DUCKDB_PATH="${DBT_DUCKDB_PATH:-${PROJECT_DIR}/target/cms_mssp_connector_ci.duckdb}"
+# dbt-duckdb writes the path into ATTACH '<path>' unescaped.
+if [[ "${DBT_DUCKDB_PATH}" == *"'"* ]]; then
+  echo "DBT_DUCKDB_PATH must not contain a single quote: ${DBT_DUCKDB_PATH}" >&2
+  exit 1
+fi
+mkdir -p "$(dirname "${DBT_DUCKDB_PATH}")"
+export DBT_DUCKDB_PATH
 
 if [[ ! -f "${PROFILES_DIR}/profiles.yml" ]]; then
   echo "No dbt profiles.yml found at ${PROFILES_DIR}/profiles.yml" >&2

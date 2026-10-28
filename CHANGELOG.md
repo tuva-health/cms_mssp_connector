@@ -19,7 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   member-month benchmark output in this build, and every test runs at its own
   severity with no warnings. `integration_tests` appends its synthetic ACO's
   row to `mssp_aco_agreement` with a seed post-hook; the shipped seed is
-  unchanged.
+  unchanged. Each checkout builds into its own DuckDB file,
+  `integration_tests/target/cms_mssp_connector_ci.duckdb`, so worktrees can
+  build at the same time; `DBT_DUCKDB_PATH` overrides it with any path. A
+  file with another stem must be attached as `cms_mssp_connector_ci` to
+  read its views outside dbt (TUVA-133).
 - Unit tests pinning the risk-score cap with every enrollment type scored,
   binding and not binding, and the capped member-month rates reconciling to
   the ACO benchmark (TUVA-126).
@@ -31,7 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dim_condition` and `fact_member_condition_bridge`.
   `scripts/verify_manifest.py` requires both in `chronic_conditions`.
 - The `dbt build / duckdb` CI job, which runs that build on every pull
-  request to `main` without secrets.
+  request to `main` without secrets. It installs DuckDB's `httpfs` extension
+  in a setup step, cached per DuckDB version, and turns off DuckDB's
+  extension auto-install, so the build never downloads an extension
+  (TUVA-133).
 - `MEMBER_MONTH_ID` on `fact_member_month_benchmark`, passed through from
   the semantic layer's `fact_member_months` (TUVA-127). It is the fact's key:
   the `not_null`, `unique` and relationships tests and the one-to-one test

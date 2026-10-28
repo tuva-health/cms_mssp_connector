@@ -3,6 +3,23 @@ default:
   outputs:
     ci:
       type: duckdb
-      path: "{{ env_var('DBT_DUCKDB_PATH', '/tmp/cms_mssp_connector_ci.duckdb') }}"
+      # The database file is DBT_DUCKDB_PATH, attached under the fixed catalog
+      # name cms_mssp_connector_ci, so dbt accepts a file of any name and
+      # var('input_database') still names the catalog the seeds load into.
+      # Views name that catalog: outside dbt, open a file with another stem
+      # by attaching it AS cms_mssp_connector_ci.
+      # scripts/dbt-local sets a per-checkout default; CI sets its own. There
+      # is no shared fallback: without the variable dbt stops here.
+      path: ":memory:"
+      database: cms_mssp_connector_ci
+      attach:
+        - path: "{{ env_var('DBT_DUCKDB_PATH') }}"
+          alias: cms_mssp_connector_ci
       schema: "{{ env_var('DBT_DUCKDB_SCHEMA', 'main') }}"
       threads: 4
+      config_options:
+        # CI installs the DuckDB extensions it needs (httpfs, for Tuva Core's
+        # terminology seeds) before the build and sets this to false, so a
+        # missing extension fails at once instead of downloading mid-build.
+        # Locally DuckDB installs httpfs on first use.
+        autoinstall_known_extensions: "{{ env_var('DBT_DUCKDB_AUTOINSTALL_EXTENSIONS', 'true') }}"
