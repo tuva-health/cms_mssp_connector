@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A data test, `assert_assigned_member_months_are_typed`, that fails if an
+  assigned member-month has no enrollment type (TUVA-138).
 - `integration_tests/`, a dbt project that builds the connector and
   everything under it on local DuckDB from synthetic fixture seeds, with no
   credentials, and `scripts/dbt-local` to run it (TUVA-124). The seeds are
@@ -57,13 +59,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `int_member_month_risk` types a member-month from the
   assignment list's monthly enrollment flag (ALR Table 1-1 `EnrollFlag`:
   1 ESRD, 2 disabled, 3 aged/dual, 4 aged/non-dual) when the month has no
-  type score column, and no longer from the BEUR person-year fractions
-  (TUVA-138). The order is now type score column, enrollment flag,
-  eligibility codes, else NULL. `ENROLLMENT_TYPE_SOURCE` reports
-  `alr_enroll_flag` where it reported `beur_person_year_fraction`, and
-  `fact_member_month_benchmark` carries the same value. A month only
-  another performance year's delivery covers stays unassigned but takes
-  that row's flag. The BEUR source and staging model are unchanged.
+  type score column (TUVA-138). The order is now type score column,
+  enrollment flag, eligibility codes, else NULL. The BEUR person-year
+  fractions are removed from typing. `ENROLLMENT_TYPE_SOURCE` reports
+  `assignment_list_enroll_flag` where it reported
+  `beur_person_year_fraction`, and `fact_member_month_benchmark` passes the
+  new value through. A month only another performance year's delivery
+  covers stays unassigned but takes that row's flag; on those rows
+  `ENROLLMENT_TYPE_BENCHMARK_PMPM` and `VARIANCE_TO_ENROLLMENT_TYPE` follow
+  the new type. Assigned-month aggregates are unaffected.
 - `cms_alr_connector` moves to `v1.1.0`, which publishes the flag as
   `enrollment.enroll_flag`, and the harness's ALR and CCLF seeds are copied
   again from it. They add assigned disabled and aged/dual beneficiaries
@@ -97,13 +101,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Member-months on the 2022-2024 assignment-list layout, which has no type
-  columns, now carry CMS's monthly enrollment type (TUVA-138). They used to
-  take the BEUR person-year fraction or the eligibility codes, and where
-  neither had a status code (assignment-list-only months, including the
-  2022 and 2023 benchmark years) every member landed in an aged type, so
-  those years had no ESRD or disabled members.
-- A data test, `assert_assigned_member_months_are_typed`, fails if an
-  assigned member-month has no enrollment type.
+  columns, now carry CMS's monthly enrollment type (TUVA-138). On
+  assignment-list-only months, including the 2022 and 2023 benchmark
+  years, there was no status code to fall back on, so every member landed
+  in an aged type and those years had no ESRD or disabled members.
 
 ### Deprecated
 

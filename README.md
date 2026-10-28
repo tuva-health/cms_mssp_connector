@@ -161,8 +161,8 @@ For example, take a store holding PY2025's Q1 to Q3 lists and PY2026's
 member-months for 2025 in Tuva but 9 assigned here, January to September.
 When `QALR.2025Q4` lands, all 12 are assigned.
 
-The synthetic fixtures have no `Y2023` file and no `2025Q4`, so 182 of
-their 952 ALR person-months fall in these two groups. TUVA-130 measures
+The synthetic fixtures have no `Y2023` file and no `2025Q4`, so 185 of
+their 976 ALR person-months fall in these two groups. TUVA-130 measures
 the gap on real deliveries. The unit tests
 `test_month_rule_leaves_off_year_governing_rows_unassigned` and
 `test_month_rule_agrees_with_alr_on_a_complete_file_history` pin both

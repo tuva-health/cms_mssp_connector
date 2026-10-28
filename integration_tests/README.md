@@ -59,8 +59,10 @@ The three quarters land in `no_savings`, `below_msr` and `above_msr`.
 
 The 2024 member-months take their enrollment type from the ALR monthly
 enrollment flag, because the benchmark-year ALR carries monthly scores and
-no type column. The BEUR rows are not read for the type (TUVA-138). One BNEX
-crosswalk row maps a previous MBI that only it resolves.
+no type column. No ALR fixture MBI resolves through the BNEX crosswalk, so
+the build does not exercise that path; the `int_member_month_risk` unit
+tests `test_enrollment_type_priority_and_score_selection` (P6) and
+`test_mbi_resolves_through_the_excluded_beneficiary_crosswalk` do.
 
 Every test runs at its own severity, and the build has no warnings. The
 connector's `mssp_aco_agreement` seed ships to clients with only its
