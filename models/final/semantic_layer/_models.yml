@@ -359,8 +359,8 @@ unit_tests:
       - input: ref('int_member_month_risk')
         rows:
           - {PERSON_ID: 'M1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202603', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score'}
-          - {PERSON_ID: 'M2', DATA_SOURCE: 'medicare', YEAR_MONTH: '202605', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', ENROLLMENT_TYPE_SOURCE: 'beur_person_year_fraction',    RISK_SCORE: null, RISK_SCORE_SOURCE: null}
-          - {PERSON_ID: 'M3', DATA_SOURCE: 'medicare', YEAR_MONTH: '202402', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'disabled',  ENROLLMENT_TYPE_SOURCE: 'beur_person_year_fraction',    RISK_SCORE: 0.9,  RISK_SCORE_SOURCE: 'assignment_list_monthly_score'}
+          - {PERSON_ID: 'M2', DATA_SOURCE: 'medicare', YEAR_MONTH: '202605', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', ENROLLMENT_TYPE_SOURCE: 'alr_enroll_flag',              RISK_SCORE: null, RISK_SCORE_SOURCE: null}
+          - {PERSON_ID: 'M3', DATA_SOURCE: 'medicare', YEAR_MONTH: '202402', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'disabled',  ENROLLMENT_TYPE_SOURCE: 'alr_enroll_flag',              RISK_SCORE: 0.9,  RISK_SCORE_SOURCE: 'assignment_list_monthly_score'}
           - {PERSON_ID: 'M4', DATA_SOURCE: 'medicare', YEAR_MONTH: '202601', IS_ASSIGNED: false, ENROLLMENT_TYPE: 'disabled',  ENROLLMENT_TYPE_SOURCE: 'eligibility_codes',            RISK_SCORE: null, RISK_SCORE_SOURCE: null}
           - {PERSON_ID: 'M5', DATA_SOURCE: 'medicare', YEAR_MONTH: '202512', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score'}
           - {PERSON_ID: 'M6', DATA_SOURCE: 'medicare', YEAR_MONTH: '202606', IS_ASSIGNED: true,  ENROLLMENT_TYPE: null,        ENROLLMENT_TYPE_SOURCE: null,                          RISK_SCORE: 1.1,  RISK_SCORE_SOURCE: 'assignment_list_type_score'}
@@ -444,7 +444,7 @@ unit_tests:
           - {PERSON_ID: 'D1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202503', IS_ASSIGNED: true, ENROLLMENT_TYPE: 'disabled', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 0.9375, RISK_SCORE_SOURCE: 'assignment_list_type_score'}
           - {PERSON_ID: 'G1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202503', IS_ASSIGNED: true, ENROLLMENT_TYPE: 'aged_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.40625, RISK_SCORE_SOURCE: 'assignment_list_type_score'}
           - {PERSON_ID: 'N1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202503', IS_ASSIGNED: true, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.5625, RISK_SCORE_SOURCE: 'assignment_list_type_score'}
-          - {PERSON_ID: 'D1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202406', IS_ASSIGNED: true, ENROLLMENT_TYPE: 'disabled', ENROLLMENT_TYPE_SOURCE: 'beur_person_year_fraction', RISK_SCORE: 0.375, RISK_SCORE_SOURCE: 'assignment_list_monthly_score'}
+          - {PERSON_ID: 'D1', DATA_SOURCE: 'medicare', YEAR_MONTH: '202406', IS_ASSIGNED: true, ENROLLMENT_TYPE: 'disabled', ENROLLMENT_TYPE_SOURCE: 'alr_enroll_flag', RISK_SCORE: 0.375, RISK_SCORE_SOURCE: 'assignment_list_monthly_score'}
 
       - input: ref('fct_projected_savings_current')
         rows:
