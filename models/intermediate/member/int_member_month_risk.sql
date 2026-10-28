@@ -52,9 +52,7 @@
     Enrollment type resolves in priority order and is never defaulted; see the
     column documentation in _models.yml for each step. It is a monthly fact:
     the assignment list's type score column, else its monthly EnrollFlag for
-    the month, else the eligibility codes on the span covering the month. The
-    BEUR's person-year fractions are not read (TUVA-138): an annual fraction
-    does not say which type a member was in in a given month. The score comes only
+    the month, else the eligibility codes on the span covering the month. The score comes only
     from the assignment list, read from whichever layout the row carries: the
     populated per-type column on 2025+ files, or the monthly column for the
     row's own month on 2022-2024 files, where BENE_RSK_R_SCRE_NN holds the
@@ -236,64 +234,19 @@ mbi_resolved as (
 
 ),
 
--- Only rows from the pinned delivery of the month's own calendar year.
-assignment_ranked as (
+-- Every assignment-list row resolved to a person, flagged when it comes from
+-- the pinned delivery of the month's own calendar year.
+assignment_resolved as (
 
     select
         mbi_resolved.PERSON_ID,
         mbi_resolved.MBI_CROSSWALK_SOURCE,
         assignment_dated.*,
-        row_number() over (
-            partition by mbi_resolved.PERSON_ID, assignment_dated.YEAR_MONTH
-            order by
-                assignment_dated.FILE_DATE desc nulls last,
-                case when mbi_resolved.MBI_CROSSWALK_SOURCE = 'direct' then 0 else 1 end,
-                assignment_dated.FILE_NAME desc,
-                assignment_dated.BENE_MBI_ID desc
-        )                                                       as ASSIGNMENT_RANK
-    from assignment_dated
-    inner join pinned_delivery
-        on pinned_delivery.REPORT_YEAR = assignment_dated.REPORT_YEAR
-        and pinned_delivery.DELIVERY_PERFORMANCE_YEAR = assignment_dated.DELIVERY_PERFORMANCE_YEAR
-    inner join mbi_resolved
-        on mbi_resolved.BENE_MBI_ID = assignment_dated.BENE_MBI_ID
-    where mbi_resolved.PERSON_ID is not null
-      and assignment_dated.REPORT_YEAR = {{ cast_year_or_null("substring(assignment_dated.YEAR_MONTH, 1, 4)") }}
-
-),
-
-assignment as (
-
-    select *
-    from assignment_ranked
-    where ASSIGNMENT_RANK = 1
-
-),
-
--- The month's EnrollFlag. An assigned month reads it from the row it is
--- assigned from: the pinned delivery's rows rank first, in the order
--- assignment_ranked uses. A month only another delivery covers is not
--- assigned, but CMS's flag still states the member's type that month, so it
--- reads the latest-delivered row that covers it.
-enroll_flag_ranked as (
-
-    select
-        mbi_resolved.PERSON_ID,
-        assignment_dated.YEAR_MONTH,
-        assignment_dated.ENROLL_FLAG_TYPE,
-        row_number() over (
-            partition by mbi_resolved.PERSON_ID, assignment_dated.YEAR_MONTH
-            order by
-                case
-                    when pinned_delivery.REPORT_YEAR is not null
-                     and assignment_dated.REPORT_YEAR = {{ cast_year_or_null("substring(assignment_dated.YEAR_MONTH, 1, 4)") }}
-                    then 0 else 1
-                end,
-                assignment_dated.FILE_DATE desc nulls last,
-                case when mbi_resolved.MBI_CROSSWALK_SOURCE = 'direct' then 0 else 1 end,
-                assignment_dated.FILE_NAME desc,
-                assignment_dated.BENE_MBI_ID desc
-        )                                                       as FLAG_RANK
+        coalesce(
+            pinned_delivery.REPORT_YEAR is not null
+            and assignment_dated.REPORT_YEAR = {{ cast_year_or_null("substring(assignment_dated.YEAR_MONTH, 1, 4)") }},
+            false
+        )                                                       as IS_PINNED_OWN_YEAR
     from assignment_dated
     left join pinned_delivery
         on pinned_delivery.REPORT_YEAR = assignment_dated.REPORT_YEAR
@@ -304,14 +257,53 @@ enroll_flag_ranked as (
 
 ),
 
+-- One row per person-month: a pinned own-year row first, so the month is
+-- assigned exactly when its top row is one. A month only another delivery
+-- covers keeps its latest-delivered row, for the enrollment flag only.
+assignment_ranked as (
+
+    select
+        assignment_resolved.*,
+        row_number() over (
+            partition by PERSON_ID, YEAR_MONTH
+            order by
+                case when IS_PINNED_OWN_YEAR then 0 else 1 end,
+                FILE_DATE desc nulls last,
+                case when MBI_CROSSWALK_SOURCE = 'direct' then 0 else 1 end,
+                FILE_NAME desc,
+                BENE_MBI_ID desc
+        )                                                       as ASSIGNMENT_RANK
+    from assignment_resolved
+
+),
+
+alr_month as (
+
+    select *
+    from assignment_ranked
+    where ASSIGNMENT_RANK = 1
+
+),
+
+assignment as (
+
+    select *
+    from alr_month
+    where IS_PINNED_OWN_YEAR
+
+),
+
+-- The month's EnrollFlag comes from the top row: the row an assigned month is
+-- assigned from, else the latest off-year row, whose flag still states CMS's
+-- type for the member that month. A NULL or 0 flag on that row does not fall
+-- through to another row's flag; ALR v1.1.0 requires 1-4, so it cannot occur.
 enroll_flag_type as (
 
     select
         PERSON_ID,
         YEAR_MONTH,
         ENROLL_FLAG_TYPE                                        as ENROLLMENT_TYPE
-    from enroll_flag_ranked
-    where FLAG_RANK = 1
+    from alr_month
 
 ),
 
@@ -435,7 +427,7 @@ select
 
     case
         when assignment.SCORE_COLUMN_TYPE is not null       then 'assignment_list_score_column'
-        when enroll_flag_type.ENROLLMENT_TYPE is not null   then 'alr_enroll_flag'
+        when enroll_flag_type.ENROLLMENT_TYPE is not null   then 'assignment_list_enroll_flag'
         when eligibility_type.ENROLLMENT_TYPE is not null   then 'eligibility_codes'
     end                                                         as ENROLLMENT_TYPE_SOURCE,
 
