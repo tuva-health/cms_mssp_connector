@@ -45,12 +45,16 @@
 
     Two ranks keep the grain total against inputs that enforce nothing. Two
     assignment-list MBIs can resolve to one person in one month once a retired
-    MBI is crosswalked, and the same person-year can appear in the BEUR under
-    more than one delivery. Both are ranked and the first row taken, so a
-    collision costs one row's provenance rather than a doubled member-month.
+    MBI is crosswalked, and the same month can appear in more than one
+    delivery. Both are ranked and the first row taken, so a collision costs
+    one row's provenance rather than a doubled member-month.
 
     Enrollment type resolves in priority order and is never defaulted; see the
-    column documentation in _models.yml for each step. The score comes only
+    column documentation in _models.yml for each step. It is a monthly fact:
+    the assignment list's type score column, else its monthly EnrollFlag for
+    the month, else the eligibility codes on the span covering the month. The
+    BEUR's person-year fractions are not read (TUVA-138): an annual fraction
+    does not say which type a member was in in a given month. The score comes only
     from the assignment list, read from whichever layout the row carries: the
     populated per-type column on 2025+ files, or the monthly column for the
     row's own month on 2022-2024 files, where BENE_RSK_R_SCRE_NN holds the
@@ -93,6 +97,16 @@ assignment_list as (
         end                                                     as SCORE_COLUMN_TYPE,
 
         coalesce(esrd_score, dis_score, agdu_score, agnd_score) as TYPE_SCORE,
+
+        -- ALR Table 1-1 EnrollFlag for this month (cms_alr_connector
+        -- enrollment.enroll_flag): 1 ESRD, 2 Disabled, 3 Aged/Dual,
+        -- 4 Aged/Non-Dual. Any other value types nothing.
+        case cast(enroll_flag as integer)
+            when 1 then 'esrd'
+            when 2 then 'disabled'
+            when 3 then 'aged_dual'
+            when 4 then 'aged_non_dual'
+        end                                                     as ENROLL_FLAG_TYPE,
 
         case substring(cast(bene_member_month as {{ dbt.type_string() }}), 5, 2)
             when '01' then bene_rsk_r_scre_01
@@ -152,24 +166,6 @@ pinned_delivery as (
 
 ),
 
-beur as (
-
-    select
-        cast(BENE_MBI_ID as {{ dbt.type_string() }})            as BENE_MBI_ID,
-        cast(RPT_YR_NUM as {{ dbt.type_string() }})             as REPORT_YEAR,
-        cast(PRFMNC_YR_NUM as {{ dbt.type_string() }})          as PERFORMANCE_YEAR,
-        cast(RPT_QTR_NUM as {{ dbt.type_string() }})            as REPORT_QUARTER,
-        {{ cast_numeric_or_null('ESRD_FRAC') }}                 as ESRD_FRACTION,
-        {{ cast_numeric_or_null('DSBL_FRAC') }}                 as DISABLED_FRACTION,
-        {{ cast_numeric_or_null('AGDU_FRAC') }}                 as AGED_DUAL_FRACTION,
-        {{ cast_numeric_or_null('AGND_FRAC') }}                 as AGED_NON_DUAL_FRACTION,
-        cast(FILE_DATE as date)                                 as FILE_DATE,
-        cast(FILE_PATH as {{ dbt.type_string() }})              as FILE_PATH
-    from {{ ref('stg_beur_beneficiary_expenditure_utilization_report') }}
-    where BENE_MBI_ID is not null
-
-),
-
 cclf_beneficiary_xref as (
 
     select
@@ -202,12 +198,10 @@ excluded_beneficiary_xref as (
 
 ),
 
--- Every MBI either source carries, resolved to a Tuva person once.
+-- Every assignment-list MBI, resolved to a Tuva person once.
 mbi_keys as (
 
-    select BENE_MBI_ID from assignment_dated
-    union
-    select BENE_MBI_ID from beur
+    select distinct BENE_MBI_ID from assignment_dated
 
 ),
 
@@ -276,52 +270,48 @@ assignment as (
 
 ),
 
--- The BEUR reports a person-year once per delivery: the benchmark years as
--- annual rows under each later performance year, the performance year itself
--- quarter by quarter. The latest performance year's latest quarter wins, an
--- annual row (no quarter) outranking any quarter of the same delivery.
-beur_ranked as (
+-- The month's EnrollFlag. An assigned month reads it from the row it is
+-- assigned from: the pinned delivery's rows rank first, in the order
+-- assignment_ranked uses. A month only another delivery covers is not
+-- assigned, but CMS's flag still states the member's type that month, so it
+-- reads the latest-delivered row that covers it.
+enroll_flag_ranked as (
 
     select
         mbi_resolved.PERSON_ID,
-        mbi_resolved.MBI_CROSSWALK_SOURCE,
-        beur.*,
+        assignment_dated.YEAR_MONTH,
+        assignment_dated.ENROLL_FLAG_TYPE,
         row_number() over (
-            partition by mbi_resolved.PERSON_ID, beur.REPORT_YEAR
+            partition by mbi_resolved.PERSON_ID, assignment_dated.YEAR_MONTH
             order by
-                beur.PERFORMANCE_YEAR desc nulls last,
-                beur.REPORT_QUARTER desc nulls first,
-                beur.FILE_DATE desc nulls last,
-                beur.FILE_PATH desc,
+                case
+                    when pinned_delivery.REPORT_YEAR is not null
+                     and assignment_dated.REPORT_YEAR = {{ cast_year_or_null("substring(assignment_dated.YEAR_MONTH, 1, 4)") }}
+                    then 0 else 1
+                end,
+                assignment_dated.FILE_DATE desc nulls last,
                 case when mbi_resolved.MBI_CROSSWALK_SOURCE = 'direct' then 0 else 1 end,
-                beur.BENE_MBI_ID desc
-        )                                                       as BEUR_RANK
-    from beur
+                assignment_dated.FILE_NAME desc,
+                assignment_dated.BENE_MBI_ID desc
+        )                                                       as FLAG_RANK
+    from assignment_dated
+    left join pinned_delivery
+        on pinned_delivery.REPORT_YEAR = assignment_dated.REPORT_YEAR
+        and pinned_delivery.DELIVERY_PERFORMANCE_YEAR = assignment_dated.DELIVERY_PERFORMANCE_YEAR
     inner join mbi_resolved
-        on mbi_resolved.BENE_MBI_ID = beur.BENE_MBI_ID
+        on mbi_resolved.BENE_MBI_ID = assignment_dated.BENE_MBI_ID
     where mbi_resolved.PERSON_ID is not null
 
 ),
 
-beur_type as (
+enroll_flag_type as (
 
     select
         PERSON_ID,
-        REPORT_YEAR,
-        case
-            when ESRD_FRACTION > 0
-             and ESRD_FRACTION >= coalesce(DISABLED_FRACTION, 0)
-             and ESRD_FRACTION >= coalesce(AGED_DUAL_FRACTION, 0)
-             and ESRD_FRACTION >= coalesce(AGED_NON_DUAL_FRACTION, 0)     then 'esrd'
-            when DISABLED_FRACTION > 0
-             and DISABLED_FRACTION >= coalesce(AGED_DUAL_FRACTION, 0)
-             and DISABLED_FRACTION >= coalesce(AGED_NON_DUAL_FRACTION, 0) then 'disabled'
-            when AGED_DUAL_FRACTION > 0
-             and AGED_DUAL_FRACTION >= coalesce(AGED_NON_DUAL_FRACTION, 0) then 'aged_dual'
-            when AGED_NON_DUAL_FRACTION > 0                                then 'aged_non_dual'
-        end                                                     as ENROLLMENT_TYPE
-    from beur_ranked
-    where BEUR_RANK = 1
+        YEAR_MONTH,
+        ENROLL_FLAG_TYPE                                        as ENROLLMENT_TYPE
+    from enroll_flag_ranked
+    where FLAG_RANK = 1
 
 ),
 
@@ -439,13 +429,13 @@ select
 
     coalesce(
         assignment.SCORE_COLUMN_TYPE,
-        beur_type.ENROLLMENT_TYPE,
+        enroll_flag_type.ENROLLMENT_TYPE,
         eligibility_type.ENROLLMENT_TYPE
     )                                                           as ENROLLMENT_TYPE,
 
     case
         when assignment.SCORE_COLUMN_TYPE is not null       then 'assignment_list_score_column'
-        when beur_type.ENROLLMENT_TYPE is not null          then 'beur_person_year_fraction'
+        when enroll_flag_type.ENROLLMENT_TYPE is not null   then 'alr_enroll_flag'
         when eligibility_type.ENROLLMENT_TYPE is not null   then 'eligibility_codes'
     end                                                         as ENROLLMENT_TYPE_SOURCE,
 
@@ -468,9 +458,9 @@ left join assignment
     on assignment.PERSON_ID = member_months.PERSON_ID
     and assignment.YEAR_MONTH = member_months.YEAR_MONTH
 
-left join beur_type
-    on beur_type.PERSON_ID = member_months.PERSON_ID
-    and beur_type.REPORT_YEAR = substring(member_months.YEAR_MONTH, 1, 4)
+left join enroll_flag_type
+    on enroll_flag_type.PERSON_ID = member_months.PERSON_ID
+    and enroll_flag_type.YEAR_MONTH = member_months.YEAR_MONTH
 
 left join eligibility_type
     on eligibility_type.PERSON_ID = member_months.PERSON_ID
