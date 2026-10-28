@@ -2,7 +2,7 @@
 
 `integration_tests` is the dbt project used for local development and CI of
 `cms_mssp_connector`. It installs the connector as a local package
-(`packages.yml` → `local: ../`), which brings in `cms_alr_connector` v1.0.0,
+(`packages.yml` → `local: ../`), which brings in `cms_alr_connector` v1.1.0,
 `medicare_cclf_connector` v1.0.0, Tuva Core v1.0.0 (dbt package name
 `the_tuva_project`), the semantic-layer stack and CMS chronic conditions. It
 loads synthetic fixture seeds where every `source()` expects raw tables and builds the whole stack
@@ -39,7 +39,7 @@ before it is committed.
 
 | Seeds | Source tables | Origin |
 | --- | --- | --- |
-| `seeds/alr_cclf/` | the six ALR tables (source `cms_ssp_reports`) and the CCLF tables (source `medicare_cclf`) | Copied unchanged from `cms_alr_connector` v1.0.0 `integration_tests/seeds/`, which the `cclf-synth` generator builds. Shared fake beneficiaries `9TT0FK…`, ACO `A0000`. Copy them again when the ALR pin moves. |
+| `seeds/alr_cclf/` | the six ALR tables (source `cms_ssp_reports`) and the CCLF tables (source `medicare_cclf`) | Copied unchanged from `cms_alr_connector` v1.1.0 `integration_tests/seeds/`, which the `cclf-synth` generator builds. Shared fake beneficiaries `9TT0FK…`, ACO `A0000`. Copy them again when the ALR pin moves. |
 | `seeds/workbooks/` | the twenty BNMRK / AEXPU / QEXPU relations of the workbook export contract | `cclf-synth generate-mssp`: CMS-consistent synthetic workbooks for ACO `A0000`, PY2025 (see below). |
 | `seeds/mssp/` | the other `mssp_raw` tables: BEUR, BAIP, NCBP, MCQM, BNEX, the participant lists and the shadow bundles | BEUR, `beneficiary_exclusions` and `excluded_beneficiary_mbi_xref` carry rows from `cclf-synth generate-mssp` for the ALR fixture beneficiaries; the rest are header only. `seeds/mssp/_seeds.yml` names the source of each header. |
 
@@ -57,9 +57,10 @@ reported quarter. Person years and assigned-beneficiary counts are counted
 from the ALR seeds, so the member-month benchmark reconciles to the report.
 The three quarters land in `no_savings`, `below_msr` and `above_msr`.
 
-The BEUR rows give 2024 member-months their enrollment type, because the
-benchmark-year ALR carries monthly scores and no type column. One BEUR row
-uses a previous MBI that only the BNEX MBI crosswalk resolves.
+The 2024 member-months take their enrollment type from the ALR monthly
+enrollment flag, because the benchmark-year ALR carries monthly scores and
+no type column. The BEUR rows are not read for the type (TUVA-138). One BNEX
+crosswalk row maps a previous MBI that only it resolves.
 
 Every test runs at its own severity, and the build has no warnings. The
 connector's `mssp_aco_agreement` seed ships to clients with only its
@@ -67,16 +68,16 @@ connector's `mssp_aco_agreement` seed ships to clients with only its
 MSR, ACPT at PY1) to it with a seed post-hook; a root seed of the same name
 cannot replace a package's.
 
-The ALR seeds have no disabled or aged/dual beneficiary assigned with a score
-in 2025, so `fact_benchmark_aco_quarter`'s aggregate risk ratio and cap
-factor, and `fact_member_month_benchmark`'s capped rate, are NULL by design
-here. The flat, enrollment-type and uncapped risk-adjusted rates are
-populated. Two unit tests pin the cap with every type scored, binding and
-not binding, and the capped member rates reconciling to the ACO benchmark:
+The ALR seeds assign and score every enrollment type in 2025, including the
+disabled and aged/dual beneficiaries TUVA-134 added, so
+`fact_benchmark_aco_quarter`'s aggregate risk ratio and cap factor are
+populated, and the cap binds in every 2025 quarter (`CAP_FACTOR` below 1).
+`fact_member_month_benchmark` carries a capped rate on every assigned,
+scored 2025 member-month. Two unit tests also pin the cap with every type
+scored, binding and not binding, and the capped member rates reconciling to
+the ACO benchmark:
 `fact_benchmark_aco_quarter::test_cap_with_every_enrollment_type_scored` and
 `fact_member_month_benchmark::test_capped_rates_reconcile_with_every_enrollment_type_scored`.
-TUVA-134 adds such beneficiaries to the cclf-synth ALR fixtures for the
-next `cms_alr_connector` release.
 
 ## Local runs
 

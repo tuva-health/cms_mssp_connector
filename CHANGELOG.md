@@ -54,6 +54,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `int_member_month_risk` types a member-month from the
+  assignment list's monthly enrollment flag (ALR Table 1-1 `EnrollFlag`:
+  1 ESRD, 2 disabled, 3 aged/dual, 4 aged/non-dual) when the month has no
+  type score column, and no longer from the BEUR person-year fractions
+  (TUVA-138). The order is now type score column, enrollment flag,
+  eligibility codes, else NULL. `ENROLLMENT_TYPE_SOURCE` reports
+  `alr_enroll_flag` where it reported `beur_person_year_fraction`, and
+  `fact_member_month_benchmark` carries the same value. A month only
+  another performance year's delivery covers stays unassigned but takes
+  that row's flag. The BEUR source and staging model are unchanged.
+- `cms_alr_connector` moves to `v1.1.0`, which publishes the flag as
+  `enrollment.enroll_flag`, and the harness's ALR and CCLF seeds are copied
+  again from it. They add assigned disabled and aged/dual beneficiaries
+  (TUVA-134), so the risk-score cap is populated and binds in the harness
+  build.
 - **Breaking:** the package stack moves to Tuva 1.0 (TUVA-124).
   `cms_alr_connector` is pinned to `v1.0.0` (from commit `24302c5`), which
   brings `medicare_cclf_connector` `v1.0.0` and Tuva Core `v1.0.0`
@@ -78,6 +93,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   1.10.20 that `cms_alr_connector` and `medicare_cclf_connector` pin:
   dbt-core 1.10.20 requires sqlparse below 0.5.5, which would drop this
   project's `sqlparse>=0.6.0` security floor.
+
+### Fixed
+
+- Member-months on the 2022-2024 assignment-list layout, which has no type
+  columns, now carry CMS's monthly enrollment type (TUVA-138). They used to
+  take the BEUR person-year fraction or the eligibility codes, and where
+  neither had a status code (assignment-list-only months, including the
+  2022 and 2023 benchmark years) every member landed in an aged type, so
+  those years had no ESRD or disabled members.
+- A data test, `assert_assigned_member_months_are_typed`, fails if an
+  assigned member-month has no enrollment type.
 
 ### Deprecated
 

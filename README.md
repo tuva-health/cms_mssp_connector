@@ -49,7 +49,8 @@ the final layer.
 `int_member_month_risk` sits alongside them on the `core__member_month` grain
 (person, data source, month). It states which MSSP enrollment type the member
 is in — from the populated score column on the 2025+ assignment list, else the
-BEUR person-year fractions, else the Tuva eligibility codes, with
+assignment list's monthly enrollment flag (`EnrollFlag`, 1 ESRD, 2 disabled,
+3 aged/dual, 4 aged/non-dual), else the Tuva eligibility codes, with
 `ENROLLMENT_TYPE_SOURCE` saying which — and the CMS prospective HCC risk score
 the assignment list supplies, read from the per-type column or the monthly
 column depending on the file's layout. Assignment-list MBIs are mapped to the
@@ -152,7 +153,7 @@ When the missing file arrives, both rules switch to it and agree.
 `core__member_month`, `fact_member_months` and
 `fact_member_month_benchmark`, because the spine is never filtered. They
 carry `IS_ASSIGNED = false`, a NULL risk score and risk-adjusted rate, and
-an enrollment type from the BEUR or eligibility fallback. Count assigned
+an enrollment type from the enrollment-flag or eligibility fallback. Count assigned
 member-months with `IS_ASSIGNED`, not with rows.
 
 For example, take a store holding PY2025's Q1 to Q3 lists and PY2026's
@@ -160,8 +161,8 @@ For example, take a store holding PY2025's Q1 to Q3 lists and PY2026's
 member-months for 2025 in Tuva but 9 assigned here, January to September.
 When `QALR.2025Q4` lands, all 12 are assigned.
 
-The synthetic fixtures have no `Y2023` file and no `2025Q4`, so 173 of
-their 916 ALR person-months fall in these two groups. TUVA-130 measures
+The synthetic fixtures have no `Y2023` file and no `2025Q4`, so 182 of
+their 952 ALR person-months fall in these two groups. TUVA-130 measures
 the gap on real deliveries. The unit tests
 `test_month_rule_leaves_off_year_governing_rows_unassigned` and
 `test_month_rule_agrees_with_alr_on_a_complete_file_history` pin both
@@ -370,9 +371,11 @@ records the commits they resolved to, and `scripts/verify_manifest.py`
 checks a release against it.
 
 - `dbt-labs/dbt_utils`
-- `tuva-health/cms_alr_connector` `v1.0.0`, which brings
+- `tuva-health/cms_alr_connector` `v1.1.0`, which brings
   `tuva-health/medicare_cclf_connector` `v1.0.0` and Tuva Core `v1.0.0`
-  (`tuva-health/tuva-core`, dbt package name `the_tuva_project`)
+  (`tuva-health/tuva-core`, dbt package name `the_tuva_project`). v1.1.0
+  publishes the monthly enrollment flag on `enrollment.enroll_flag`, which
+  `int_member_month_risk` types member-months from.
 - the Tuva semantic layer, `tuva-health/semantic-layer` `v1.0.0` (dbt package
   name `semantic_layer`). Its README asks the root project to declare Tuva
   Core and the five marts it builds on, so `packages.yml` lists them too, all
