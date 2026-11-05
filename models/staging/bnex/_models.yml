@@ -8,3 +8,43 @@ models:
   - name: stg_excluded_beneficiary_mbi_xref
     config:
       schema: _stg_input_layer
+    columns:
+      - name: PREVIOUS_IDENTIFIER_EFFECTIVE_DATE
+        description: >
+          The day the previous MBI took effect. The crosswalk is a fixed-width
+          file and cms_mssp_pipeline writes this column as the eight-character
+          `YYYYMMDD` text the file carries, so it is typed here with
+          `try_to_cast_date(..., 'YYYYMMDD')`: exactly eight digits naming a
+          real calendar day give a date, anything else gives NULL.
+      - name: PREVIOUS_IDENTIFIER_OBSOLETE_DATE
+        description: >
+          The day the previous MBI stopped being valid, in the same
+          `YYYYMMDD` layout and typed the same way as
+          `PREVIOUS_IDENTIFIER_EFFECTIVE_DATE`.
+
+unit_tests:
+
+  - name: test_identifier_dates_are_read_in_the_crosswalks_yyyymmdd_layout
+    model: stg_excluded_beneficiary_mbi_xref
+    description: >
+      The two identifier dates arrive as eight-digit `YYYYMMDD` text, which
+      no adapter's plain date cast accepts (DuckDB and Snowflake both return
+      NULL for it), so `try_to_cast_date` has to read them in the layout the
+      model names rather than fall back to the adapter's default.
+      X1  both dates populated in the fixed-width layout; both type.
+      X2  a blank and a NULL, the way an open-ended mapping arrives; both
+          stay NULL.
+      X3  a seven-digit fragment and a thirteenth month; neither is a date
+          in this layout, so both are NULL rather than read leniently.
+      FILE_DATE keeps the default `YYYY-MM-DD` reading on every row.
+    given:
+      - input: source('mssp_raw', 'excluded_beneficiary_mbi_xref')
+        rows:
+          - {PERFORMANCE_YEAR: '2025', REPORT_MONTH: '01', CURRENT_BENE_MBI: 'NEW1', PREVIOUS_BENE_MBI: 'OLD1', PREVIOUS_IDENTIFIER_EFFECTIVE_DATE: '20240115', PREVIOUS_IDENTIFIER_OBSOLETE_DATE: '20240630', FILE_PATH: 'a', FILE_DATE: '2025-01-31'}
+          - {PERFORMANCE_YEAR: '2025', REPORT_MONTH: '01', CURRENT_BENE_MBI: 'NEW2', PREVIOUS_BENE_MBI: 'OLD2', PREVIOUS_IDENTIFIER_EFFECTIVE_DATE: '',         PREVIOUS_IDENTIFIER_OBSOLETE_DATE: null,       FILE_PATH: 'a', FILE_DATE: '2025-01-31'}
+          - {PERFORMANCE_YEAR: '2025', REPORT_MONTH: '01', CURRENT_BENE_MBI: 'NEW3', PREVIOUS_BENE_MBI: 'OLD3', PREVIOUS_IDENTIFIER_EFFECTIVE_DATE: '2024011',  PREVIOUS_IDENTIFIER_OBSOLETE_DATE: '20241315', FILE_PATH: 'a', FILE_DATE: '2025-01-31'}
+    expect:
+      rows:
+        - {PREVIOUS_BENE_MBI: 'OLD1', CURRENT_BENE_MBI: 'NEW1', PREVIOUS_IDENTIFIER_EFFECTIVE_DATE: '2024-01-15', PREVIOUS_IDENTIFIER_OBSOLETE_DATE: '2024-06-30', FILE_DATE: '2025-01-31'}
+        - {PREVIOUS_BENE_MBI: 'OLD2', CURRENT_BENE_MBI: 'NEW2', PREVIOUS_IDENTIFIER_EFFECTIVE_DATE: null,         PREVIOUS_IDENTIFIER_OBSOLETE_DATE: null,         FILE_DATE: '2025-01-31'}
+        - {PREVIOUS_BENE_MBI: 'OLD3', CURRENT_BENE_MBI: 'NEW3', PREVIOUS_IDENTIFIER_EFFECTIVE_DATE: null,         PREVIOUS_IDENTIFIER_OBSOLETE_DATE: null,         FILE_DATE: '2025-01-31'}

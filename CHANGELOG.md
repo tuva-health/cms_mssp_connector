@@ -112,6 +112,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `stg_excluded_beneficiary_mbi_xref` now carries
+  `PREVIOUS_IDENTIFIER_EFFECTIVE_DATE` and
+  `PREVIOUS_IDENTIFIER_OBSOLETE_DATE` as dates. The crosswalk is a
+  fixed-width file and `cms_mssp_pipeline` writes both as eight-digit
+  `YYYYMMDD` text; the model named that layout, but `try_to_cast_date`'s
+  DuckDB and Snowflake branches ignored the layout and cast the text as the
+  adapter's default date, which accepts neither, so both columns were NULL
+  on every row. The two branches now read the layout they are given —
+  `YYYYMMDD`, `MM/DD/YYYY` and `YYYY-MM-DD HH:MI:SS` — behind the same
+  whole-value shape check the Postgres branch applies, so a fragment or an
+  impossible day is NULL rather than read leniently; the default
+  `YYYY-MM-DD` reading of `FILE_DATE` is unchanged. A unit test on the
+  staging model pins the layout.
 - Member-months on the 2022-2024 assignment-list layout, which has no type
   columns, now carry CMS's monthly enrollment type (TUVA-138). On
   assignment-list-only months, including the 2022 and 2023 benchmark
