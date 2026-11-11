@@ -46,6 +46,12 @@
     join to fact_member_months has to hold across the whole spine or the
     semantic layer would silently drop members from a report.
 
+    The variances compare the member's medical paid amount, not total paid,
+    with the rates. The benchmark is built from per capita Parts A and B
+    fee-for-service expenditures (42 CFR 425.652(a)), so the Part D pharmacy
+    spend in total paid has no counterpart in any rate. TOTAL_PAID is still
+    carried for reports that want the member's whole spend.
+
     The divisions and products go through to_double and safe_divide like the
     rest of the project; see those macros. The ratio divides by [C] as printed:
     the assignment-list scores are already on the national mean of 1.0 basis
@@ -62,7 +68,8 @@ with member_months as (
         patient_source_key                                  as PATIENT_SOURCE_KEY,
         year_month                                          as YEAR_MONTH,
         {{ cast_year_or_null('year_nbr') }}                 as PERFORMANCE_YEAR,
-        total_paid                                          as TOTAL_PAID
+        total_paid                                          as TOTAL_PAID,
+        medical_paid                                        as MEDICAL_PAID
     from {{ ref('semantic_layer', 'semantic_layer__fact_member_months') }}
 
 ),
@@ -200,6 +207,7 @@ rates as (
         cap_factors.CAP_FACTOR                              as CAP_FACTOR,
 
         member_months.TOTAL_PAID                            as TOTAL_PAID,
+        member_months.MEDICAL_PAID                          as MEDICAL_PAID,
         projection.PERFORMANCE_YEAR is not null             as HAS_BENCHMARK,
         projection.PERIOD                                   as BENCHMARK_PERIOD,
         projection.QUARTER_NUM                              as BENCHMARK_QUARTER_NUM,
@@ -279,14 +287,15 @@ select
     CAP_FACTOR,
     RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED,
     TOTAL_PAID,
+    MEDICAL_PAID,
 
-    {#- actual minus benchmark -#}
-    {{ to_double('TOTAL_PAID') }} - FLAT_BENCHMARK_PMPM     as VARIANCE_TO_FLAT,
-    {{ to_double('TOTAL_PAID') }} - ENROLLMENT_TYPE_BENCHMARK_PMPM
+    {#- actual minus benchmark, both Parts A and B -#}
+    {{ to_double('MEDICAL_PAID') }} - FLAT_BENCHMARK_PMPM   as VARIANCE_TO_FLAT,
+    {{ to_double('MEDICAL_PAID') }} - ENROLLMENT_TYPE_BENCHMARK_PMPM
                                                             as VARIANCE_TO_ENROLLMENT_TYPE,
-    {{ to_double('TOTAL_PAID') }} - RISK_ADJUSTED_BENCHMARK_PMPM
+    {{ to_double('MEDICAL_PAID') }} - RISK_ADJUSTED_BENCHMARK_PMPM
                                                             as VARIANCE_TO_RISK_ADJUSTED,
-    {{ to_double('TOTAL_PAID') }} - RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED
+    {{ to_double('MEDICAL_PAID') }} - RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED
                                                             as VARIANCE_TO_RISK_ADJUSTED_CAPPED,
 
     HAS_BENCHMARK,

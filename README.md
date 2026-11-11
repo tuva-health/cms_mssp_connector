@@ -205,8 +205,9 @@ The connector adds two facts of its own to that schema, under
   (`RISK_ADJUSTED_BENCHMARK_PMPM_CAPPED`, the uncapped rate times the year's
   `CAP_FACTOR` from `fact_benchmark_aco_quarter`). Each row also carries the
   enrollment type, the member's score and its source, the BY3 type score, the
-  risk ratio, the cap factor, the actual total paid, and the variance to each
-  rate.
+  risk ratio, the cap factor, the actual total and medical paid, and the
+  variance of medical paid to each rate: the benchmark covers Parts A and B
+  only, so the Part D pharmacy spend in total paid is left out of it.
 
   One projection serves each performance year — the calendar year of the
   member-month — by default the latest calculable quarter of that year on the
