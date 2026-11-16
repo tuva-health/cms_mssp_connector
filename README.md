@@ -370,9 +370,16 @@ years only.
 records the commits they resolved to, and `scripts/verify_manifest.py`
 checks a release against it.
 
+[cms_mssp_pipeline](https://github.com/tuva-health/cms_mssp_pipeline) writes
+the raw tables this connector reads, so the two are released in pairs:
+
+| cms_mssp_connector | cms_mssp_pipeline | medicare_cclf_connector (via cms_alr_connector) |
+|---|---|---|
+| v1.0.0 | v0.4.0 | v1.0.2 (cms_alr_connector v1.1.1) |
+
 - `dbt-labs/dbt_utils`
-- `tuva-health/cms_alr_connector` `v1.1.0`, which brings
-  `tuva-health/medicare_cclf_connector` `v1.0.1` and Tuva Core `v1.0.0`
+- `tuva-health/cms_alr_connector` `v1.1.1`, which brings
+  `tuva-health/medicare_cclf_connector` `v1.0.2` and Tuva Core `v1.0.0`
   (`tuva-health/tuva-core`, dbt package name `the_tuva_project`). v1.1.0
   publishes the monthly enrollment flag on `enrollment.enroll_flag`, which
   `int_member_month_risk` types member-months from.
