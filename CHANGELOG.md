@@ -162,6 +162,14 @@ two together.
   accepts string input only, so creating the seven views there failed on
   that column; the DuckDB harness loads every fixture column as text and
   did not reach the case. The dates the views carry are unchanged.
+- `fact_member_month_benchmark`'s four `VARIANCE_TO_*` columns compare the
+  member's medical paid amount with the rates, not total paid. The benchmark
+  is set on per capita Parts A and B fee-for-service expenditures (42 CFR
+  425.652(a)), and total paid includes Part D pharmacy spend, so every
+  member-month with a pharmacy claim showed a variance too high by its
+  pharmacy paid amount. The fact gains `MEDICAL_PAID`, passed through from
+  `fact_member_months.medical_paid`, and keeps `TOTAL_PAID` unchanged.
+  Member-months without pharmacy spend keep their variances.
 
 ### Deprecated
 
