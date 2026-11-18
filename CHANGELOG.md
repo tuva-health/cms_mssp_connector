@@ -174,7 +174,7 @@ two together.
   release workflow call, builds on Docker 29 with buildx 0.38. That buildx no
   longer reports the image's config digest for a build loaded into the local
   image store, and the script refused every build for the missing digest. It
-  now reads the digest from the image store, which records it.
+  now reads the digest from the image's manifest in `docker save`.
 
 ### Deprecated
 
