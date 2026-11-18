@@ -12,7 +12,8 @@
 # --check-only runs the clean-clone and RELEASE_REF guards and exits, so a caller
 # can refuse before it touches a registry.
 # --record FILE writes the build record: source commit, release ID,
-# SOURCE_DATE_EPOCH and the config (image ID) and manifest digests buildx reports.
+# SOURCE_DATE_EPOCH and the config (image ID) and manifest digests buildx reports
+# (the config digest from the image store when buildx leaves it out).
 #
 # Reproducibility: SOURCE_DATE_EPOCH is the commit time of HEAD, layer file
 # timestamps are rewritten to it and attestations are off. The dbt manifests
@@ -106,18 +107,28 @@ docker buildx build \
   --metadata-file "$build_metadata" \
   .
 
+# buildx 0.38 leaves containerimage.config.digest out of the metadata for the
+# docker exporter. Docker's containerd image store still records it, as the
+# config.digest annotation on the loaded image's descriptor; the classic store
+# has no descriptor and its buildx reports the digest itself.
+inspected_config_digest=$(docker image inspect "$tagged_image" \
+  --format '{{with .Descriptor}}{{index .Annotations "config.digest"}}{{end}}' 2>/dev/null || true)
+
 python3 - "$build_metadata" "$repository" "$source_commit" "$release_id" \
-  "$source_date_epoch" "$record_file" <<'PY'
+  "$source_date_epoch" "$record_file" "$inspected_config_digest" <<'PY'
 import json
 import re
 import sys
 from pathlib import Path
 
-build_metadata, repository, source_commit, release_id, epoch, record_path = sys.argv[1:]
+build_metadata, repository, source_commit, release_id, epoch, record_path, inspected = sys.argv[1:]
 # buildx metadata is JSON (UTF-8) and can carry non-ASCII text from the build.
 built = json.loads(Path(build_metadata).read_text(encoding="utf-8"))
 digest = built.get("containerimage.digest", "")
 config_digest = built.get("containerimage.config.digest", "")
+if config_digest and inspected and config_digest != inspected:
+    raise SystemExit(f"buildx reported config digest {config_digest}, the image store {inspected}")
+config_digest = config_digest or inspected
 for label, value in (("manifest", digest), ("config", config_digest)):
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", value):
         raise SystemExit(f"buildx reported no {label} digest (got {value!r})")
