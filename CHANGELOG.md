@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-16
+
+This release requires cms_mssp_pipeline v0.4.0, which writes the raw tables
+under the names medicare_cclf_connector v1.0.2 reads. It runs
+medicare_cclf_connector v1.0.2 through cms_alr_connector v1.1.1. Release the
+two together.
+
 ### Added
 
 - A data test, `assert_assigned_member_months_are_typed`, that fails if an
@@ -68,20 +75,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   covers stays unassigned but takes that row's flag; on those rows
   `ENROLLMENT_TYPE_BENCHMARK_PMPM` and `VARIANCE_TO_ENROLLMENT_TYPE` follow
   the new type. Assigned-month aggregates are unaffected.
-- `cms_alr_connector` moves to `v1.1.0`, which publishes the flag as
-  `enrollment.enroll_flag`, and the harness's ALR and CCLF seeds are copied
-  again from it. They add assigned disabled and aged/dual beneficiaries
+- `cms_alr_connector` moves to `v1.1.1` (TUVA-150). `v1.1.0` publishes the
+  flag as `enrollment.enroll_flag`, and the harness's ALR and CCLF seeds are
+  copied again from it; `v1.1.1` only moves its CCLF pin, and its seeds are
+  byte-identical. They add assigned disabled and aged/dual beneficiaries
   (TUVA-134), so the risk-score cap is populated and binds in the harness
   build. The workbook and BEUR fixtures are regenerated from them with
   `cclf-synth generate-mssp`.
-- Through `cms_alr_connector` `v1.1.0`, `medicare_cclf_connector` moves to
-  `v1.0.1` (TUVA-138), which fixes four bugs that change Tuva outputs:
+- Through `cms_alr_connector` `v1.1.1`, `medicare_cclf_connector` moves to
+  `v1.0.2` (TUVA-138, TUVA-149). `v1.0.1` and `v1.0.2` fix bugs that change
+  Tuva outputs:
   - `dual_status_code` comes from CCLF8, so full and partial duals are no
     longer scored as non-dual by Tuva's CMS-HCC (their scores rise);
   - Part A revenue center lines join on the header's `PRVDR_OSCAR_NUM`, so
     claims whose billing CCN differs keep their lines;
   - institutional procedure codes are typed ICD-10-PCS / ICD-9-PCS;
-  - physician lines with no denial code are kept.
+  - physician lines with no denial code are kept;
+  - Part B final claim lines carry their own paid and allowed amounts, not
+    the netted difference, when the original claim is not in the loaded
+    files;
+  - a placeholder or blank discharge status gives a NULL
+    `discharge_disposition_code` (was `0~` or `00`);
+  - a zero-filled DRG gives a NULL `drg_code` (was `000`), which clears
+    `drg_code_invalid` on non-inpatient Part A lines.
 
   CMS's own figures that this connector reads from the assignment list and
   the MSSP workbooks are unaffected.
@@ -368,6 +384,7 @@ client dev and prod deployment on 2026-09-03/04.
   anything is pushed, and `release-metadata/` is git-ignored (TUVA-54).
 - README setup instructions refer to the `cms_mssp_connector` profile name.
 
-[Unreleased]: https://github.com/tuva-health/cms_mssp_connector/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/tuva-health/cms_mssp_connector/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/tuva-health/cms_mssp_connector/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/tuva-health/cms_mssp_connector/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tuva-health/cms_mssp_connector/releases/tag/v0.2.0

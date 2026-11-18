@@ -1,6 +1,6 @@
 version: 2
 
-# Copied from cms_alr_connector v1.1.0 integration_tests/seeds/: every CSV
+# Copied from cms_alr_connector v1.1.1 integration_tests/seeds/: every CSV
 # beside this file unchanged, and these seed configs unchanged apart from
 # this comment. They are the synthetic ALR + CCLF fixtures the connector this
 # project pins was released with (see integration_tests/README.md). Generated
@@ -9,7 +9,7 @@ version: 2
 # (var input_schema) and the connectors read them through source(),
 # exactly as they read a client's raw tables: the six ALR tables
 # (source cms_ssp_reports) and the CCLF tables of the medicare_cclf_connector
-# release this connector pins, v1.0.1 (source medicare_cclf). database/schema are set
+# release this connector pins, v1.0.2 (source medicare_cclf). database/schema are set
 # per seed here, not in dbt_project.yml, because project-level configs render
 # before the project's own vars are available. Every column is loaded as a
 # string, matching how raw CMS files land in a warehouse.
@@ -529,7 +529,7 @@ seeds:
         file_name: |
           {%- if target.type in ("bigquery", "databricks") -%} string {%- else -%} varchar(255) {%- endif -%}
 
-  # CCLF (source medicare_cclf, medicare_cclf_connector v1.0.1)
+  # CCLF (source medicare_cclf, medicare_cclf_connector v1.0.2)
 
   - name: beneficiary_demographics
     config:
