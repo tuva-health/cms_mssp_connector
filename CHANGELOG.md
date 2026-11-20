@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-20
+
+The first published release of the 1.0 line. `v1.0.0` was tagged, but its
+release build failed on the fix below, so no v1.0.0 release or image exists.
+v1.0.1 carries everything under [1.0.0] plus this fix. Like v1.0.0, it
+requires cms_mssp_pipeline v0.4.0; release the two together.
+
+### Fixed
+
+- `scripts/build_image.sh`, which `scripts/build_release_image.sh` and the
+  release workflow call, builds on Docker 29 with buildx 0.38. That buildx no
+  longer reports the image's config digest for a build loaded into the local
+  image store, and the script refused every build for the missing digest. It
+  now reads the digest from the image's manifest in `docker save`.
+
 ## [1.0.0] - 2026-11-16
+
+Tagged, never released: use v1.0.1.
 
 This release requires cms_mssp_pipeline v0.4.0, which writes the raw tables
 under the names medicare_cclf_connector v1.0.2 reads. It runs
@@ -170,12 +187,6 @@ two together.
   pharmacy paid amount. The fact gains `MEDICAL_PAID`, passed through from
   `fact_member_months.medical_paid`, and keeps `TOTAL_PAID` unchanged.
   Member-months without pharmacy spend keep their variances.
-- `scripts/build_image.sh`, which `scripts/build_release_image.sh` and the
-  release workflow call, builds on Docker 29 with buildx 0.38. That buildx no
-  longer reports the image's config digest for a build loaded into the local
-  image store, and the script refused every build for the missing digest. It
-  now reads the digest from the image's manifest in `docker save`.
-
 ### Deprecated
 
 - `MEMBER_MONTH_SK` on `fact_member_month_benchmark` (TUVA-127). It is still
@@ -397,7 +408,8 @@ client dev and prod deployment on 2026-09-03/04.
   anything is pushed, and `release-metadata/` is git-ignored (TUVA-54).
 - README setup instructions refer to the `cms_mssp_connector` profile name.
 
-[Unreleased]: https://github.com/tuva-health/cms_mssp_connector/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/tuva-health/cms_mssp_connector/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/tuva-health/cms_mssp_connector/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/tuva-health/cms_mssp_connector/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/tuva-health/cms_mssp_connector/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tuva-health/cms_mssp_connector/releases/tag/v0.2.0
