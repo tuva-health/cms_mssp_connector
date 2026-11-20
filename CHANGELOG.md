@@ -170,6 +170,11 @@ two together.
   pharmacy paid amount. The fact gains `MEDICAL_PAID`, passed through from
   `fact_member_months.medical_paid`, and keeps `TOTAL_PAID` unchanged.
   Member-months without pharmacy spend keep their variances.
+- `scripts/build_image.sh`, which `scripts/build_release_image.sh` and the
+  release workflow call, builds on Docker 29 with buildx 0.38. That buildx no
+  longer reports the image's config digest for a build loaded into the local
+  image store, and the script refused every build for the missing digest. It
+  now reads the digest from the image's manifest in `docker save`.
 
 ### Deprecated
 

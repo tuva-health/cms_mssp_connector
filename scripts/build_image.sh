@@ -12,7 +12,8 @@
 # --check-only runs the clean-clone and RELEASE_REF guards and exits, so a caller
 # can refuse before it touches a registry.
 # --record FILE writes the build record: source commit, release ID,
-# SOURCE_DATE_EPOCH and the config (image ID) and manifest digests buildx reports.
+# SOURCE_DATE_EPOCH and the config (image ID) and manifest digests buildx reports
+# (the config digest from the saved manifest when buildx leaves it out).
 #
 # Reproducibility: SOURCE_DATE_EPOCH is the commit time of HEAD, layer file
 # timestamps are rewritten to it and attestations are off. The dbt manifests
@@ -107,17 +108,34 @@ docker buildx build \
   .
 
 python3 - "$build_metadata" "$repository" "$source_commit" "$release_id" \
-  "$source_date_epoch" "$record_file" <<'PY'
+  "$source_date_epoch" "$record_file" "$tagged_image" <<'PY'
 import json
 import re
+import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
-build_metadata, repository, source_commit, release_id, epoch, record_path = sys.argv[1:]
+build_metadata, repository, source_commit, release_id, epoch, record_path, image = sys.argv[1:]
 # buildx metadata is JSON (UTF-8) and can carry non-ASCII text from the build.
 built = json.loads(Path(build_metadata).read_text(encoding="utf-8"))
 digest = built.get("containerimage.digest", "")
 config_digest = built.get("containerimage.config.digest", "")
+# buildx 0.38 leaves the config digest out of the metadata for the docker
+# exporter. Read it from the image's manifest, which docker save writes as the
+# blob named by the manifest digest buildx does report.
+if not config_digest and re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+    saved = subprocess.Popen(["docker", "save", image], stdout=subprocess.PIPE)
+    try:
+        with tarfile.open(fileobj=saved.stdout, mode="r|") as layout:
+            for member in layout:
+                if member.name == f"blobs/sha256/{digest.removeprefix('sha256:')}":
+                    manifest = json.load(layout.extractfile(member))
+                    config_digest = manifest.get("config", {}).get("digest", "")
+                    break
+    finally:
+        saved.kill()
+        saved.wait()
 for label, value in (("manifest", digest), ("config", config_digest)):
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", value):
         raise SystemExit(f"buildx reported no {label} digest (got {value!r})")
