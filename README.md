@@ -376,7 +376,7 @@ the raw tables this connector reads, so the two are released in pairs:
 
 | cms_mssp_connector | cms_mssp_pipeline | medicare_cclf_connector (via cms_alr_connector) |
 |---|---|---|
-| v1.0.0 | v0.4.0 | v1.0.2 (cms_alr_connector v1.1.1) |
+| v1.0.1 | v0.4.0 | v1.0.2 (cms_alr_connector v1.1.1) |
 
 - `dbt-labs/dbt_utils`
 - `tuva-health/cms_alr_connector` `v1.1.1`, which brings

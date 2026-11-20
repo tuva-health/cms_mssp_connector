@@ -3,7 +3,7 @@
 # and underscores. A good package name should reflect your organization's
 # name or the intended use of these models
 name: 'cms_mssp_connector'
-version: '1.0.0'
+version: '1.0.1'
 
 # This setting configures which "profile" dbt uses for this project.
 # The runtime resolves this profile from an operator-provided config/profiles.yml
