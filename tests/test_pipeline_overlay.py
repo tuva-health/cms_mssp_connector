@@ -23,7 +23,7 @@ CELL_COLUMNS = [
 ]
 
 
-def contract(*relations: tuple[str, bool]) -> dict:
+def contract_with(*relations: tuple[str, bool]) -> dict:
     return {
         "contract": "cms-mssp-workbook-export",
         "version": "9.9.9",
@@ -37,7 +37,9 @@ def contract(*relations: tuple[str, bool]) -> dict:
 
 class PipelineOverlayTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp())
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
         self.parquet = self.tmp / "parquet"
         self.parquet.mkdir()
         self.database = self.tmp / "cms_mssp_connector_ci.duckdb"
@@ -77,15 +79,16 @@ class PipelineOverlayTest(unittest.TestCase):
         self.write_parquet("bnmrk_table_1", "select 7::bigint as row_num, 'piped' as value_text, 'PIPE' as aco_id")
         self.write_parquet("bnmrk_table_6", "select 1::bigint as row_num, 'x' as value_text, 'PIPE' as aco_id")
 
-        result = self.run_overlay(contract(("bnmrk_table_1", False), ("bnmrk_table_6", True)))
+        result = self.run_overlay(contract_with(("bnmrk_table_1", False), ("bnmrk_table_6", True)))
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.query("select * from raw.bnmrk_table_1"), [(7, "piped", "PIPE")])
+        self.assertEqual(self.query("select * from raw.bnmrk_table_6"), [(1, "x", "PIPE")])
 
     def test_a_relation_the_seeds_lack_is_created(self) -> None:
         self.write_parquet("stlmt_table_1", "select 1::bigint as row_num, 'v' as value_text, 'PIPE' as aco_id")
 
-        result = self.run_overlay(contract(("stlmt_table_1", False)))
+        result = self.run_overlay(contract_with(("stlmt_table_1", False)))
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.query("select aco_id from raw.stlmt_table_1"), [("PIPE",)])
@@ -95,7 +98,7 @@ class PipelineOverlayTest(unittest.TestCase):
         # The pipeline also writes CCLF tables; the overlay must not take them.
         self.write_parquet("aalr1_assigned_beneficiaries", "select 'PIPE' as aco_id")
 
-        result = self.run_overlay(contract(("bnmrk_table_1", False)))
+        result = self.run_overlay(contract_with(("bnmrk_table_1", False)))
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.query("select aco_id from raw.aalr1_assigned_beneficiaries"), [("SEED",)])
@@ -103,7 +106,7 @@ class PipelineOverlayTest(unittest.TestCase):
     def test_an_optional_relation_the_run_did_not_write_is_emptied_not_left_seeded(self) -> None:
         self.write_parquet("bnmrk_table_1", "select 7::bigint as row_num, 'piped' as value_text, 'PIPE' as aco_id")
 
-        result = self.run_overlay(contract(("bnmrk_table_1", False), ("bnmrk_table_6", True)))
+        result = self.run_overlay(contract_with(("bnmrk_table_1", False), ("bnmrk_table_6", True)))
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.query("select count(*) from raw.bnmrk_table_6"), [(0,)])
@@ -116,7 +119,7 @@ class PipelineOverlayTest(unittest.TestCase):
         )
 
     def test_a_required_relation_the_run_did_not_write_fails_the_overlay(self) -> None:
-        result = self.run_overlay(contract(("bnmrk_table_1", False)))
+        result = self.run_overlay(contract_with(("bnmrk_table_1", False)))
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("bnmrk_table_1", result.stderr)

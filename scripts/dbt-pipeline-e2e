@@ -7,8 +7,9 @@
 #   scripts/dbt-pipeline-e2e ../cms_mssp_pipeline --select +int_expenditures_annual
 #
 # 1. Runs the pipeline's synthetic e2e build (tests/e2e/synthetic_run.py) in
-#    <pipeline-checkout>, which may be an unmerged worktree. The checkout is
-#    only read; the run's output goes under this checkout.
+#    <pipeline-checkout>, which may be an unmerged worktree. Nothing tracked
+#    there changes (uv may sync its .venv); the run's output goes under this
+#    checkout.
 # 2. Seeds integration_tests into a fresh DuckDB file of its own, then
 #    replaces every relation of the pipeline's workbook export contract with
 #    the table the run wrote (scripts/pipeline_overlay.py). Everything else
@@ -43,6 +44,11 @@ fi
 HARNESS_DIR="${PIPELINE_E2E_DIR:-${REPO_ROOT}/integration_tests/target/pipeline_e2e}"
 mkdir -p "${HARNESS_DIR}"
 HARNESS_DIR="$(cd "${HARNESS_DIR}" && pwd)"
+# Each run deletes the database here, so never share scripts/dbt-local's.
+if [[ "${HARNESS_DIR}" == "$(cd "${REPO_ROOT}/integration_tests" && pwd)/target" ]]; then
+  echo "PIPELINE_E2E_DIR must not be integration_tests/target, which holds scripts/dbt-local's database" >&2
+  exit 1
+fi
 # integration_tests/dbt_project.yml var input_schema: where the seeds load.
 INPUT_SCHEMA=raw
 
@@ -72,9 +78,10 @@ uv run --project "${REPO_ROOT}" --locked python "${REPO_ROOT}/scripts/pipeline_o
 # The pin is release metadata; the models read whatever columns they name, so
 # a newer contract runs as is. Say so when they differ, as a reminder to bump.
 pinned="$(sed -n 's/^workbook_contract = .*version = "\([0-9.]*\)".*/\1/p' "${REPO_ROOT}/pyproject.toml")"
-piped="$(sed -n 's/^ *"version": "\([0-9.]*\)".*/\1/p' "${CONTRACT}" | head -n 1)"
-if [[ "${pinned}" != "${piped}" ]]; then
-  echo "note: the pipeline writes workbook contract ${piped}; pyproject.toml pins ${pinned}"
+contract_version="$(uv run --project "${REPO_ROOT}" --locked python -c \
+  'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "${CONTRACT}")"
+if [[ "${pinned}" != "${contract_version}" ]]; then
+  echo "note: the pipeline writes workbook contract ${contract_version}; pyproject.toml pins ${pinned:-nothing}"
 fi
 
 echo "== dbt build $*"

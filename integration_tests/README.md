@@ -139,7 +139,8 @@ scripts/dbt-pipeline-e2e ../cms_mssp_pipeline --select +int_expenditures_annual 
 ```
 
 `<pipeline-checkout>` is any cms_mssp_pipeline checkout or worktree, merged
-or not; the script only reads it. It then:
+or not. The script changes nothing tracked there (`uv run` may sync its
+`.venv`). It then:
 
 1. Runs the pipeline's `tests/e2e/synthetic_run.py` there, writing its
    output under this checkout.
@@ -160,10 +161,11 @@ seeds as usual so the `dbt build / duckdb` job covers it.
 Things to know:
 
 - Everything lives in `integration_tests/target/pipeline_e2e/` of this
-  checkout (set `PIPELINE_E2E_DIR` to move it): the run in `pipeline/`, the
-  database in `cms_mssp_connector_ci.duckdb`, dbt's artifacts in `target/`.
-  It never touches `scripts/dbt-local`'s database, and worktrees never share
-  a file.
+  checkout: the run in `pipeline/`, the database in
+  `cms_mssp_connector_ci.duckdb`, dbt's artifacts in `target/`. It never
+  touches `scripts/dbt-local`'s database, and worktrees never share a file.
+  `PIPELINE_E2E_DIR` moves it; give each worktree its own, because every run
+  deletes the database there first.
 - The pipeline's workbooks are its test builders' minimal fixtures for ACO
   `T0000`, not the CMS-consistent `cclf-synth` workbooks for `A0000`. Several
   benchmark tests that check CMS consistency fail on them (BY labels,
@@ -173,10 +175,12 @@ Things to know:
   what your change adds.
 - Pass `--indirect-selection cautious` with a narrow selection. Singular
   tests with several parents are otherwise selected with any one of them and
-  fail on the parents the selection did not build.
+  fail on the parents the selection did not build. Your own `--exclude`
+  adds to the script's: dbt merges repeated `--exclude` flags.
 - `pyproject.toml`'s `workbook_contract` pin is release metadata, not a
   runtime check, so a newer contract runs as is; the script prints a note
-  when the two differ.
+  when the two differ. Bump the pin in the connector change that reads the
+  newer contract's tables or columns.
 
 ## CI
 

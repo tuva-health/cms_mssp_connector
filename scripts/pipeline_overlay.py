@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Overlay a cms_mssp_pipeline synthetic run's workbook tables onto the seeds.
 
 Used by scripts/dbt-pipeline-e2e (TUVA-163). For every relation in the
@@ -12,7 +13,8 @@ claims fixture.
 An optional relation the run did not write is replaced by an empty table of
 the contract's columns, so no seeded row from another ACO is left beside the
 pipeline's. A required relation it did not write fails the overlay before
-anything is changed.
+anything is changed. The contract is trusted input: its column types go
+into the DDL as written.
 """
 
 from __future__ import annotations
@@ -21,25 +23,34 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import duckdb
 
 
-def plan(contract: dict, parquet: Path) -> tuple[list[tuple[str, Path | None, list[dict]]], list[str]]:
-    """(table, parquet file or None, contract columns) per relation, and the required ones missing."""
-    steps = []
+class Replacement(NamedTuple):
+    """One contract relation: the Parquet the run wrote for it, or None to empty it."""
+
+    table: str
+    parquet: Path | None
+    columns: list[dict]
+
+
+def replacements(contract: dict, parquet_dir: Path) -> tuple[list[Replacement], list[str]]:
+    """The replacement for every contract relation, and the required relations the run did not write."""
+    found = []
     missing = []
     for relation in contract["relations"]:
         table = relation["table"]
-        path = parquet / f"{table}.parquet"
+        path = parquet_dir / f"{table}.parquet"
         columns = contract["schemas"][relation["schema"]]["columns"]
         if path.is_file():
-            steps.append((table, path, columns))
+            found.append(Replacement(table, path, columns))
         elif relation.get("optional", False):
-            steps.append((table, None, columns))
+            found.append(Replacement(table, None, columns))
         else:
             missing.append(table)
-    return steps, missing
+    return found, missing
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -51,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     contract = json.loads(args.contract.read_text(encoding="utf-8"))
-    steps, missing = plan(contract, args.parquet)
+    steps, missing = replacements(contract, args.parquet)
     if missing:
         print(f"the pipeline run wrote no Parquet for required relation(s): {', '.join(missing)}", file=sys.stderr)
         return 1
@@ -59,16 +70,16 @@ def main(argv: list[str] | None = None) -> int:
     with duckdb.connect(str(args.database)) as conn:
         conn.execute(f'create schema if not exists "{args.schema}"')
         conn.execute("begin")
-        for table, path, columns in steps:
-            target = f'"{args.schema}"."{table}"'
-            if path is None:
-                ddl = ", ".join(f'"{c["name"]}" {c["type"]}' for c in columns)
+        for step in steps:
+            target = f'"{args.schema}"."{step.table}"'
+            if step.parquet is None:
+                ddl = ", ".join(f'"{c["name"]}" {c["type"]}' for c in step.columns)
                 conn.execute(f"create or replace table {target} ({ddl})")
             else:
-                conn.execute(f"create or replace table {target} as select * from read_parquet(?)", [str(path)])
+                conn.execute(f"create or replace table {target} as select * from read_parquet(?)", [str(step.parquet)])
         conn.execute("commit")
 
-    written = sum(1 for _, path, _ in steps if path is not None)
+    written = sum(1 for step in steps if step.parquet is not None)
     print(
         f"overlaid {written} pipeline table(s) and emptied {len(steps) - written} optional relation(s) "
         f"from contract {contract.get('contract')} {contract.get('version')} into {args.schema}"
