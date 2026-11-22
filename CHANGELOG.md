@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this project's seeds in a database of its own, and runs `dbt build` on the
   selection given. See `integration_tests/README.md`.
 
+### Fixed
+
+- `int_expenditures_annual` leaves out the AEXPU workbook from a final
+  settlement bundle. cms_mssp_pipeline gives that workbook a submission of its
+  own (`SUBMISSION_ID` starting `STLMT.`, workbook contract 1.1.0), where it
+  ranked first for the performance year and counted itself `BY3`. A
+  performance year then had two latest `BY3` workbooks. The new singular test
+  `assert_one_latest_workbook_per_benchmark_year_label` fails on that shape.
+
 ## [1.0.1] - 2026-11-20
 
 The first published release of the 1.0 line. `v1.0.0` was tagged, but its

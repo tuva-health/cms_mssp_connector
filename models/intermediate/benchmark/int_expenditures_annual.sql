@@ -12,11 +12,18 @@
     enrollment type. Elsewhere — component expenditures, utilization rates — the
     row label names a service category, not a cohort, and the column is NULL by
     design rather than unmapped.
+
+    The final settlement bundle carries an AEXPU too, for the performance year.
+    It is not a benchmark-year workbook, so it stays out. Its submission
+    ('STLMT.' plus the stamp, workbook contract 1.1.0 and later) holds that one
+    workbook, which would otherwise rank first for its own year and count
+    itself BY3 beside the benchmark delivery's BY3 (TUVA-159).
 -#}
 
 with source as (
 
     select * from {{ ref('stg_aexpu_table_1') }}
+    where coalesce(SUBMISSION_ID, '') not like 'STLMT.%'
 
 ),
 
