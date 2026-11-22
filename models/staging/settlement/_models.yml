@@ -173,3 +173,29 @@ models:
     data_tests: *settlement_data_tests
 
     columns: *settlement_columns
+
+unit_tests:
+
+  - name: test_settlement_figures_parse_with_thousands_separators
+    model: stg_stlmt_table_3
+    description: >
+      The settlement keeps formatted figures verbatim (TUVA-158). A
+      comma-grouped figure, negative or not, parses to its number; CMS's '-'
+      and 'N/A' stay NULL and keep their text.
+
+    given:
+      - input: source('mssp_raw', 'stlmt_table_3')
+        rows:
+          - {ROW_NUM: 1, VALUE_TEXT: '-1,234'}
+          - {ROW_NUM: 2, VALUE_TEXT: '1,234,567.89'}
+          - {ROW_NUM: 3, VALUE_TEXT: '0.5'}
+          - {ROW_NUM: 4, VALUE_TEXT: '-'}
+          - {ROW_NUM: 5, VALUE_TEXT: 'N/A'}
+
+    expect:
+      rows:
+        - {ROW_NUM: 1, VALUE_TEXT: '-1,234',       VALUE_NUMERIC: -1234}
+        - {ROW_NUM: 2, VALUE_TEXT: '1,234,567.89', VALUE_NUMERIC: 1234567.89}
+        - {ROW_NUM: 3, VALUE_TEXT: '0.5',          VALUE_NUMERIC: 0.5}
+        - {ROW_NUM: 4, VALUE_TEXT: '-',            VALUE_NUMERIC: null}
+        - {ROW_NUM: 5, VALUE_TEXT: 'N/A',          VALUE_NUMERIC: null}

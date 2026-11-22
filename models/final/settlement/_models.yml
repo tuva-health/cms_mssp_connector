@@ -66,7 +66,9 @@ models:
       - name: IS_EMBARGOED
         description: >
           Whether the delivery read is the embargoed one. FALSE whenever
-          an unembargoed copy exists; TRUE only when it is the only copy.
+          an unembargoed copy exists. NULL when the copy read is one the
+          pipeline could not classify (it ranks after an unembargoed copy and
+          before an embargoed one). TRUE only when no other copy exists.
 
       - name: FILE_DATE
         description: >
@@ -80,8 +82,9 @@ models:
 
       - name: SETTLEMENT_DELIVERY_COUNT
         description: >
-          How many copies of this settlement were delivered (1 or 2:
-          embargoed and unembargoed). The copies carry the same workbook.
+          How many settlement workbooks loaded for this ACO and performance
+          year, across all deliveries (usually 1, or 2 when both the
+          embargoed and unembargoed copies came). One is read.
         data_tests:
           - not_null
 
@@ -91,163 +94,163 @@ models:
 
       - name: T2_A_ESRD
         description: >
-          Coded name. Table 2 `[A]`, ESRD: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[A]`, ESRD: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_A_DISABLED
         description: >
-          Coded name. Table 2 `[A]`, disabled: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[A]`, disabled: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_A_AGED_DUAL
         description: >
-          Coded name. Table 2 `[A]`, aged/dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[A]`, aged/dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_A_AGED_NON_DUAL
         description: >
-          Coded name. Table 2 `[A]`, aged/non-dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[A]`, aged/non-dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_B_ESRD
         description: >
-          Coded name. Table 2 `[B]`, ESRD: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[B]`, ESRD: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_B_DISABLED
         description: >
-          Coded name. Table 2 `[B]`, disabled: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[B]`, disabled: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_B_AGED_DUAL
         description: >
-          Coded name. Table 2 `[B]`, aged/dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[B]`, aged/dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_B_AGED_NON_DUAL
         description: >
-          Coded name. Table 2 `[B]`, aged/non-dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[B]`, aged/non-dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_C_ESRD
         description: >
-          Coded name. Table 2 `[C]`, ESRD: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[C]`, ESRD: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_C_DISABLED
         description: >
-          Coded name. Table 2 `[C]`, disabled: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[C]`, disabled: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_C_AGED_DUAL
         description: >
-          Coded name. Table 2 `[C]`, aged/dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[C]`, aged/dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_C_AGED_NON_DUAL
         description: >
-          Coded name. Table 2 `[C]`, aged/non-dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[C]`, aged/non-dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_D_ESRD
         description: >
-          Coded name. Table 2 `[D]`, ESRD: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[D]`, ESRD: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_D_DISABLED
         description: >
-          Coded name. Table 2 `[D]`, disabled: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[D]`, disabled: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_D_AGED_DUAL
         description: >
-          Coded name. Table 2 `[D]`, aged/dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[D]`, aged/dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_D_AGED_NON_DUAL
         description: >
-          Coded name. Table 2 `[D]`, aged/non-dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[D]`, aged/non-dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_E_ESRD
         description: >
-          Coded name. Table 2 `[E]`, ESRD: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[E]`, ESRD: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_E_DISABLED
         description: >
-          Coded name. Table 2 `[E]`, disabled: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[E]`, disabled: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_E_AGED_DUAL
         description: >
-          Coded name. Table 2 `[E]`, aged/dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[E]`, aged/dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_E_AGED_NON_DUAL
         description: >
-          Coded name. Table 2 `[E]`, aged/non-dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[E]`, aged/non-dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_F_ESRD
         description: >
-          Coded name. Table 2 `[F]`, ESRD: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[F]`, ESRD: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_F_DISABLED
         description: >
-          Coded name. Table 2 `[F]`, disabled: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[F]`, disabled: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_F_AGED_DUAL
         description: >
-          Coded name. Table 2 `[F]`, aged/dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[F]`, aged/dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_F_AGED_NON_DUAL
         description: >
-          Coded name. Table 2 `[F]`, aged/non-dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[F]`, aged/non-dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_G_ESRD
         description: >
-          Coded name. Table 2 `[G]`, ESRD: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[G]`, ESRD: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_G_DISABLED
         description: >
-          Coded name. Table 2 `[G]`, disabled: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[G]`, disabled: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_G_AGED_DUAL
         description: >
-          Coded name. Table 2 `[G]`, aged/dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[G]`, aged/dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_G_AGED_NON_DUAL
         description: >
-          Coded name. Table 2 `[G]`, aged/non-dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[G]`, aged/non-dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_H_ESRD
         description: >
-          Coded name. Table 2 `[H]`, ESRD: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[H]`, ESRD: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_H_DISABLED
         description: >
-          Coded name. Table 2 `[H]`, disabled: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[H]`, disabled: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_H_AGED_DUAL
         description: >
-          Coded name. Table 2 `[H]`, aged/dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[H]`, aged/dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: T2_H_AGED_NON_DUAL
         description: >
-          Coded name. Table 2 `[H]`, aged/non-dual: one of the per-enrollment-type
-          values `[A]`-`[H]` the updated benchmark is built from.
+          Coded name. Table 2 `[H]`, aged/non-dual: one of Table 2's
+          per-enrollment-type values `[A]`-`[H]`.
 
       - name: PERSON_YEARS
         description: >
