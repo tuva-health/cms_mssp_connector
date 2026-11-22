@@ -40,8 +40,17 @@ before it is committed.
 | Seeds | Source tables | Origin |
 | --- | --- | --- |
 | `seeds/alr_cclf/` | the six ALR tables (source `cms_ssp_reports`) and the CCLF tables (source `medicare_cclf`) | Copied unchanged from `cms_alr_connector` v1.1.1 `integration_tests/seeds/`, which the `cclf-synth` generator builds. Shared fake beneficiaries `9TT0FK…`, ACO `A0000`. Copy them again when the ALR pin moves. |
-| `seeds/workbooks/` | the twenty BNMRK / AEXPU / QEXPU relations of the workbook export contract, and the three STLMT relations `fct_settlement` reads | `cclf-synth generate-mssp`: CMS-consistent synthetic workbooks for ACO `A0000`, PY2025 (see below). The STLMT seeds are header only: cclf-synth does not generate a settlement workbook yet, so CI builds the settlement models empty and their unit tests carry the logic. |
+| `seeds/workbooks/` | the twenty BNMRK / AEXPU / QEXPU relations of the workbook export contract, and the three STLMT relations `fct_settlement` reads | `cclf-synth generate-mssp`: CMS-consistent synthetic workbooks for ACO `A0000`, PY2025 (see below). The STLMT seeds are header only (see the exception below). |
 | `seeds/mssp/` | the other `mssp_raw` tables: BEUR, BAIP, NCBP, MCQM, BNEX, the participant lists and the shadow bundles | BEUR, `beneficiary_exclusions` and `excluded_beneficiary_mbi_xref` carry rows from `cclf-synth generate-mssp` for the ALR fixture beneficiaries; the rest are header only. `seeds/mssp/_seeds.yml` names the source of each header. |
+
+**Exception: the STLMT seeds are header only.** `stlmt_table_2`,
+`stlmt_table_3` and `stlmt_table_a1` carry the workbook contract's columns,
+`is_embargoed` included, and no rows. They are not generated: cclf-synth does
+not write a settlement workbook yet. CI therefore builds the settlement models
+(`int_settlement_values`, `fct_settlement`, `fct_settlement_risk`) empty, and
+their unit tests carry the logic. `scripts/dbt-pipeline-e2e` runs them on the
+pipeline's synthetic STLMT workbook. Replace the headers with generated rows
+once cclf-synth writes one.
 
 The workbook relations follow the delivered CMS workbooks' grammar: the
 labels, the cells CMS leaves empty or writes `-` in, and the sheets each

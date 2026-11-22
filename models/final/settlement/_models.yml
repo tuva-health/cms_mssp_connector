@@ -1,0 +1,516 @@
+version: 2
+
+# Settlement facts: CMS's final settled result for a performance year, read
+# from the settlement (STLMT) workbook, never recomputed.
+#
+# Column names. A field has a meaningful name only where the settlement
+# handoff pins one letter to one meaning; those are "Confirmed name" below:
+# UPDATED_BENCHMARK (Table 2 [I]), ASSIGNED_BENEFICIARIES ([A]),
+# PERSON_YEARS ([B]), PER_CAPITA_EXPENDITURE ([E]), BENCHMARK_PER_CAPITA
+# ([F]) and SAVINGS_REALIZED ([P]). A field the handoff names only as part
+# of a range is "Coded name": T2_<code>_<type> and T3_<code>, documented with
+# the range's meaning. The list lives in macros/settlement_fields.sql. Rename
+# a coded field once a delivered workbook confirms its meaning (TUVA-160,
+# TUVA-158).
+
+models:
+
+  - name: fct_settlement
+    description: >
+      CMS's final settled result, one row per ACO and performance year: the
+      settlement workbook's Table 2 (updated benchmark) and Table 3 (shared
+      savings and losses), as written.
+
+      When the embargoed and unembargoed deliveries are both present, the
+      unembargoed one is read; the two carry the same workbook.
+
+      A low-revenue ACO below its MSR can still share savings, at half the
+      rate. Table 3 `[P]` (`SAVINGS_REALIZED`) then reads `N/A` and `[BB]`
+      (`T3_BB`) carries the result. Both come through as written; nothing
+      here infers "no savings" from savings below the MSR.
+
+      Each field is its row's one real value (not empty, not `-`), whichever
+      value column holds it; `assert_settlement_values_are_unambiguous`
+      fails on a row with two. A field the workbook leaves `-` is NULL.
+      Table A1 is in `fct_settlement_risk`.
+
+    config:
+      schema: input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ACO_ID
+              - PERFORMANCE_YEAR
+
+    columns:
+      - name: ACO_ID
+        description: >
+          CMS-assigned ACO identifier.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: >
+          Performance year settled.
+        data_tests:
+          - not_null
+
+      - name: SUBMISSION_ID
+        description: >
+          The delivery read: `STLMT.` plus the bundle stamp.
+        data_tests:
+          - not_null
+
+      - name: IS_EMBARGOED
+        description: >
+          Whether the delivery read is the embargoed one. FALSE whenever
+          an unembargoed copy exists; TRUE only when it is the only copy.
+
+      - name: FILE_DATE
+        description: >
+          Delivery date from the `D<YYMMDD>` stamp; NULL for a placeholder.
+
+      - name: FILE_PATH
+        description: >
+          The settlement workbook read.
+        data_tests:
+          - not_null
+
+      - name: SETTLEMENT_DELIVERY_COUNT
+        description: >
+          How many copies of this settlement were delivered (1 or 2:
+          embargoed and unembargoed). The copies carry the same workbook.
+        data_tests:
+          - not_null
+
+      - name: UPDATED_BENCHMARK
+        description: >
+          Confirmed name. Table 2 `[I]`, the updated benchmark.
+
+      - name: T2_A_ESRD
+        description: >
+          Coded name. Table 2 `[A]`, ESRD: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_A_DISABLED
+        description: >
+          Coded name. Table 2 `[A]`, disabled: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_A_AGED_DUAL
+        description: >
+          Coded name. Table 2 `[A]`, aged/dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_A_AGED_NON_DUAL
+        description: >
+          Coded name. Table 2 `[A]`, aged/non-dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_B_ESRD
+        description: >
+          Coded name. Table 2 `[B]`, ESRD: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_B_DISABLED
+        description: >
+          Coded name. Table 2 `[B]`, disabled: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_B_AGED_DUAL
+        description: >
+          Coded name. Table 2 `[B]`, aged/dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_B_AGED_NON_DUAL
+        description: >
+          Coded name. Table 2 `[B]`, aged/non-dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_C_ESRD
+        description: >
+          Coded name. Table 2 `[C]`, ESRD: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_C_DISABLED
+        description: >
+          Coded name. Table 2 `[C]`, disabled: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_C_AGED_DUAL
+        description: >
+          Coded name. Table 2 `[C]`, aged/dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_C_AGED_NON_DUAL
+        description: >
+          Coded name. Table 2 `[C]`, aged/non-dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_D_ESRD
+        description: >
+          Coded name. Table 2 `[D]`, ESRD: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_D_DISABLED
+        description: >
+          Coded name. Table 2 `[D]`, disabled: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_D_AGED_DUAL
+        description: >
+          Coded name. Table 2 `[D]`, aged/dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_D_AGED_NON_DUAL
+        description: >
+          Coded name. Table 2 `[D]`, aged/non-dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_E_ESRD
+        description: >
+          Coded name. Table 2 `[E]`, ESRD: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_E_DISABLED
+        description: >
+          Coded name. Table 2 `[E]`, disabled: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_E_AGED_DUAL
+        description: >
+          Coded name. Table 2 `[E]`, aged/dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_E_AGED_NON_DUAL
+        description: >
+          Coded name. Table 2 `[E]`, aged/non-dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_F_ESRD
+        description: >
+          Coded name. Table 2 `[F]`, ESRD: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_F_DISABLED
+        description: >
+          Coded name. Table 2 `[F]`, disabled: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_F_AGED_DUAL
+        description: >
+          Coded name. Table 2 `[F]`, aged/dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_F_AGED_NON_DUAL
+        description: >
+          Coded name. Table 2 `[F]`, aged/non-dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_G_ESRD
+        description: >
+          Coded name. Table 2 `[G]`, ESRD: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_G_DISABLED
+        description: >
+          Coded name. Table 2 `[G]`, disabled: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_G_AGED_DUAL
+        description: >
+          Coded name. Table 2 `[G]`, aged/dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_G_AGED_NON_DUAL
+        description: >
+          Coded name. Table 2 `[G]`, aged/non-dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_H_ESRD
+        description: >
+          Coded name. Table 2 `[H]`, ESRD: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_H_DISABLED
+        description: >
+          Coded name. Table 2 `[H]`, disabled: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_H_AGED_DUAL
+        description: >
+          Coded name. Table 2 `[H]`, aged/dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: T2_H_AGED_NON_DUAL
+        description: >
+          Coded name. Table 2 `[H]`, aged/non-dual: one of the per-enrollment-type
+          values `[A]`-`[H]` the updated benchmark is built from.
+
+      - name: PERSON_YEARS
+        description: >
+          Confirmed name. Table 3 `[B]`, person years: the ACO total, where
+          the sheet carries one. NULL when `[B]` has only per-type rows.
+
+      - name: PERSON_YEARS_ESRD
+        description: >
+          Confirmed name. Table 3 `[B]`, person years, ESRD.
+
+      - name: PERSON_YEARS_DISABLED
+        description: >
+          Confirmed name. Table 3 `[B]`, person years, disabled.
+
+      - name: PERSON_YEARS_AGED_DUAL
+        description: >
+          Confirmed name. Table 3 `[B]`, person years, aged/dual.
+
+      - name: PERSON_YEARS_AGED_NON_DUAL
+        description: >
+          Confirmed name. Table 3 `[B]`, person years, aged/non-dual.
+
+      - name: ASSIGNED_BENEFICIARIES
+        description: >
+          Confirmed name. Table 3 `[A]`, assigned beneficiaries.
+
+      - name: PER_CAPITA_EXPENDITURE
+        description: >
+          Confirmed name. Table 3 `[E]`, per-capita expenditure.
+
+      - name: BENCHMARK_PER_CAPITA
+        description: >
+          Confirmed name. Table 3 `[F]`, the benchmark (per capita).
+
+      - name: T3_G
+        description: >
+          Coded name. Table 3 `[G]`, one of the rows for totals and savings.
+
+      - name: T3_H
+        description: >
+          Coded name. Table 3 `[H]`, one of the rows for totals and savings.
+
+      - name: T3_I
+        description: >
+          Coded name. Table 3 `[I]`, one of the rows for totals and savings.
+
+      - name: T3_J
+        description: >
+          Coded name. Table 3 `[J]`, one of the rows for totals and savings.
+
+      - name: T3_L
+        description: >
+          Coded name. Table 3 `[L]`, one of the rows for the minimum savings rate (MSR).
+
+      - name: T3_N
+        description: >
+          Coded name. Table 3 `[N]`, one of the rows for the minimum savings rate (MSR).
+
+      - name: SAVINGS_REALIZED
+        description: >
+          Confirmed name. Table 3 `[P]`, whether savings are realized, as
+          written (text). `N/A` for a low-revenue ACO below its MSR, which
+          may still share savings: read `T3_BB`, never infer "no savings".
+
+      - name: T3_X
+        description: >
+          Coded name. Table 3 `[X]`, one of the rows for sharing rates and quality score.
+
+      - name: T3_Y
+        description: >
+          Coded name. Table 3 `[Y]`, one of the rows for sharing rates and quality score.
+
+      - name: T3_Z
+        description: >
+          Coded name. Table 3 `[Z]`, one of the rows for sharing rates and quality score.
+
+      - name: T3_AA
+        description: >
+          Coded name. Table 3 `[AA]`, one of the rows for sharing rates and quality score.
+
+      - name: T3_BB
+        description: >
+          Coded name. Table 3 `[BB]`, in the sharing rates and quality score
+          rows. Per the handoff it shows the result for a low-revenue ACO
+          below its MSR, when `SAVINGS_REALIZED` reads `N/A`.
+
+      - name: T3_CC
+        description: >
+          Coded name. Table 3 `[CC]`, one of the rows for sharing rates and quality score.
+
+      - name: T3_EE
+        description: >
+          Coded name. Table 3 `[EE]`, one of the rows for shared savings through the earned payment.
+
+      - name: T3_FF
+        description: >
+          Coded name. Table 3 `[FF]`, one of the rows for shared savings through the earned payment.
+
+      - name: T3_GG
+        description: >
+          Coded name. Table 3 `[GG]`, one of the rows for shared savings through the earned payment.
+
+      - name: T3_HH
+        description: >
+          Coded name. Table 3 `[HH]`, one of the rows for shared savings through the earned payment.
+
+      - name: T3_II
+        description: >
+          Coded name. Table 3 `[II]`, one of the rows for advance investment payment (AIP) recoupment and net payment.
+
+      - name: T3_JJ
+        description: >
+          Coded name. Table 3 `[JJ]`, one of the rows for advance investment payment (AIP) recoupment and net payment.
+
+      - name: T3_KK
+        description: >
+          Coded name. Table 3 `[KK]`, one of the rows for advance investment payment (AIP) recoupment and net payment.
+
+      - name: T3_LL
+        description: >
+          Coded name. Table 3 `[LL]`, one of the rows for advance investment payment (AIP) recoupment and net payment.
+
+      - name: T3_MM
+        description: >
+          Coded name. Table 3 `[MM]`, one of the rows for advance investment payment (AIP) recoupment and net payment.
+
+  - name: fct_settlement_risk
+    description: >
+      The settlement workbook's Table A1 (risk adjustment): one row per ACO,
+      performance year, section and enrollment type, from the preferred
+      delivery, with the BY3 and performance-year values side by side.
+
+      Tall on purpose: Table A1's section codes are not yet checked against a
+      delivered workbook, so none is given a meaning. `SECTION_CODE` and
+      `SECTION_LABEL` say what a row is (CMS-HCC scores, the ratio, the
+      demographic scores, the cap, the capped ratio). Pivot it into named
+      columns once the codes are confirmed (TUVA-161, TUVA-162).
+
+    config:
+      schema: input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ACO_ID
+              - PERFORMANCE_YEAR
+              - SECTION_CODE
+              - ENROLLMENT_TYPE
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: Performance year settled.
+        data_tests:
+          - not_null
+
+      - name: SUBMISSION_ID
+        description: The delivery read, as in `fct_settlement`.
+        data_tests:
+          - not_null
+
+      - name: IS_EMBARGOED
+        description: Whether the delivery read is the embargoed one.
+
+      - name: FILE_PATH
+        description: The settlement workbook read.
+        data_tests:
+          - not_null
+
+      - name: SECTION_CODE
+        description: The Table A1 section's `[X]` code, verbatim.
+        data_tests:
+          - not_null
+
+      - name: SECTION_LABEL
+        description: The Table A1 section's heading, verbatim.
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          `esrd`, `disabled`, `aged_dual` or `aged_non_dual` for a per-type
+          row; `total` for the section's own row.
+        data_tests:
+          - not_null
+
+      - name: BY3_VALUE
+        description: The value in the `BY3` column, as a number; NULL for `-` or text.
+
+      - name: BY3_VALUE_TEXT
+        description: The `BY3` cell verbatim; NULL for `-`.
+
+      - name: PY_VALUE
+        description: The value in the `Performance Year` column, as a number; NULL for `-` or text.
+
+      - name: PY_VALUE_TEXT
+        description: The `Performance Year` cell verbatim; NULL for `-`.
+
+unit_tests:
+
+  - name: test_settlement_reads_the_workbook_and_keeps_the_low_revenue_result
+    model: fct_settlement
+    description: >
+      One ACO and performance year, delivered embargoed and unembargoed. The
+      embargoed copy carries decoy values, so a wrong pick shows.
+
+      The ACO is low revenue and below its MSR: `[P]` reads `N/A` and `[BB]`
+      carries the shared savings. What the expected row pins: `[P]` stays
+      the text `N/A`, `[BB]` comes through as its number and is never zero,
+      and nothing is derived (`[EE]`, which the workbook leaves `-`, is
+      NULL). Also: `[I]` and a Table 2 per-type value are read from the
+      column holding the real value, beside a `-` in the other; person
+      years come per type; an `unmapped` row never lands in a field; and
+      `SETTLEMENT_DELIVERY_COUNT` counts both copies.
+
+    given:
+
+      - input: ref('int_settlement_values')
+        rows:
+          # Unembargoed, preferred.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true, TABLE_CODE: '2', SECTION_CODE: 'I',  ENROLLMENT_TYPE: 'total',    COLUMN_LABEL: 'BY3',              VALUE_TEXT: '-',        VALUE_NUMERIC: null,    IS_PLACEHOLDER: true}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true, TABLE_CODE: '2', SECTION_CODE: 'I',  ENROLLMENT_TYPE: 'total',    COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '1,000.50', VALUE_NUMERIC: 1000.50, IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true, TABLE_CODE: '2', SECTION_CODE: 'H',  ENROLLMENT_TYPE: 'esrd',     COLUMN_LABEL: 'BY3',              VALUE_TEXT: '-',        VALUE_NUMERIC: null,    IS_PLACEHOLDER: true}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true, TABLE_CODE: '2', SECTION_CODE: 'H',  ENROLLMENT_TYPE: 'esrd',     COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '900',      VALUE_NUMERIC: 900,     IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true, TABLE_CODE: '2', SECTION_CODE: 'H',  ENROLLMENT_TYPE: 'unmapped', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '7',        VALUE_NUMERIC: 7,       IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true, TABLE_CODE: '3', SECTION_CODE: 'A',  ENROLLMENT_TYPE: 'total',    COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '1000',     VALUE_NUMERIC: 1000,    IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true, TABLE_CODE: '3', SECTION_CODE: 'B',  ENROLLMENT_TYPE: 'disabled', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '250',      VALUE_NUMERIC: 250,     IS_PLACEHOLDER: false}
+          # Below the MSR, low revenue: [P] is N/A and [BB] carries the result.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true, TABLE_CODE: '3', SECTION_CODE: 'P',  ENROLLMENT_TYPE: 'total',    COLUMN_LABEL: 'Result',           VALUE_TEXT: 'N/A',      VALUE_NUMERIC: null,    IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true, TABLE_CODE: '3', SECTION_CODE: 'BB', ENROLLMENT_TYPE: 'total',    COLUMN_LABEL: 'Result',           VALUE_TEXT: '5,432',    VALUE_NUMERIC: 5432,    IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true, TABLE_CODE: '3', SECTION_CODE: 'EE', ENROLLMENT_TYPE: 'total',    COLUMN_LABEL: 'Result',           VALUE_TEXT: '-',        VALUE_NUMERIC: null,    IS_PLACEHOLDER: true}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true, TABLE_CODE: '3', SECTION_CODE: 'MM', ENROLLMENT_TYPE: 'total',    COLUMN_LABEL: 'Result',           VALUE_TEXT: '-1,234',   VALUE_NUMERIC: -1234,   IS_PLACEHOLDER: false}
+          # Embargoed copy, not read: decoys.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.E', IS_EMBARGOED: true,  FILE_PATH: 'e.xlsx', IS_PREFERRED_SUBMISSION: false, TABLE_CODE: '2', SECTION_CODE: 'I',  ENROLLMENT_TYPE: 'total',    COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '99999',    VALUE_NUMERIC: 99999,   IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.E', IS_EMBARGOED: true,  FILE_PATH: 'e.xlsx', IS_PREFERRED_SUBMISSION: false, TABLE_CODE: '3', SECTION_CODE: 'BB', ENROLLMENT_TYPE: 'total',    COLUMN_LABEL: 'Result',           VALUE_TEXT: '0',        VALUE_NUMERIC: 0,       IS_PLACEHOLDER: false}
+
+    expect:
+      rows:
+        - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, SETTLEMENT_DELIVERY_COUNT: 2, UPDATED_BENCHMARK: 1000.50, T2_H_ESRD: 900, T2_H_DISABLED: null, ASSIGNED_BENEFICIARIES: 1000, PERSON_YEARS: null, PERSON_YEARS_DISABLED: 250, SAVINGS_REALIZED: 'N/A', T3_BB: 5432, T3_EE: null, T3_MM: -1234}
+
+  - name: test_settlement_risk_sets_the_two_periods_side_by_side
+    model: fct_settlement_risk
+    description: >
+      Table A1 from the preferred delivery only, by section and type, with
+      the BY3 and performance-year cells side by side; a `-` is NULL, and an
+      `unmapped` row and the embargoed copy stay out.
+
+    given:
+
+      - input: ref('int_settlement_values')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true,  TABLE_CODE: 'A1', SECTION_CODE: 'B', SECTION_LABEL: 'Score', ENROLLMENT_TYPE: 'esrd',     COLUMN_PERIOD: 'BY3', VALUE_TEXT: '1.01',  VALUE_NUMERIC: 1.01,  IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true,  TABLE_CODE: 'A1', SECTION_CODE: 'B', SECTION_LABEL: 'Score', ENROLLMENT_TYPE: 'esrd',     COLUMN_PERIOD: 'PY',  VALUE_TEXT: '1.02',  VALUE_NUMERIC: 1.02,  IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true,  TABLE_CODE: 'A1', SECTION_CODE: 'F', SECTION_LABEL: 'Ratio', ENROLLMENT_TYPE: 'esrd',     COLUMN_PERIOD: 'BY3', VALUE_TEXT: '-',     VALUE_NUMERIC: null,  IS_PLACEHOLDER: true}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true,  TABLE_CODE: 'A1', SECTION_CODE: 'F', SECTION_LABEL: 'Ratio', ENROLLMENT_TYPE: 'esrd',     COLUMN_PERIOD: 'PY',  VALUE_TEXT: '1.003', VALUE_NUMERIC: 1.003, IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true,  TABLE_CODE: 'A1', SECTION_CODE: 'F', SECTION_LABEL: 'Ratio', ENROLLMENT_TYPE: 'unmapped', COLUMN_PERIOD: 'PY',  VALUE_TEXT: 'x',     VALUE_NUMERIC: null,  IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true,  TABLE_CODE: '2',  SECTION_CODE: 'I', SECTION_LABEL: 'Bench', ENROLLMENT_TYPE: 'total',    COLUMN_PERIOD: 'PY',  VALUE_TEXT: '5',     VALUE_NUMERIC: 5,     IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.E', IS_EMBARGOED: true,  FILE_PATH: 'e.xlsx', IS_PREFERRED_SUBMISSION: false, TABLE_CODE: 'A1', SECTION_CODE: 'B', SECTION_LABEL: 'Score', ENROLLMENT_TYPE: 'esrd',     COLUMN_PERIOD: 'PY',  VALUE_TEXT: '9',     VALUE_NUMERIC: 9,     IS_PLACEHOLDER: false}
+
+    expect:
+      rows:
+        - {SUBMISSION_ID: 'STLMT.U', SECTION_CODE: 'B', SECTION_LABEL: 'Score', ENROLLMENT_TYPE: 'esrd', BY3_VALUE: 1.01, PY_VALUE: 1.02,  BY3_VALUE_TEXT: '1.01', PY_VALUE_TEXT: '1.02'}
+        - {SUBMISSION_ID: 'STLMT.U', SECTION_CODE: 'F', SECTION_LABEL: 'Ratio', ENROLLMENT_TYPE: 'esrd', BY3_VALUE: null, PY_VALUE: 1.003, BY3_VALUE_TEXT: null,   PY_VALUE_TEXT: '1.003'}

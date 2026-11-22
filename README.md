@@ -18,6 +18,7 @@ Current staging groups:
 - `mssp`: MSSP payment and utilization files
 - `shadow_bundles`: shadow bundle source files
 - `benchmark`: historical benchmark and expenditure/utilization workbooks
+- `settlement`: the final settlement (STLMT) workbook's Tables 2, 3 and A1
 
 Model metadata in the `_models.yml` files configures these staging models into the `_stg_input_layer` schema.
 
@@ -26,6 +27,7 @@ tables, configured into the `_int_input_layer` schema:
 
 - `benchmark`: typed facts over the BNMRK / AEXPU / QEXPU workbooks
 - `member`: enrollment type and CMS prospective risk score per member-month
+- `settlement`: the settlement workbook's cells, ranked by delivery
 
 The staging models are faithful but untyped — one row per worksheet cell, every
 value in a text column — so an input to the historical benchmark is a
@@ -42,6 +44,8 @@ deliveries without choosing between them:
 - `int_expenditures_annual` — AEXPU Table 1, by benchmark year
 - `int_expenditures_quarterly` — QEXPU Table 1
 - `int_expenditures_regional` — QEXPU Table 2, regional expenditures and weights
+- `int_settlement_values` — STLMT Tables 2, 3 and A1, one row per cell in a
+  lettered section, with the embargoed and unembargoed deliveries ranked
 
 They calculate nothing. Deriving the benchmark from these inputs is the job of
 the final layer.
@@ -73,6 +77,11 @@ models:
   one row per ACO, performance year, quarter (and enrollment type), with the
   projected updated benchmark and the ACO's expenditure also expressed per
   member per month (`*_PMPM`, the annual figure divided by twelve)
+- `fct_settlement` — CMS's final settled result, one row per ACO and
+  performance year, read from the settlement workbook's Table 2 and Table 3
+- `fct_settlement_risk` — the settlement workbook's Table A1, one row per ACO,
+  performance year, section and enrollment type, BY3 and performance year
+  side by side
 
 Two things about their grain govern how they must be queried, and both are
 documented at length in `models/final/benchmark/_models.yml`:
@@ -96,6 +105,33 @@ the minimum savings rate band schedule, and `seeds/mssp_aco_agreement.csv`, the
 per-ACO minimum savings rate election and agreement performance year. The second
 ships with a synthetic example row only; an ACO with no row takes documented
 defaults and every output row it produces is flagged `IS_AGREEMENT_DEFAULTED`.
+
+### Settlement
+
+CMS settles each performance year in a final settlement bundle, around August
+to November of the following year, and can deliver it twice: embargoed and
+unembargoed, with the same workbook. `fct_settlement` reads the unembargoed
+copy when both are there (`SETTLEMENT_DELIVERY_COUNT` says how many came). It
+reads the workbook's result and never recomputes it. In particular, a
+low-revenue ACO below its minimum savings rate can still share savings at half
+the rate: Table 3 `[P]` (`SAVINGS_REALIZED`) then reads `N/A` and `[BB]`
+(`T3_BB`) carries the result, and both come through as written.
+
+The settlement layouts are not yet checked against a delivered workbook, so
+the models find a value by its section code, row label and column label,
+never its position, and two tests fail loudly on a shape they do not expect:
+`assert_settlement_values_are_unambiguous` (a row with two values) and
+`assert_settlement_fields_are_numeric` (a figure that does not parse). A
+field has a meaningful name only where one letter is known to mean one thing:
+`UPDATED_BENCHMARK` (Table 2 `[I]`), `ASSIGNED_BENEFICIARIES`, `PERSON_YEARS`,
+`PER_CAPITA_EXPENDITURE`, `BENCHMARK_PER_CAPITA` and `SAVINGS_REALIZED` (Table
+3 `[A]`, `[B]`, `[E]`, `[F]` and `[P]`). The rest are named by code
+(`T2_<code>_<type>`, `T3_<code>`) and documented with what their range of rows
+covers; `macros/settlement_fields.sql` lists both kinds. Table A1 stays tall
+in `fct_settlement_risk` until its codes are confirmed.
+
+`int_expenditures_annual` leaves out the AEXPU workbook the settlement bundle
+also carries: it reports the performance year, not a benchmark year.
 
 ### Which member-months count as assigned
 
@@ -359,6 +395,10 @@ long/tidy column contract:
 - `qexpu_table_2`
 - `qexpu_table_3`
 - `qexpu_parameters`
+
+The settlement (`STLMT`) workbook loads the same way. The connector reads three
+of its tables, `stlmt_table_2`, `stlmt_table_3` and `stlmt_table_a1`, which also
+carry `is_embargoed` (workbook contract 1.2.0).
 
 Some of these are legitimately absent from a given delivery rather than missing:
 `bnmrk_table_6` does not appear in the preliminary benchmark delivery, and
@@ -690,16 +730,19 @@ With `upstream` as the fork's remote for this repository:
 |-- models/
 |   |-- final/
 |   |   |-- benchmark/
-|   |   `-- semantic_layer/
+|   |   |-- semantic_layer/
+|   |   `-- settlement/
 |   |-- intermediate/
 |   |   |-- benchmark/
-|   |   `-- member/
+|   |   |-- member/
+|   |   `-- settlement/
 |   `-- staging/
 |       |-- benchmark/
 |       |-- bnex/
 |       |-- mcqm/
 |       |-- mssp/
 |       |-- participants/
+|       |-- settlement/
 |       `-- shadow_bundles/
 |-- integration_tests/   # local DuckDB + CI harness, synthetic fixtures
 |-- macros/

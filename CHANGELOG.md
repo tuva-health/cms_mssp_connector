@@ -14,6 +14,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build in any pipeline checkout, loads its workbook-contract tables over
   this project's seeds in a database of its own, and runs `dbt build` on the
   selection given. See `integration_tests/README.md`.
+- `fct_settlement`: CMS's final settled result for a performance year, one
+  row per ACO and performance year, read from the final settlement (STLMT)
+  workbook's Table 2 (updated benchmark) and Table 3 (shared savings and
+  losses). When the embargoed and unembargoed deliveries are both present,
+  the unembargoed one is read. A low-revenue ACO's result comes through as
+  written: `SAVINGS_REALIZED` (`[P]`) keeps `N/A` and `T3_BB` carries the
+  shared savings. Fields whose meaning is pinned have names
+  (`UPDATED_BENCHMARK`, `ASSIGNED_BENEFICIARIES`, `PERSON_YEARS`,
+  `PER_CAPITA_EXPENDITURE`, `BENCHMARK_PER_CAPITA`, `SAVINGS_REALIZED`); the
+  rest are named by code (`T2_<code>_<type>`, `T3_<code>`) and may be
+  renamed once checked against a delivered workbook.
+- `fct_settlement_risk`: the settlement workbook's Table A1, one row per
+  section and enrollment type with the BY3 and performance-year values side
+  by side.
+- `stg_stlmt_table_2`, `stg_stlmt_table_3`, `stg_stlmt_table_a1` and
+  `int_settlement_values` beneath them. **Breaking:** the connector now
+  reads three STLMT relations (`stlmt_table_2`, `stlmt_table_3`,
+  `stlmt_table_a1`), and `workbook_contract` is pinned to cms_mssp_pipeline's
+  workbook contract 1.2.0. The staging views fail to build against a pipeline
+  release that does not write those tables; release with a pipeline that
+  does.
 
 ### Fixed
 
