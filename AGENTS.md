@@ -48,7 +48,7 @@ This repository is public. Commit synthetic data only:
 
 The pipeline writes every raw table to `{{ var('input_database') }}.{{ var('input_schema') }}`. This connector reads them through three sources:
 
-- `mssp_raw` (this repo): the twenty BNMRK/AEXPU/QEXPU cell-grain relations, versioned by the workbook export contract (`contracts/workbook/v1.json` in the pipeline). `pyproject.toml` `[tool.cms_mssp_connector] workbook_contract` names the version the models read; bump it together with the models. It also covers the CSV, XML and fixed-width families (BEUR, BAIP, NCBP, MCQM, BNEX, participant lists, shadow bundles). The pipeline upper-cases the CSV headers and appends `FILE_PATH`, `DIRECTORY_NAME`, `FILE_NAME` and `FILE_DATE` to every family; MCQM also gets `PERIOD`.
+- `mssp_raw` (this repo): the twenty BNMRK/AEXPU/QEXPU cell-grain relations and the three STLMT ones `fct_settlement` reads (Tables 2, 3 and A1), versioned by the workbook export contract (`contracts/workbook/v1.json` in the pipeline). `pyproject.toml` `[tool.cms_mssp_connector] workbook_contract` names the version the models read; bump it together with the models. It also covers the CSV, XML and fixed-width families (BEUR, BAIP, NCBP, MCQM, BNEX, participant lists, shadow bundles). The pipeline upper-cases the CSV headers and appends `FILE_PATH`, `DIRECTORY_NAME`, `FILE_NAME` and `FILE_DATE` to every family; MCQM also gets `PERIOD`.
 - `cms_ssp_reports` (cms_alr_connector): the six ALR tables.
 - `medicare_cclf` (medicare_cclf_connector): the CCLF tables. CCLF v1.0.2 reads Part A and Part B demonstration codes as `parta_demo_codes` and `partb_demo_codes`; cms_mssp_pipeline v0.4.0 writes them under those names (TUVA-125).
 

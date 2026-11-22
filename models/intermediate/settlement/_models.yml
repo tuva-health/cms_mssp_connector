@@ -1,0 +1,199 @@
+version: 2
+
+models:
+
+  - name: int_settlement_values
+    description: >
+      The final settlement (STLMT) workbook's Table 2, Table 3 and Table A1,
+      typed and stacked: one row per cell in a lettered section, for every
+      delivery. `fct_settlement` reads the preferred delivery from here.
+
+      Values are found by labels, never by position: `TABLE_CODE`,
+      `SECTION_CODE`, `ENROLLMENT_TYPE` (from the row label) and
+      `COLUMN_PERIOD` (from the column label). The sheet layouts are not yet
+      checked against a delivered workbook (TUVA-158).
+
+    config:
+      schema: _int_input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - FILE_PATH
+              - TABLE_CODE
+              - ROW_NUM
+              - COLUMN_GROUP_LABEL
+              - COLUMN_LABEL
+
+    columns:
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: Performance year settled.
+        data_tests:
+          - not_null
+
+      - name: SUBMISSION_ID
+        description: "`STLMT.` plus the bundle stamp."
+        data_tests:
+          - not_null
+
+      - name: IS_EMBARGOED
+        description: >
+          TRUE for the embargoed delivery, FALSE for the unembargoed one, NULL
+          when the pipeline could not tell.
+
+      - name: FILE_DATE
+        description: Delivery date from the `D<YYMMDD>` stamp; NULL for a placeholder.
+
+      - name: SUBMISSION_RANK
+        description: >
+          Rank of the workbook within `(ACO_ID, PERFORMANCE_YEAR)`, 1 being
+          preferred: unembargoed first, then unknown, then embargoed; within
+          each, newest `FILE_DATE`, then `SUBMISSION_ID` and `FILE_PATH`
+          descending. `FILE_PATH` makes the ranking total, so one workbook
+          ranks first.
+        data_tests:
+          - not_null
+
+      - name: IS_PREFERRED_SUBMISSION
+        description: >
+          True on every row of the rank-1 workbook. Both deliveries carry the
+          same workbook, so the preference picks one copy; it never mixes
+          values from two.
+        data_tests:
+          - not_null
+
+      - name: TABLE_CODE
+        description: "`2`, `3` or `A1`: the settlement sheet the cell came from."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['2', '3', 'A1']
+
+      - name: GROUP_LABEL
+        description: Nearest unbracketed heading above the row, such as Table 3's step headings.
+
+      - name: SECTION_CODE
+        description: "The `[X]` code on the section heading, brackets stripped: `I`, `P`, `BB`."
+        data_tests:
+          - not_null
+
+      - name: SECTION_LABEL
+        description: Section heading text, verbatim.
+
+      - name: ROW_LABEL
+        description: Column A of the source row, verbatim.
+        data_tests:
+          - not_null
+
+      - name: ENROLLMENT_TYPE
+        description: >
+          The row's enrollment type from `mssp_enrollment_type` (`esrd`,
+          `disabled`, `aged_dual`, `aged_non_dual`). `total` for the lettered
+          row's own value, whose row label is the section label. `unmapped`
+          for any other row in the section, which `fct_settlement` does not
+          read.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual', 'aged_disabled', 'total', 'unmapped']
+
+      - name: COLUMN_GROUP_LABEL
+        description: Outer label of a two-row column header; NULL on a single header.
+
+      - name: COLUMN_LABEL
+        description: Source column header, verbatim.
+        data_tests:
+          - not_null
+
+      - name: COLUMN_PERIOD
+        description: >
+          `BY3` or `PY` (`Performance Year`) from the column label. NULL for
+          any other column, such as Table 3's `Result`.
+
+      - name: VALUE_TEXT
+        description: The cell verbatim. `fct_settlement` keeps text results such as `N/A` as text.
+
+      - name: VALUE_NUMERIC
+        description: The cell as a number, thousands separators removed; NULL when not a number.
+
+      - name: IS_PLACEHOLDER
+        description: >
+          True for an empty cell or CMS's `-`. `N/A` is not a placeholder: on
+          Table 3 `[P]` it is the result.
+        data_tests:
+          - not_null
+
+      - name: FILE_PATH
+        description: Full path of the source workbook.
+        data_tests:
+          - not_null
+
+      - name: DIRECTORY_NAME
+        description: The settlement bundle directory.
+
+      - name: FILE_NAME
+        description: File name of the source workbook.
+
+      - name: ROW_NUM
+        description: 1-based index of the source worksheet row.
+        data_tests:
+          - not_null
+
+unit_tests:
+
+  - name: test_unembargoed_delivery_ranks_first
+    model: int_settlement_values
+    description: >
+      One ACO and performance year, delivered three times: embargoed
+      (`T0000000`), unembargoed (`T1111111`) and once with no known state.
+      The embargoed copy sorts last by stamp too, so the test also pins that
+      the embargo flag, not the stamp, decides. A second ACO has only the
+      embargoed copy, which must still rank first: the fallback.
+
+      A row outside any lettered section is dropped. The lettered row's own
+      value maps to `total`, a per-type row to its type, and an unknown row
+      to `unmapped`. `BY3` and `Performance Year` columns map to periods,
+      `Result` to none. `-` is a placeholder, `N/A` is not.
+
+    given:
+
+      - input: ref('mssp_enrollment_type')
+        rows:
+          - {ROW_LABEL_UPPER: 'ESRD', ENROLLMENT_TYPE: 'esrd', ENROLLMENT_TYPE_LABEL: 'ESRD', ENROLLMENT_TYPE_SORT: 1}
+
+      - input: ref('stg_stlmt_table_2')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T0000000', IS_EMBARGOED: true,  FILE_PATH: 'e.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', SECTION_LABEL: 'Updated Benchmark ($)', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100', VALUE_NUMERIC: 100}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T1111111', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', SECTION_LABEL: 'Updated Benchmark ($)', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100', VALUE_NUMERIC: 100}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T9999999', IS_EMBARGOED: null,  FILE_PATH: 'x.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', SECTION_LABEL: 'Updated Benchmark ($)', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100', VALUE_NUMERIC: 100}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T1111111', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', ROW_NUM: 3, SECTION_CODE: 'H', SECTION_LABEL: 'Updated Expenditure', ROW_LABEL: 'ESRD',                  COLUMN_LABEL: 'BY3',              VALUE_TEXT: '-',   VALUE_NUMERIC: null}
+          # Outside any lettered section: dropped.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T1111111', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', ROW_NUM: 1, SECTION_CODE: null, SECTION_LABEL: null, ROW_LABEL: 'Table of Contents', COLUMN_LABEL: 'BY3', VALUE_TEXT: null, VALUE_NUMERIC: null}
+          # Only the embargoed copy for this ACO.
+          - {ACO_ID: 'OTHER-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T0000000', IS_EMBARGOED: true, FILE_PATH: 'o.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', SECTION_LABEL: 'Updated Benchmark ($)', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100', VALUE_NUMERIC: 100}
+
+      - input: ref('stg_stlmt_table_3')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T1111111', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', ROW_NUM: 7, SECTION_CODE: 'P', SECTION_LABEL: 'Savings Realized', ROW_LABEL: 'Savings Realized', COLUMN_LABEL: 'Result', VALUE_TEXT: 'N/A', VALUE_NUMERIC: null}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T1111111', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', ROW_NUM: 8, SECTION_CODE: 'P', SECTION_LABEL: 'Savings Realized', ROW_LABEL: 'Some Other Row',   COLUMN_LABEL: 'Result', VALUE_TEXT: 'x',   VALUE_NUMERIC: null}
+
+      - input: ref('stg_stlmt_table_a1')
+        rows: []
+
+    expect:
+      rows:
+        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T0000000', TABLE_CODE: '2', SECTION_CODE: 'I', ENROLLMENT_TYPE: 'total',    COLUMN_PERIOD: 'PY',  IS_PLACEHOLDER: false, SUBMISSION_RANK: 3, IS_PREFERRED_SUBMISSION: false}
+        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T1111111', TABLE_CODE: '2', SECTION_CODE: 'I', ENROLLMENT_TYPE: 'total',    COLUMN_PERIOD: 'PY',  IS_PLACEHOLDER: false, SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}
+        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T9999999', TABLE_CODE: '2', SECTION_CODE: 'I', ENROLLMENT_TYPE: 'total',    COLUMN_PERIOD: 'PY',  IS_PLACEHOLDER: false, SUBMISSION_RANK: 2, IS_PREFERRED_SUBMISSION: false}
+        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T1111111', TABLE_CODE: '2', SECTION_CODE: 'H', ENROLLMENT_TYPE: 'esrd',     COLUMN_PERIOD: 'BY3', IS_PLACEHOLDER: true,  SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}
+        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T1111111', TABLE_CODE: '3', SECTION_CODE: 'P', ENROLLMENT_TYPE: 'total',    COLUMN_PERIOD: null,  IS_PLACEHOLDER: false, SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}
+        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T1111111', TABLE_CODE: '3', SECTION_CODE: 'P', ENROLLMENT_TYPE: 'unmapped', COLUMN_PERIOD: null,  IS_PLACEHOLDER: false, SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}
+        - {ACO_ID: 'OTHER-ACO', SUBMISSION_ID: 'STLMT.D009999.T0000000', TABLE_CODE: '2', SECTION_CODE: 'I', ENROLLMENT_TYPE: 'total',    COLUMN_PERIOD: 'PY',  IS_PLACEHOLDER: false, SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}

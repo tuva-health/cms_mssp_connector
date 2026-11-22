@@ -1,0 +1,175 @@
+version: 2
+
+# Staging views over the final settlement (STLMT) workbook's Table 2, Table 3
+# and Table A1, the three sheets fct_settlement reads.
+#
+# The relations share the cell-grain schema of the benchmark workbooks (see
+# models/staging/benchmark/_models.yml), plus IS_EMBARGOED. Grain:
+# (FILE_PATH, ROW_NUM, COLUMN_GROUP_LABEL, COLUMN_LABEL).
+#
+# The sheet layouts are not yet checked against a delivered workbook
+# (TUVA-158): no real STLMT workbook or public template is on hand. Nothing
+# here reads a fixed position. int_settlement_values finds values by section
+# code, row label and column label.
+
+models:
+
+  - name: stg_stlmt_table_2
+    description: >
+      Settlement workbook sheet `Table 2 - Updated Benchmark`: the updated
+      benchmark `[I]` and the per-enrollment-type values `[A]`-`[H]` it is
+      built from.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: &settlement_data_tests
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - FILE_PATH
+              - ROW_NUM
+              - COLUMN_GROUP_LABEL
+              - COLUMN_LABEL
+
+      # CMS's markers stay text: '-' means "not applicable", not zero, and
+      # 'N/A' on [P] is a result in its own right.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "VALUE_NUMERIC is null"
+          config:
+            where: "trim(VALUE_TEXT) in ('-', '', 'N/A') or right(trim(VALUE_TEXT), 1) = '%'"
+
+      # A plain or comma-grouped decimal literal must produce a number, so a
+      # formatted dollar figure cannot drop out silently. "Numeric-looking" is
+      # defined without the macro under test: a leading sign, then only
+      # digits, commas and a point, with at least one digit.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "VALUE_NUMERIC is not null"
+          config:
+            where: >-
+              VALUE_TEXT is not null
+              and length(trim(VALUE_TEXT)) > 0
+              and length(translate(ltrim(trim(VALUE_TEXT), '+-'), '0123456789.,', '')) = 0
+              and length(translate(trim(VALUE_TEXT), '0123456789', '')) < length(trim(VALUE_TEXT))
+
+    columns: &settlement_columns
+      - name: ROW_NUM
+        description: 1-based index of the source worksheet row. Part of the grain.
+        data_tests:
+          - not_null
+
+      - name: GROUP_LABEL
+        description: >
+          Nearest preceding unbracketed heading, such as Table 3's step
+          headings. NULL where none precedes the row.
+
+      - name: SECTION_CODE
+        description: >
+          Code from the `[X]` prefix on the section heading, brackets
+          stripped: `I`, `P`, `BB`. NULL where the heading carries none.
+
+      - name: SECTION_LABEL
+        description: Section heading text with any `[X]` prefix removed.
+
+      - name: ROW_LABEL
+        description: >
+          Column A of the source row. A lettered row's own value has the
+          section's label here; a per-type value has the enrollment type
+          (`ESRD`, `Disabled`, `Aged/dual`, `Aged/non-dual`).
+        data_tests:
+          - not_null
+
+      - name: COLUMN_GROUP_LABEL
+        description: Outer label of a two-row column header; NULL on a single header.
+
+      - name: COLUMN_LABEL
+        description: >
+          Header label of the source column, such as `BY3` or `Performance
+          Year`. Never NULL.
+        data_tests:
+          - not_null
+
+      - name: VALUE_TEXT
+        description: >
+          The source cell verbatim: `'-'`, `'N/A'` and `'-1,234'` arrive as
+          written. NULL only where the cell is empty.
+
+      - name: VALUE_NUMERIC
+        description: >
+          `VALUE_TEXT` as a number, with thousands separators removed
+          (`cast_settlement_numeric_or_null`). NULL where the cell is not a
+          number: `'-'`, `''`, `'N/A'`, percentages and text.
+
+      - name: FILE_PATH
+        description: Full path of the source workbook. Part of the grain.
+        data_tests:
+          - not_null
+
+      - name: DIRECTORY_NAME
+        description: The settlement bundle directory the workbook arrived in.
+        data_tests:
+          - not_null
+
+      - name: FILE_NAME
+        description: File name of the source workbook.
+        data_tests:
+          - not_null
+
+      - name: FILE_DATE
+        description: >
+          Delivery date from the workbook's `D<YYMMDD>` stamp; NULL for a
+          placeholder stamp such as `D259999`.
+
+      - name: ACO_ID
+        description: CMS-assigned ACO identifier.
+        data_tests:
+          - not_null
+
+      - name: PERFORMANCE_YEAR
+        description: Performance year settled, from the file store path.
+        data_tests:
+          - not_null
+
+      - name: SUBMISSION_ID
+        description: >
+          `STLMT.` plus the bundle stamp. The embargoed (`T0000000`) and
+          unembargoed (`T1111111`) deliveries are two submissions.
+        data_tests:
+          - not_null
+
+      - name: PERIOD
+        description: "`Y<performance year>`, from the workbook's file name."
+
+      - name: IS_EMBARGOED
+        description: >
+          TRUE for the embargoed delivery, FALSE for the unembargoed one, NULL
+          when neither the stamp nor a notice file settles it. A reader
+          prefers FALSE.
+
+  - name: stg_stlmt_table_3
+    description: >
+      Settlement workbook sheet `Table 3 - Shared Savings Losses`: the
+      settled savings or losses, from assigned beneficiaries `[A]` through
+      the net payment after advance investment payment recoupment.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *settlement_data_tests
+
+    columns: *settlement_columns
+
+  - name: stg_stlmt_table_a1
+    description: >
+      Settlement workbook sheet `Table A1 - Risk`: CMS-HCC and demographic
+      risk scores by enrollment type for BY3 and the performance year, and
+      the ratios and cap between them.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *settlement_data_tests
+
+    columns: *settlement_columns

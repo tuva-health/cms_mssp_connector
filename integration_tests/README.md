@@ -40,7 +40,7 @@ before it is committed.
 | Seeds | Source tables | Origin |
 | --- | --- | --- |
 | `seeds/alr_cclf/` | the six ALR tables (source `cms_ssp_reports`) and the CCLF tables (source `medicare_cclf`) | Copied unchanged from `cms_alr_connector` v1.1.1 `integration_tests/seeds/`, which the `cclf-synth` generator builds. Shared fake beneficiaries `9TT0FK…`, ACO `A0000`. Copy them again when the ALR pin moves. |
-| `seeds/workbooks/` | the twenty BNMRK / AEXPU / QEXPU relations of the workbook export contract | `cclf-synth generate-mssp`: CMS-consistent synthetic workbooks for ACO `A0000`, PY2025 (see below). |
+| `seeds/workbooks/` | the twenty BNMRK / AEXPU / QEXPU relations of the workbook export contract, and the three STLMT relations `fct_settlement` reads | `cclf-synth generate-mssp`: CMS-consistent synthetic workbooks for ACO `A0000`, PY2025 (see below). The STLMT seeds are header only: cclf-synth does not generate a settlement workbook yet, so CI builds the settlement models empty and their unit tests carry the logic. |
 | `seeds/mssp/` | the other `mssp_raw` tables: BEUR, BAIP, NCBP, MCQM, BNEX, the participant lists and the shadow bundles | BEUR, `beneficiary_exclusions` and `excluded_beneficiary_mbi_xref` carry rows from `cclf-synth generate-mssp` for the ALR fixture beneficiaries; the rest are header only. `seeds/mssp/_seeds.yml` names the source of each header. |
 
 The workbook relations follow the delivered CMS workbooks' grammar: the
