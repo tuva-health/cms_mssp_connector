@@ -10,6 +10,7 @@ This is a dbt project (`cms_mssp_connector`, repo [tuva-health/cms_mssp_connecto
 
 - **Running dbt, tests or CI**: read [integration_tests/README.md](integration_tests/README.md).
   Every local run goes through `scripts/dbt-local` (`--project-dir integration_tests`); the toolchain is `uv` and `uv.lock`.
+- **Reading a table cms_mssp_pipeline changed** (a new or changed workbook relation, such as the STLMT tables): prove it against the pipeline's synthetic output with `scripts/dbt-pipeline-e2e <pipeline-checkout> --select <models> --indirect-selection cautious` before either side merges. It works on an unmerged pipeline worktree; see [integration_tests/README.md](integration_tests/README.md#against-cms_mssp_pipelines-synthetic-output).
 - **Changing anything user-visible**: add it to `CHANGELOG.md` under `[Unreleased]` in the same PR, marking breaking changes **Breaking**.
 - **Releasing or bumping `version`**: read the Releases section of [README.md](README.md#releases). `pyproject.toml` carries the release version.
 

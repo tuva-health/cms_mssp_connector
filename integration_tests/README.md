@@ -126,6 +126,58 @@ duckdb -cmd "ATTACH '/path/to/other.duckdb' AS cms_mssp_connector_ci; USE cms_ms
 
 Set `DBT_PROFILES_DIR` (and `DBT_PROFILE`) to use another warehouse.
 
+## Against cms_mssp_pipeline's synthetic output
+
+The seeds above are this repo's copy of what the pipeline writes. To check a
+pipeline change against the connector's models and tests, or a connector
+change against a pipeline table that is not seeded yet, run the pipeline's
+own synthetic end-to-end build through the connector:
+
+```sh
+scripts/dbt-pipeline-e2e <pipeline-checkout> [dbt build args...]
+scripts/dbt-pipeline-e2e ../cms_mssp_pipeline --select +int_expenditures_annual --indirect-selection cautious
+```
+
+`<pipeline-checkout>` is any cms_mssp_pipeline checkout or worktree, merged
+or not; the script only reads it. It then:
+
+1. Runs the pipeline's `tests/e2e/synthetic_run.py` there, writing its
+   output under this checkout.
+2. Seeds this project into a fresh database of its own and replaces every
+   relation of the pipeline's workbook export contract
+   (`contracts/workbook/v1.json` in that checkout) with the table the run
+   wrote, creating any the seeds lack, such as the STLMT tables
+   (`scripts/pipeline_overlay.py`). The ALR, CCLF and other `mssp_raw`
+   seeds stay: the pipeline's CCLF rows are placeholders.
+3. Runs `dbt build` with your arguments (none builds everything), always
+   excluding this project's seeds so the build cannot reload them over the
+   pipeline's tables.
+
+Use it whenever a connector change reads a table the pipeline changed:
+prove the change here before the pipeline merges, then add the generated
+seeds as usual so the `dbt build / duckdb` job covers it.
+
+Things to know:
+
+- Everything lives in `integration_tests/target/pipeline_e2e/` of this
+  checkout (set `PIPELINE_E2E_DIR` to move it): the run in `pipeline/`, the
+  database in `cms_mssp_connector_ci.duckdb`, dbt's artifacts in `target/`.
+  It never touches `scripts/dbt-local`'s database, and worktrees never share
+  a file.
+- The pipeline's workbooks are its test builders' minimal fixtures for ACO
+  `T0000`, not the CMS-consistent `cclf-synth` workbooks for `A0000`. Several
+  benchmark tests that check CMS consistency fail on them (BY labels,
+  enrollment-type mapping, risk-score completeness), as do tests that join
+  the workbooks to the `A0000` ALR seeds or agreement row. Select the models
+  you are proving, and compare against a run on the pipeline's `main` to see
+  what your change adds.
+- Pass `--indirect-selection cautious` with a narrow selection. Singular
+  tests with several parents are otherwise selected with any one of them and
+  fail on the parents the selection did not build.
+- `pyproject.toml`'s `workbook_contract` pin is release metadata, not a
+  runtime check, so a newer contract runs as is; the script prints a note
+  when the two differ.
+
 ## CI
 
 The `dbt build / duckdb` job in `.github/workflows/ci.yml` runs the same

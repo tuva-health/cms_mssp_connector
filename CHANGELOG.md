@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/dbt-pipeline-e2e <pipeline-checkout> [dbt build args...]`, a
+  development harness that runs cms_mssp_pipeline's synthetic end-to-end
+  build in any pipeline checkout, loads its workbook-contract tables over
+  this project's seeds in a database of its own, and runs `dbt build` on the
+  selection given. See `integration_tests/README.md`.
+
 ## [1.0.1] - 2026-11-20
 
 The first published release of the 1.0 line. `v1.0.0` was tagged, but its
