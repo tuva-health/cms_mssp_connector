@@ -53,9 +53,10 @@ the final layer.
 
 `int_member_month_risk` sits alongside them on the `core__member_month` grain
 (person, data source, month). It states which MSSP enrollment type the member
-is in — from the populated score column on the 2025+ assignment list, else the
-assignment list's monthly enrollment flag (`EnrollFlag`, 1 ESRD, 2 disabled,
-3 aged/dual, 4 aged/non-dual), else the Tuva eligibility codes, with
+is in — from the assignment list's monthly enrollment flag (`EnrollFlag`,
+1 ESRD, 2 disabled, 3 aged/dual, 4 aged/non-dual), as CMS types a
+person-month, else the populated score column on the 2025+ assignment list,
+else the Tuva eligibility codes, with
 `ENROLLMENT_TYPE_SOURCE` saying which — and the CMS prospective HCC risk score
 the assignment list supplies, read from the per-type column or the monthly
 column depending on the file's layout. Assignment-list MBIs are mapped to the
@@ -335,6 +336,20 @@ The connector adds two facts of its own to that schema, under
   `CAP_FACTOR_SCENARIO` and `IS_CAP_BINDING_SCENARIO` sit beside the flat-cap
   columns and are informational. Swapping in a factor CMS publishes is a
   change to the variable, not the model.
+
+  The PY scores are BY3-year scores, and `PY_RISK_SCORE_BASIS` says so
+  (`by3_year_scores`). The quarterly and initial assignment lists score each
+  beneficiary in a per-type column (`ESRD_SCORE`, `DIS_SCORE`, `AGDU_SCORE`,
+  `AGND_SCORE`) that holds the most recent payment year CMS has scored.
+  During the performance year that is the BY3 year, not the PY: the PY's
+  own scores appear only in the settlement AALR's monthly
+  `BENE_RSK_R_SCRE_NN` columns, after the year closes. So the in-year ratio
+  is a projection that assumes the ACO's scores stay flat from BY3 to the
+  PY. It measures the change in the BY3 `[C]` basis against the ACO's
+  current population's BY3-year scores, not CMS's settled ratio. Each
+  member-month is typed by its monthly EnrollFlag, as CMS types a
+  person-month, and not by which score column is filled: the column reflects
+  the member's type in the scored payment year, which can differ.
 
   Everything is NULL-safe and nothing is defaulted: a type with no assigned,
   scored member-months leaves the aggregate, the factor and the capped

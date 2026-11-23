@@ -493,7 +493,12 @@ select
     projections.SAVINGS_EXCEEDS_MSR                         as SAVINGS_EXCEEDS_MSR,
     projections.SAVINGS_STATUS                              as SAVINGS_STATUS,
 
-    scenario.BY3_CALENDAR_YEAR                              as BY3_CALENDAR_YEAR
+    scenario.BY3_CALENDAR_YEAR                              as BY3_CALENDAR_YEAR,
+
+    {#- what the PY scores below are (TUVA-162): the assignment lists' type
+        score columns, which hold the most recent available payment year's
+        score, the BY3 year's mid-PY; see the YAML and the README -#}
+    'by3_year_scores'                                       as PY_RISK_SCORE_BASIS
 
     {%- for enrollment_type in enrollment_types %},
     scenario.ASSIGNED_SCORED_MEMBER_MONTHS_{{ enrollment_type | upper }}

@@ -124,11 +124,7 @@ models:
           `mssp_enrollment_type` seed: `esrd`, `disabled`, `aged_dual`,
           `aged_non_dual`. Resolved in priority order, first answer wins:
 
-          1. The populated score column on the 2025+ assignment-list layout,
-             where exactly one of `ESRD_SCORE`, `DIS_SCORE`, `AGDU_SCORE` and
-             `AGND_SCORE` is filled. Should more than one ever be, ESRD wins
-             over disabled over aged/dual over aged/non-dual.
-          2. The assignment list's monthly enrollment flag for the month
+          1. The assignment list's monthly enrollment flag for the month
              (ALR Table 1-1 `EnrollFlag1..12`, published by
              `cms_alr_connector` as `enrollment.enroll_flag`), mapped per the
              CMS ALR data dictionary: 1 `esrd`, 2 `disabled`, 3 `aged_dual`,
@@ -136,8 +132,15 @@ models:
              month reads the flag from the row it is assigned from. A month
              only another delivery covers is unassigned, but the flag on the
              latest-delivered row covering it still states the member's type
-             that month, so it is used. This is the step that types the
-             2022-2024 layout, which has no type columns.
+             that month, so it is used. CMS types a person-month by this
+             flag (TUVA-161), so it comes first (TUVA-162).
+          2. The populated score column on the 2025+ assignment-list layout,
+             where exactly one of `ESRD_SCORE`, `DIS_SCORE`, `AGDU_SCORE` and
+             `AGND_SCORE` is filled. Should more than one ever be, ESRD wins
+             over disabled over aged/dual over aged/non-dual. The column is
+             the type in the payment year the score is from, the most recent
+             CMS has scored, so it can differ from the month's flag; it types
+             a month only when the flag does not.
           3. The Tuva eligibility codes on the span covering the month:
              `medicare_status_code` first (11, 21, 31 ESRD; 20 disabled; 10
              aged), `original_reason_entitlement_code` only when the status is
@@ -161,7 +164,7 @@ models:
       - name: ENROLLMENT_TYPE_SOURCE
         description: >
           Which step of the priority order resolved `ENROLLMENT_TYPE`:
-          `assignment_list_score_column`, `assignment_list_enroll_flag` or
+          `assignment_list_enroll_flag`, `assignment_list_score_column` or
           `eligibility_codes`. NULL when the type is NULL. Group by this to
           report the share resolved by each fallback.
         data_tests:
@@ -239,12 +242,13 @@ unit_tests:
   - name: test_enrollment_type_priority_and_score_selection
     model: int_member_month_risk
     description: >
-      P1  2025 layout, AGDU_SCORE populated, not a new enrollee. The
-          demographic score, the enrollment flag and the eligibility code all
-          say something else; the score column wins.
-      P2  New enrollee with DIS_SCORE populated. Keeps `disabled` and the
-          0.7 CMS wrote in that column, not the 0.95 demographic score and
-          not the aged status on the eligibility span.
+      P1  2025 layout, AGDU_SCORE populated, not a new enrollee, flag 2.
+          The flag wins (TUVA-162): `disabled`, scored 1.1 from the
+          AGDU_SCORE column, not the demographic score, and not the type the
+          score column or the eligibility code says.
+      P2  New enrollee with DIS_SCORE populated and flag 4. Typed
+          `aged_non_dual` by the flag, scored the 0.7 CMS wrote in the score
+          column, not the 0.95 demographic score.
       P3  2023 layout: no type columns, monthly scores. Takes the March
           score from column 03, not the decoys in 01 and 12; the type comes
           from the PY2025 delivery's enrollment flag (4, aged/non-dual), not
@@ -332,8 +336,8 @@ unit_tests:
 
     expect:
       rows:
-        - {PERSON_ID: 'P1',  DATA_SOURCE: 'medicare', YEAR_MONTH: '202501', ALR_BENE_MBI_ID: 'P1',   MBI_CROSSWALK_SOURCE: 'direct',                        IS_ASSIGNED: true,  IS_NEW_ENROLLEE: false, ENROLLMENT_TYPE: 'aged_dual',     ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.1,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2025}
-        - {PERSON_ID: 'P2',  DATA_SOURCE: 'medicare', YEAR_MONTH: '202502', ALR_BENE_MBI_ID: 'P2',   MBI_CROSSWALK_SOURCE: 'direct',                        IS_ASSIGNED: true,  IS_NEW_ENROLLEE: true,  ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 0.7,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2025}
+        - {PERSON_ID: 'P1',  DATA_SOURCE: 'medicare', YEAR_MONTH: '202501', ALR_BENE_MBI_ID: 'P1',   MBI_CROSSWALK_SOURCE: 'direct',                        IS_ASSIGNED: true,  IS_NEW_ENROLLEE: false, ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'assignment_list_enroll_flag',  RISK_SCORE: 1.1,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2025}
+        - {PERSON_ID: 'P2',  DATA_SOURCE: 'medicare', YEAR_MONTH: '202502', ALR_BENE_MBI_ID: 'P2',   MBI_CROSSWALK_SOURCE: 'direct',                        IS_ASSIGNED: true,  IS_NEW_ENROLLEE: true,  ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_enroll_flag',  RISK_SCORE: 0.7,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2025}
         - {PERSON_ID: 'P3',  DATA_SOURCE: 'medicare', YEAR_MONTH: '202303', ALR_BENE_MBI_ID: 'P3',   MBI_CROSSWALK_SOURCE: 'direct',                        IS_ASSIGNED: true,  IS_NEW_ENROLLEE: false, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_enroll_flag',              RISK_SCORE: 1.3,  RISK_SCORE_SOURCE: 'assignment_list_monthly_score', ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2023}
         - {PERSON_ID: 'P4',  DATA_SOURCE: 'medicare', YEAR_MONTH: '202401', ALR_BENE_MBI_ID: null,   MBI_CROSSWALK_SOURCE: null,                            IS_ASSIGNED: false, IS_NEW_ENROLLEE: null,  ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'eligibility_codes',            RISK_SCORE: null, RISK_SCORE_SOURCE: null,                            ALR_DELIVERY_PERFORMANCE_YEAR: null, ALR_REPORT_YEAR: null}
         - {PERSON_ID: 'P5',  DATA_SOURCE: 'medicare', YEAR_MONTH: '202506', ALR_BENE_MBI_ID: 'OLD5', MBI_CROSSWALK_SOURCE: 'cclf_beneficiary_xref',         IS_ASSIGNED: true,  IS_NEW_ENROLLEE: false, ENROLLMENT_TYPE: 'esrd',          ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column', RISK_SCORE: 1.5,  RISK_SCORE_SOURCE: 'assignment_list_type_score',    ALR_DELIVERY_PERFORMANCE_YEAR: 2025, ALR_REPORT_YEAR: 2025}
@@ -347,15 +351,18 @@ unit_tests:
   - name: test_enrollment_type_from_the_alr_enroll_flag
     model: int_member_month_risk
     description: >
-      The enrollment flag step (TUVA-138), between the score column and the
+      The enrollment flag step (TUVA-138), first in the order since TUVA-162:
+      CMS types a month by its EnrollFlag, then the score column, then the
       eligibility codes. Every eligibility span below disagrees with the
       flag, so a row typed from eligibility instead would differ.
 
       F1-F4  2023 layout, assigned from PY2025's Y2023 file, no type
              columns. Flags 1, 2, 3 and 4 give `esrd`, `disabled`,
              `aged_dual` and `aged_non_dual`.
-      S1     2025 layout with ESRD_SCORE populated and flag 4: the score
-             column outranks the flag.
+      S1     2025 layout with ESRD_SCORE populated and flag 4: the flag
+             outranks the score column (TUVA-162), so `aged_non_dual`.
+      S2     2025 layout with DIS_SCORE populated and flag 0, which types
+             nothing: the score column types the month.
       R1     Assigned from PY2025's Y2023 file with flag 3. PY2026's later
              re-delivery of Y2023 says 1; the assigned row's flag wins.
       O1     A 2025 month only PY2026's quarterly lists cover: unassigned,
@@ -377,6 +384,7 @@ unit_tests:
           - {person_id: 'F3', member_id: 'F3', year_month: '202303', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
           - {person_id: 'F4', member_id: 'F4', year_month: '202304', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
           - {person_id: 'S1', member_id: 'S1', year_month: '202503', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'S2', member_id: 'S2', year_month: '202504', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
           - {person_id: 'R1', member_id: 'R1', year_month: '202305', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
           - {person_id: 'O1', member_id: 'O1', year_month: '202508', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
           - {person_id: 'Z0', member_id: 'Z0', year_month: '202306', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
@@ -391,6 +399,7 @@ unit_tests:
           - {current_bene_mbi_id: 'F3', bene_member_month: '202303', enroll_flag: 3, assignment_type: 1, new_enrollee: 0, hcc_version: 'V24', bene_rsk_r_scre_03: 1.03, file_name: 'P.A0000.ACO.AALR.Y2023.D259999.T1111111_1-1.csv', file_date: '2023-12-31'}
           - {current_bene_mbi_id: 'F4', bene_member_month: '202304', enroll_flag: 4, assignment_type: 1, new_enrollee: 0, hcc_version: 'V24', bene_rsk_r_scre_04: 1.04, file_name: 'P.A0000.ACO.AALR.Y2023.D259999.T1111111_1-1.csv', file_date: '2023-12-31'}
           - {current_bene_mbi_id: 'S1', bene_member_month: '202503', enroll_flag: 4, assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', esrd_score: 2.5,          file_name: 'P.A0000.ACO.QALR.2025Q1.D259999.T0100000_1-1.csv', file_date: '2025-03-31'}
+          - {current_bene_mbi_id: 'S2', bene_member_month: '202504', enroll_flag: 0, assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', dis_score: 0.6,           file_name: 'P.A0000.ACO.QALR.2025Q2.D259999.T0200000_1-1.csv', file_date: '2025-06-30'}
           - {current_bene_mbi_id: 'R1', bene_member_month: '202305', enroll_flag: 3, assignment_type: 1, new_enrollee: 0, hcc_version: 'V24', bene_rsk_r_scre_05: 1.05, file_name: 'P.A0000.ACO.AALR.Y2023.D259999.T1111111_1-1.csv', file_date: '2023-12-31'}
           # Decoy: PY2026's re-delivery of 2023, filed later, with another flag.
           - {current_bene_mbi_id: 'R1', bene_member_month: '202305', enroll_flag: 1, assignment_type: 1, new_enrollee: 0, hcc_version: 'V28', bene_rsk_r_scre_05: 9.05, file_name: 'P.A0000.ACO.AALR.Y2023.D269999.T1111111_1-1.csv', file_date: '2024-12-31'}
@@ -413,6 +422,7 @@ unit_tests:
           - {person_id: 'F3', data_source: 'medicare', enrollment_start_date: '2023-01-01', enrollment_end_date: '2023-12-31', medicare_status_code: '10', original_reason_entitlement_code: '0', dual_status_code: '00'}
           - {person_id: 'F4', data_source: 'medicare', enrollment_start_date: '2023-01-01', enrollment_end_date: '2023-12-31', medicare_status_code: '20', original_reason_entitlement_code: '1', dual_status_code: '00'}
           - {person_id: 'S1', data_source: 'medicare', enrollment_start_date: '2025-01-01', enrollment_end_date: '2025-12-31', medicare_status_code: '10', original_reason_entitlement_code: '0', dual_status_code: '00'}
+          - {person_id: 'S2', data_source: 'medicare', enrollment_start_date: '2025-01-01', enrollment_end_date: '2025-12-31', medicare_status_code: '10', original_reason_entitlement_code: '0', dual_status_code: '00'}
           - {person_id: 'R1', data_source: 'medicare', enrollment_start_date: '2023-01-01', enrollment_end_date: '2023-12-31', medicare_status_code: '20', original_reason_entitlement_code: '1', dual_status_code: '00'}
           - {person_id: 'O1', data_source: 'medicare', enrollment_start_date: '2025-01-01', enrollment_end_date: '2025-12-31', medicare_status_code: '10', original_reason_entitlement_code: '0', dual_status_code: '00'}
           - {person_id: 'Z0', data_source: 'medicare', enrollment_start_date: '2023-01-01', enrollment_end_date: '2023-12-31', medicare_status_code: '20', original_reason_entitlement_code: '1', dual_status_code: '00'}
@@ -424,7 +434,8 @@ unit_tests:
         - {PERSON_ID: 'F2', YEAR_MONTH: '202302', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'assignment_list_enroll_flag'}
         - {PERSON_ID: 'F3', YEAR_MONTH: '202303', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual',     ENROLLMENT_TYPE_SOURCE: 'assignment_list_enroll_flag'}
         - {PERSON_ID: 'F4', YEAR_MONTH: '202304', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_enroll_flag'}
-        - {PERSON_ID: 'S1', YEAR_MONTH: '202503', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'esrd',          ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column'}
+        - {PERSON_ID: 'S1', YEAR_MONTH: '202503', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_TYPE_SOURCE: 'assignment_list_enroll_flag'}
+        - {PERSON_ID: 'S2', YEAR_MONTH: '202504', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'assignment_list_score_column'}
         - {PERSON_ID: 'R1', YEAR_MONTH: '202305', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'aged_dual',     ENROLLMENT_TYPE_SOURCE: 'assignment_list_enroll_flag'}
         - {PERSON_ID: 'O1', YEAR_MONTH: '202508', IS_ASSIGNED: false, ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'assignment_list_enroll_flag'}
         - {PERSON_ID: 'Z0', YEAR_MONTH: '202306', IS_ASSIGNED: true,  ENROLLMENT_TYPE: 'disabled',      ENROLLMENT_TYPE_SOURCE: 'eligibility_codes'}

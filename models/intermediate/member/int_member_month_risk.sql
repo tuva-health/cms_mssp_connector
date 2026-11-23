@@ -51,14 +51,19 @@
 
     Enrollment type resolves in priority order and is never defaulted; see the
     column documentation in _models.yml for each step. It is a monthly fact:
-    the assignment list's type score column, else its monthly EnrollFlag for
-    the month, else the eligibility codes on the span covering the month. The score comes only
+    the assignment list's monthly EnrollFlag for the month, as CMS types a
+    person-month (TUVA-161/162), else its type score column, else the
+    eligibility codes on the span covering the month. The type score column
+    is not the month's type: on a quarterly or initial list it holds the most
+    recent payment year's score, typed as the member was then. The score comes only
     from the assignment list, read from whichever layout the row carries: the
     populated per-type column on 2025+ files, or the monthly column for the
     row's own month on 2022-2024 files, where BENE_RSK_R_SCRE_NN holds the
     score for month NN of the performance year. The demographic-only DEM_*
     scores are never read: a new enrollee's score is the one CMS wrote in the
-    column of their actual type, and their type is that column's.
+    column of their type. On a quarterly or initial list that score is the
+    most recent available payment year's, which mid-PY is the BY3 year's
+    (TUVA-161), so a ratio built from it is BY3-year based.
 -#}
 
 with member_months as (
@@ -426,14 +431,14 @@ select
     assignment.ASSIGNMENT_TYPE                                  as ASSIGNMENT_TYPE,
 
     coalesce(
-        assignment.SCORE_COLUMN_TYPE,
         enroll_flag_type.ENROLLMENT_TYPE,
+        assignment.SCORE_COLUMN_TYPE,
         eligibility_type.ENROLLMENT_TYPE
     )                                                           as ENROLLMENT_TYPE,
 
     case
-        when assignment.SCORE_COLUMN_TYPE is not null       then 'assignment_list_score_column'
         when enroll_flag_type.ENROLLMENT_TYPE is not null   then 'assignment_list_enroll_flag'
+        when assignment.SCORE_COLUMN_TYPE is not null       then 'assignment_list_score_column'
         when eligibility_type.ENROLLMENT_TYPE is not null   then 'eligibility_codes'
     end                                                         as ENROLLMENT_TYPE_SOURCE,
 

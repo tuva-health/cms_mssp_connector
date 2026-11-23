@@ -51,6 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `int_member_month_risk` types a member-month by its ALR EnrollFlag first,
+  then the type score column, then the eligibility codes (was score column
+  first). CMS types a person-month by its EnrollFlag; a quarterly or initial
+  list's score column carries the type of the payment year it was scored
+  in, which can differ. `ENROLLMENT_TYPE_SOURCE` is
+  `assignment_list_enroll_flag` on those months, and the type, the
+  type-level PY means and ratios in `fact_benchmark_aco_quarter`, and the
+  type rates in `fact_member_month_benchmark` move with it.
+- `fact_benchmark_aco_quarter` carries `PY_RISK_SCORE_BASIS`
+  (`by3_year_scores`): the in-year PY scores are the assignment lists'
+  most recent payment-year scores, which mid-PY are the BY3 year's, so the
+  ratio projects a flat score trend. The README explains why.
 - **Renamed from the first, unreleased settlement build** (no migration: it
   never shipped). The coded names are gone. Table 2: `T2_A_<TYPE>` →
   `HISTORICAL_BENCHMARK_<TYPE>`, `T2_B_<TYPE>` → `BY3_CMS_HCC_RISK_SCORE_<TYPE>`
