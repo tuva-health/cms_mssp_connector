@@ -337,19 +337,32 @@ The connector adds two facts of its own to that schema, under
   columns and are informational. Swapping in a factor CMS publishes is a
   change to the variable, not the model.
 
-  The PY scores are BY3-year scores, and `PY_RISK_SCORE_BASIS` says so
-  (`by3_year_scores`). The quarterly and initial assignment lists score each
-  beneficiary in a per-type column (`ESRD_SCORE`, `DIS_SCORE`, `AGDU_SCORE`,
-  `AGND_SCORE`) that holds the most recent payment year CMS has scored.
-  During the performance year that is the BY3 year, not the PY: the PY's
-  own scores appear only in the settlement AALR's monthly
+  In-year, the PY scores are BY3-year scores, and `PY_RISK_SCORE_BASIS` says
+  so (`by3_year_scores`). The quarterly and initial assignment lists score
+  each beneficiary in a per-type column (`ESRD_SCORE`, `DIS_SCORE`,
+  `AGDU_SCORE`, `AGND_SCORE`) that holds the most recent payment year CMS
+  has scored. During the performance year that is the BY3 year, not the PY:
+  the PY's own scores appear only in the settlement AALR's monthly
   `BENE_RSK_R_SCRE_NN` columns, after the year closes. So the in-year ratio
   is a projection that assumes the ACO's scores stay flat from BY3 to the
-  PY. It measures the change in the BY3 `[C]` basis against the ACO's
-  current population's BY3-year scores, not CMS's settled ratio. Each
-  member-month is typed by its monthly EnrollFlag, as CMS types a
+  PY: it compares the current population's BY3-year scores with the BY3
+  `[C]`, and is not CMS's settled ratio. The column is read from the score
+  source, so a year scored from monthly columns reads
+  `performance_year_scores`, and one scored from both reads `mixed`.
+
+  Each member-month is typed by its monthly EnrollFlag, as CMS types a
   person-month, and not by which score column is filled: the column reflects
-  the member's type in the scored payment year, which can differ.
+  the member's type in the scored payment year, which can differ. Such a
+  month keeps the one score the list carries and enters the mean of its
+  flag's type, so a member who changed type since the scored year
+  contributes a score from the other type's model. The quarterly list has no
+  other score for the month, and CMS's own settlement types the month by
+  the flag too.
+
+  Unscored months are left out of the mean: an assigned, typed month with no
+  score is not counted as zero or as the type's average. This is an
+  assumption, not a CMS rule. Real data checked so far had no unscored
+  eligible months, so the effect has not been observed.
 
   Everything is NULL-safe and nothing is defaulted: a type with no assigned,
   scored member-months leaves the aggregate, the factor and the capped

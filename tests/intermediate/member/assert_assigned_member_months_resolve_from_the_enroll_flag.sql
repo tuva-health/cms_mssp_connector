@@ -9,6 +9,10 @@
     month's flag; a row resolving through it while the flag is set means the
     model has read the wrong input. The row checked is the one the month is
     assigned from (same MBI, month and file).
+
+    New enrollees are no exception: CMS writes a new enrollee's score into
+    one type column, but the month's type is still its flag. This replaces
+    the earlier score-column and new-enrollee score-column tests.
 -#}
 
 with flagged_rows as (

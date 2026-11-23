@@ -302,6 +302,8 @@ assignment as (
 -- assigned from, else the latest off-year row, whose flag still states CMS's
 -- type for the member that month. A NULL or 0 flag on that row does not fall
 -- through to another row's flag; ALR v1.1.0 requires 1-4, so it cannot occur.
+-- Since the flag types first (TUVA-162), the score-column step below types a
+-- month only on such a row: a fallback, unreached on ALR v1.1 enrollment.
 enroll_flag_type as (
 
     select

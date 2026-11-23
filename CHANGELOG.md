@@ -49,20 +49,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and columns; release with a pipeline that does.
 
 
+- `fact_benchmark_aco_quarter.PY_RISK_SCORE_BASIS`: what the PY scores
+  behind the risk ratios are, from the score source. In-year it is
+  `by3_year_scores`: the quarterly and initial lists' type score columns
+  hold the most recent payment year's score, the BY3 year's mid-PY, so the
+  ratio projects a flat score trend. `performance_year_scores` for a year
+  scored from monthly columns, `mixed` for both. The README explains why.
+
 ### Changed
 
-- `int_member_month_risk` types a member-month by its ALR EnrollFlag first,
-  then the type score column, then the eligibility codes (was score column
-  first). CMS types a person-month by its EnrollFlag; a quarterly or initial
+- **Breaking:** `int_member_month_risk` types a member-month by its ALR
+  EnrollFlag first, then the type score column, then the eligibility codes
+  (was score column first). CMS types a person-month by its EnrollFlag; a quarterly or initial
   list's score column carries the type of the payment year it was scored
   in, which can differ. `ENROLLMENT_TYPE_SOURCE` is
   `assignment_list_enroll_flag` on those months, and the type, the
   type-level PY means and ratios in `fact_benchmark_aco_quarter`, and the
-  type rates in `fact_member_month_benchmark` move with it.
-- `fact_benchmark_aco_quarter` carries `PY_RISK_SCORE_BASIS`
-  (`by3_year_scores`): the in-year PY scores are the assignment lists'
-  most recent payment-year scores, which mid-PY are the BY3 year's, so the
-  ratio projects a flat score trend. The README explains why.
+  type rates in `fact_member_month_benchmark` move with it. The singular
+  test `assert_new_enrollee_rows_carry_their_score_column_type` is removed:
+  a new enrollee is typed by its flag like any other month.
 - **Renamed from the first, unreleased settlement build** (no migration: it
   never shipped). The coded names are gone. Table 2: `T2_A_<TYPE>` →
   `HISTORICAL_BENCHMARK_<TYPE>`, `T2_B_<TYPE>` → `BY3_CMS_HCC_RISK_SCORE_<TYPE>`

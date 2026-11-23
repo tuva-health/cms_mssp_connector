@@ -154,7 +154,8 @@ member_months as (
         {{ cast_year_or_null('substring(YEAR_MONTH, 1, 4)') }}
                                                             as PERFORMANCE_YEAR,
         ENROLLMENT_TYPE,
-        {{ to_double('RISK_SCORE') }}                       as RISK_SCORE
+        {{ to_double('RISK_SCORE') }}                       as RISK_SCORE,
+        RISK_SCORE_SOURCE
     from {{ ref('int_member_month_risk') }}
     where IS_ASSIGNED
       and RISK_SCORE is not null
@@ -171,6 +172,28 @@ member_scores as (
         avg(RISK_SCORE)                                     as PY_MEAN_RISK_SCORE
     from member_months
     group by PERFORMANCE_YEAR, ENROLLMENT_TYPE
+
+),
+
+-- What the PY scores are (TUVA-162), over the same member-months as the
+-- means. A quarterly or initial list's type score column holds the most
+-- recent payment year CMS has scored, the BY3 year's mid-PY (TUVA-161); a
+-- monthly BENE_RSK_R_SCRE_NN column holds the year's own score.
+score_basis as (
+
+    select
+        PERFORMANCE_YEAR,
+        case
+            when min(RISK_SCORE_SOURCE) = 'assignment_list_type_score'
+             and max(RISK_SCORE_SOURCE) = 'assignment_list_type_score'
+                then 'by3_year_scores'
+            when min(RISK_SCORE_SOURCE) = 'assignment_list_monthly_score'
+             and max(RISK_SCORE_SOURCE) = 'assignment_list_monthly_score'
+                then 'performance_year_scores'
+            else 'mixed'
+        end                                                 as PY_RISK_SCORE_BASIS
+    from member_months
+    group by PERFORMANCE_YEAR
 
 ),
 
@@ -494,11 +517,7 @@ select
     projections.SAVINGS_STATUS                              as SAVINGS_STATUS,
 
     scenario.BY3_CALENDAR_YEAR                              as BY3_CALENDAR_YEAR,
-
-    {#- what the PY scores below are (TUVA-162): the assignment lists' type
-        score columns, which hold the most recent available payment year's
-        score, the BY3 year's mid-PY; see the YAML and the README -#}
-    'by3_year_scores'                                       as PY_RISK_SCORE_BASIS
+    score_basis.PY_RISK_SCORE_BASIS                         as PY_RISK_SCORE_BASIS
 
     {%- for enrollment_type in enrollment_types %},
     scenario.ASSIGNED_SCORED_MEMBER_MONTHS_{{ enrollment_type | upper }}
@@ -566,3 +585,6 @@ left join scenario
     and scenario.PERFORMANCE_YEAR = projections.PERFORMANCE_YEAR
     and scenario.PERIOD = projections.PERIOD
     and scenario.BENCHMARK_SUBMISSION_ID = projections.BENCHMARK_SUBMISSION_ID
+
+left join score_basis
+    on score_basis.PERFORMANCE_YEAR = projections.PERFORMANCE_YEAR
