@@ -1,8 +1,11 @@
 version: 2
 
-# Copied from cms_alr_connector v1.1.1 integration_tests/seeds/: every CSV
-# beside this file unchanged, and these seed configs unchanged apart from
-# this comment. They are the synthetic ALR + CCLF fixtures the connector this
+# Copied from cms_alr_connector integration_tests/seeds/: every CSV beside
+# this file unchanged, and these seed configs unchanged apart from this
+# comment. The ALR CSVs come from the unreleased ALR change that adds the
+# settlement population (TUVA-152/113/164), ahead of the release that ships
+# it; the pin bump to that release is pending (see AGENTS.md). The CCLF CSVs
+# are unchanged from v1.1.1. They are the synthetic ALR + CCLF fixtures the connector this
 # project pins was released with (see integration_tests/README.md). Generated
 # outside the repo by cclf-synth, never hand-edited; copy them again when the
 # cms_alr_connector pin moves. CI loads these into the raw schema

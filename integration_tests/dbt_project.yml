@@ -89,3 +89,13 @@ clean-targets:
 
 on-run-start:
   - "{{ ensure_unit_test_schemas() }}"
+
+# The ALR fixtures copied from cms_alr_connector (TUVA-164) deliberately
+# include one file no parameters row can match (A18), so its
+# alr_file_without_file_parameters test warns here, as in that connector's own
+# integration project, instead of failing the build. It is the one expected
+# warning.
+data_tests:
+  cms_aalr_connector:
+    alr_file_without_file_parameters:
+      +severity: warn

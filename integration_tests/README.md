@@ -39,7 +39,7 @@ before it is committed.
 
 | Seeds | Source tables | Origin |
 | --- | --- | --- |
-| `seeds/alr_cclf/` | the six ALR tables (source `cms_ssp_reports`) and the CCLF tables (source `medicare_cclf`) | Copied unchanged from `cms_alr_connector` v1.1.1 `integration_tests/seeds/`, which the `cclf-synth` generator builds. Shared fake beneficiaries `9TT0FK…`, ACO `A0000`. Copy them again when the ALR pin moves. |
+| `seeds/alr_cclf/` | the six ALR tables (source `cms_ssp_reports`) and the CCLF tables (source `medicare_cclf`) | Copied unchanged from `cms_alr_connector` `integration_tests/seeds/`, which the `cclf-synth` generator builds: the ALR CSVs from the unreleased change that adds `aalr_settlement_population` (the pin bump to its release is pending), the CCLF CSVs from v1.1.1. Shared fake beneficiaries `9TT0FK…`, ACO `A0000`. Copy them again when the ALR pin moves. |
 | `seeds/workbooks/` | the twenty BNMRK / AEXPU / QEXPU relations of the workbook export contract, and the five STLMT relations the settlement facts read | `cclf-synth generate-mssp`: CMS-consistent synthetic workbooks for ACO `A0000`, PY2025 (see below). The STLMT seeds are header only (see the exception below). |
 | `seeds/mssp/` | the other `mssp_raw` tables: BEUR, BAIP, NCBP, MCQM, BNEX, the participant lists and the shadow bundles | BEUR, `beneficiary_exclusions` and `excluded_beneficiary_mbi_xref` carry rows from `cclf-synth generate-mssp` for the ALR fixture beneficiaries; the rest are header only. `seeds/mssp/_seeds.yml` names the source of each header. |
 
@@ -74,7 +74,7 @@ the build does not exercise that path; the `int_member_month_risk` unit
 tests `test_enrollment_type_priority_and_score_selection` (P6) and
 `test_mbi_resolves_through_the_excluded_beneficiary_crosswalk` do.
 
-Every test runs at its own severity, and the build has no warnings. The
+Every test runs at its own severity, and the build has one warning: cms_alr_connector's `alr_file_without_file_parameters`, set to `warn` in `dbt_project.yml` because the copied ALR fixtures include an unmatchable file (A18) on purpose. The
 connector's `mssp_aco_agreement` seed ships to clients with only its
 `EXAMPLE-ACO` row, so `dbt_project.yml` here appends `A0000`'s row (variable
 MSR, ACPT at PY1) to it with a seed post-hook; a root seed of the same name
