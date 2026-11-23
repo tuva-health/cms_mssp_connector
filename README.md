@@ -147,6 +147,54 @@ footnotes tie together: Table 2 `[C]` = A1 `[I]`, Table 2 `[A]` = Table 1
 `int_expenditures_annual` leaves out the AEXPU workbook the settlement bundle
 also carries: it reports the performance year, not a benchmark year.
 
+### Settled and projected years
+
+A performance year is **settled** when `fct_settlement` has a row for the ACO
+and year, and **open** until then. The savings and benchmark facts show both
+kinds of year the same way: the projection from the quarterly reports, and,
+for a settled year, CMS's final figures **beside** it.
+
+- `IS_SETTLED` on every row of `fct_projected_savings`,
+  `fct_projected_savings_current`, `fct_projected_benchmark_by_enrollment_type`,
+  `fct_projected_benchmark_by_enrollment_type_current`,
+  `fact_benchmark_aco_quarter` and `fact_member_month_benchmark` says which
+  kind of year the row is in.
+- In a settled year, `SETTLEMENT_*` columns carry the final figures from
+  `fct_settlement`, copied as written, with `SETTLEMENT_SUBMISSION_ID` naming
+  the delivery. In an open year they are all NULL.
+- The projection's own columns never change. A settled year keeps its last
+  quarterly projection, so the two can be compared row by row; an open year
+  comes out exactly as it did before settlement columns existed.
+
+Which settlement columns a fact carries follows its grain:
+
+| Facts | Settlement columns |
+| --- | --- |
+| `fct_projected_savings`, its `_current` version, `fact_benchmark_aco_quarter` (one row per ACO and quarter) | `SETTLEMENT_UPDATED_BENCHMARK` (T2 `[I]`, beside `[P]`), `SETTLEMENT_PER_CAPITA_EXPENDITURE` (T3 `[E]`, beside `[Q]`), `SETTLEMENT_TOTAL_SAVINGS` / `_TOTAL_LOSSES` (`[J]`, `[K]`), `SETTLEMENT_MINIMUM_SAVINGS_RATE` (`[L]`, beside `ESTIMATED_MSR`), `SETTLEMENT_SAVINGS_OR_LOSSES_REALIZED` (`[P]`, text, beside `SAVINGS_STATUS`), `SETTLEMENT_FINAL_SHARING_RATE` (`[CC]`), `SETTLEMENT_SHARED_SAVINGS` (`[EE]`), `SETTLEMENT_EARNED_PERFORMANCE_PAYMENT` (`[HH]`), `SETTLEMENT_NET_EARNED_PERFORMANCE_PAYMENT` (`[MM]`), `SETTLEMENT_PAYMENT_DUE_TO_CMS` (`[UU]`) |
+| `fct_projected_benchmark_by_enrollment_type` and its `_current` version (one row per enrollment type) | the row's own type: `SETTLEMENT_UPDATED_BENCHMARK` (T2 `[G]`, beside `[M]`), `SETTLEMENT_BENEFICIARY_PROPORTION` (T2 `[H]`, beside `[O]`), `SETTLEMENT_PER_CAPITA_EXPENDITURE` (T3 `[C]`) |
+| `fact_member_month_benchmark` (one row per member-month) | `SETTLEMENT_FLAT_BENCHMARK_PMPM` (T2 `[I]` / 12, beside the flat rate) and `SETTLEMENT_ENROLLMENT_TYPE_BENCHMARK_PMPM` (T2 `[G]` / 12 at the month's settlement type, beside the type rate) |
+
+The ACO-level dollar outcomes stay off the enrollment-type and member-month
+facts, where they would repeat on every row and sum to a multiple of
+themselves. The settled-year risk columns (`SETTLEMENT_*` risk ratios,
+weights and cap in `fact_benchmark_aco_quarter`, and the settlement type,
+score and ratios in `fact_member_month_benchmark`) are computed from the
+settlement population and sit beside the projection in the same way.
+
+`fact_member_month_benchmark` takes `ACO_ID` from the year's projection, so
+a month in a year with no quarterly projection is not shown as settled.
+
+**Why beside, not instead.** Decided 2026-11-22 (TUVA-160). Replacing the
+projection with the settlement would make one column mean two things
+depending on the year, so a report could not tell a projection from CMS's
+final figure, and it would erase the Q4 projection that settlement is the
+test of. Beside, the status is a column of its own, the projection is
+comparable with the outcome, and an open year is untouched. The same decision
+governs the member side: the settlement AALR never decides a month's
+population, type or score. Those stay on the quarterly assignment lists; the
+settlement population is exposed through `cms_alr_connector`'s
+`aalr_settlement_population` and read only for the `SETTLEMENT_*` columns.
+
 ### Which member-months count as assigned
 
 `int_member_month_risk` and `cms_alr_connector` read the same assignment

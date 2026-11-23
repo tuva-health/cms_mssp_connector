@@ -36,6 +36,12 @@
     safe_divide. See those macros for why: the inputs are Excel doubles, and
     decimal division would round an update factor in its seventh significant
     digit on Snowflake.
+
+    Settled years (TUVA-160) carry CMS's final per-type figures beside the
+    projection: IS_SETTLED where fct_settlement has a row for the ACO and
+    year, and its `<field>_<TYPE>` columns read at the row's own type
+    (settlement_enrollment_type_columns). The projection's columns are
+    computed exactly as for an open year, whose settlement columns are NULL.
 -#}
 
 with enrollment_type as (
@@ -526,42 +532,70 @@ projected as (
 
     from three_way_blended
 
+),
+
+projection as (
+
+    select
+        ACO_ID                                              as ACO_ID,
+        PERFORMANCE_YEAR                                    as PERFORMANCE_YEAR,
+        PERIOD                                              as PERIOD,
+        QUARTER_NUM                                         as QUARTER_NUM,
+        BENCHMARK_SUBMISSION_ID                             as BENCHMARK_SUBMISSION_ID,
+        IS_LATEST_BENCHMARK_SUBMISSION                      as IS_LATEST_BENCHMARK_SUBMISSION,
+        ENROLLMENT_TYPE                                     as ENROLLMENT_TYPE,
+        ENROLLMENT_TYPE_LABEL                               as ENROLLMENT_TYPE_LABEL,
+        ENROLLMENT_TYPE_SORT                                as ENROLLMENT_TYPE_SORT,
+
+        NATIONAL_BASE_EXPENDITURE_PER_CAPITA                as NATIONAL_BASE_EXPENDITURE_PER_CAPITA,
+        NATIONAL_CURRENT_EXPENDITURE_PER_CAPITA             as NATIONAL_CURRENT_EXPENDITURE_PER_CAPITA,
+        NATIONAL_EXPENDITURE_UPDATE_FACTOR                  as NATIONAL_EXPENDITURE_UPDATE_FACTOR,
+        REGIONAL_BASE_EXPENDITURE_PER_CAPITA                as REGIONAL_BASE_EXPENDITURE_PER_CAPITA,
+        REGIONAL_CURRENT_EXPENDITURE_PER_CAPITA             as REGIONAL_CURRENT_EXPENDITURE_PER_CAPITA,
+        REGIONAL_EXPENDITURE_UPDATE_FACTOR                  as REGIONAL_EXPENDITURE_UPDATE_FACTOR,
+        NATIONAL_WEIGHT                                     as NATIONAL_WEIGHT,
+        REGIONAL_WEIGHT                                     as REGIONAL_WEIGHT,
+        NATIONAL_REGIONAL_BLENDED_UPDATE_FACTOR             as NATIONAL_REGIONAL_BLENDED_UPDATE_FACTOR,
+        ACCOUNTABLE_CARE_PROSPECTIVE_TREND                  as ACCOUNTABLE_CARE_PROSPECTIVE_TREND,
+        THREE_WAY_BLENDED_UPDATE_FACTOR                     as THREE_WAY_BLENDED_UPDATE_FACTOR,
+        HISTORICAL_BENCHMARK_EXPENDITURE                    as HISTORICAL_BENCHMARK_EXPENDITURE,
+        PROJECTED_UPDATED_BENCHMARK_EXPENDITURE             as PROJECTED_UPDATED_BENCHMARK_EXPENDITURE,
+        PERSON_YEARS                                        as PERSON_YEARS,
+        TOTAL_PERSON_YEARS                                  as TOTAL_PERSON_YEARS,
+        ENROLLMENT_PROPORTION                               as ENROLLMENT_PROPORTION,
+
+        PROJECTED_UPDATED_BENCHMARK_EXPENDITURE is not null  as IS_CALCULABLE,
+
+        QUARTERLY_SUBMISSION_ID                             as QUARTERLY_SUBMISSION_ID,
+        ANNUAL_EXPENDITURE_BENCHMARK_YEAR                   as ANNUAL_EXPENDITURE_BENCHMARK_YEAR,
+        ANNUAL_EXPENDITURE_SUBMISSION_ID                    as ANNUAL_EXPENDITURE_SUBMISSION_ID,
+        ACPT_PERFORMANCE_YEAR_LABEL                         as ACPT_PERFORMANCE_YEAR_LABEL,
+        IS_AGREEMENT_DEFAULTED                              as IS_AGREEMENT_DEFAULTED
+
+    from projected
+
+),
+
+{#- CMS's settled result for the year (TUVA-160), beside the projection: one
+    row per ACO and performance year, so the join keeps the grain. -#}
+settlement as (
+
+    select * from {{ ref('fct_settlement') }}
+
 )
 
 select
-    ACO_ID                                              as ACO_ID,
-    PERFORMANCE_YEAR                                    as PERFORMANCE_YEAR,
-    PERIOD                                              as PERIOD,
-    QUARTER_NUM                                         as QUARTER_NUM,
-    BENCHMARK_SUBMISSION_ID                             as BENCHMARK_SUBMISSION_ID,
-    IS_LATEST_BENCHMARK_SUBMISSION                      as IS_LATEST_BENCHMARK_SUBMISSION,
-    ENROLLMENT_TYPE                                     as ENROLLMENT_TYPE,
-    ENROLLMENT_TYPE_LABEL                               as ENROLLMENT_TYPE_LABEL,
-    ENROLLMENT_TYPE_SORT                                as ENROLLMENT_TYPE_SORT,
+    projection.*,
 
-    NATIONAL_BASE_EXPENDITURE_PER_CAPITA                as NATIONAL_BASE_EXPENDITURE_PER_CAPITA,
-    NATIONAL_CURRENT_EXPENDITURE_PER_CAPITA             as NATIONAL_CURRENT_EXPENDITURE_PER_CAPITA,
-    NATIONAL_EXPENDITURE_UPDATE_FACTOR                  as NATIONAL_EXPENDITURE_UPDATE_FACTOR,
-    REGIONAL_BASE_EXPENDITURE_PER_CAPITA                as REGIONAL_BASE_EXPENDITURE_PER_CAPITA,
-    REGIONAL_CURRENT_EXPENDITURE_PER_CAPITA             as REGIONAL_CURRENT_EXPENDITURE_PER_CAPITA,
-    REGIONAL_EXPENDITURE_UPDATE_FACTOR                  as REGIONAL_EXPENDITURE_UPDATE_FACTOR,
-    NATIONAL_WEIGHT                                     as NATIONAL_WEIGHT,
-    REGIONAL_WEIGHT                                     as REGIONAL_WEIGHT,
-    NATIONAL_REGIONAL_BLENDED_UPDATE_FACTOR             as NATIONAL_REGIONAL_BLENDED_UPDATE_FACTOR,
-    ACCOUNTABLE_CARE_PROSPECTIVE_TREND                  as ACCOUNTABLE_CARE_PROSPECTIVE_TREND,
-    THREE_WAY_BLENDED_UPDATE_FACTOR                     as THREE_WAY_BLENDED_UPDATE_FACTOR,
-    HISTORICAL_BENCHMARK_EXPENDITURE                    as HISTORICAL_BENCHMARK_EXPENDITURE,
-    PROJECTED_UPDATED_BENCHMARK_EXPENDITURE             as PROJECTED_UPDATED_BENCHMARK_EXPENDITURE,
-    PERSON_YEARS                                        as PERSON_YEARS,
-    TOTAL_PERSON_YEARS                                  as TOTAL_PERSON_YEARS,
-    ENROLLMENT_PROPORTION                               as ENROLLMENT_PROPORTION,
+    settlement.ACO_ID is not null                       as IS_SETTLED,
+    settlement.SUBMISSION_ID                            as SETTLEMENT_SUBMISSION_ID
+    {%- for field, column in settlement_enrollment_type_columns() %},
+    {{ settlement_field_at_type('settlement', field, 'projection.ENROLLMENT_TYPE') | indent(4) }}
+                                                        as {{ column }}
+    {%- endfor %}
 
-    PROJECTED_UPDATED_BENCHMARK_EXPENDITURE is not null  as IS_CALCULABLE,
+from projection
 
-    QUARTERLY_SUBMISSION_ID                             as QUARTERLY_SUBMISSION_ID,
-    ANNUAL_EXPENDITURE_BENCHMARK_YEAR                   as ANNUAL_EXPENDITURE_BENCHMARK_YEAR,
-    ANNUAL_EXPENDITURE_SUBMISSION_ID                    as ANNUAL_EXPENDITURE_SUBMISSION_ID,
-    ACPT_PERFORMANCE_YEAR_LABEL                         as ACPT_PERFORMANCE_YEAR_LABEL,
-    IS_AGREEMENT_DEFAULTED                              as IS_AGREEMENT_DEFAULTED
-
-from projected
+left join settlement
+    on settlement.ACO_ID = projection.ACO_ID
+   and settlement.PERFORMANCE_YEAR = projection.PERFORMANCE_YEAR

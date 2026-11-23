@@ -292,6 +292,40 @@ models:
         data_tests:
           - not_null
 
+      - name: IS_SETTLED
+        description: >
+          True when `fct_settlement` has a row for the ACO and performance
+          year: CMS has settled the year, and the `SETTLEMENT_*` columns
+          carry its final figures beside the projection, which is unchanged.
+          False for an open year, whose `SETTLEMENT_*` columns are all NULL.
+          See the README, "Settled and projected years".
+        data_tests:
+          - not_null
+
+      - name: SETTLEMENT_SUBMISSION_ID
+        description: >
+          `fct_settlement.SUBMISSION_ID`: the settlement delivery the
+          `SETTLEMENT_*` figures come from. NULL in an open year.
+
+      - name: SETTLEMENT_UPDATED_BENCHMARK
+        description: >
+          Settlement Table 2 `[G]` at the row's enrollment type, the final
+          updated benchmark for the type ($), as written. Compare with
+          `PROJECTED_UPDATED_BENCHMARK_EXPENDITURE` (`[M]`). NULL in an open
+          year.
+
+      - name: SETTLEMENT_BENEFICIARY_PROPORTION
+        description: >
+          Settlement Table 2 `[H]` at the row's enrollment type, the
+          beneficiary proportion that weights `[G]` into `[I]`. Compare with
+          `ENROLLMENT_PROPORTION` (`[O]`). NULL in an open year.
+
+      - name: SETTLEMENT_PER_CAPITA_EXPENDITURE
+        description: >
+          Settlement Table 3 `[C]` at the row's enrollment type, the ACO's
+          final per capita expenditure for the type ($). NULL in an open
+          year.
+
   - name: fct_projected_savings
     description: >
       Steps `[P]` through `[W]`: the ACO-level mean projected updated benchmark,
@@ -508,6 +542,82 @@ models:
         data_tests:
           - not_null
 
+      - name: IS_SETTLED
+        description: >
+          True when `fct_settlement` has a row for the ACO and performance
+          year: CMS has settled the year, and the `SETTLEMENT_*` columns
+          carry its final figures beside the projection, which is unchanged.
+          False for an open year, whose `SETTLEMENT_*` columns are all NULL.
+          See the README, "Settled and projected years".
+        data_tests:
+          - not_null
+
+      - name: SETTLEMENT_SUBMISSION_ID
+        description: >
+          `fct_settlement.SUBMISSION_ID`: the settlement delivery the
+          `SETTLEMENT_*` figures come from. NULL in an open year.
+
+      - name: SETTLEMENT_UPDATED_BENCHMARK
+        description: >
+          Settlement Table 2 `[I]`, the final updated benchmark per capita
+          ($), as written. Compare with `MEAN_PROJECTED_UPDATED_BENCHMARK`
+          (`[P]`). NULL in an open year.
+
+      - name: SETTLEMENT_PER_CAPITA_EXPENDITURE
+        description: >
+          Settlement Table 3 `[E]`, the ACO's final per capita expenditure
+          ($), as written. Compare with `ACO_EXPENDITURE_PER_CAPITA`
+          (`[Q]`). NULL in an open year.
+
+      - name: SETTLEMENT_TOTAL_SAVINGS
+        description: >
+          Settlement Table 3 `[J]`, total savings ($): benchmark minus
+          expenditures when positive, else 0. NULL in an open year.
+
+      - name: SETTLEMENT_TOTAL_LOSSES
+        description: >
+          Settlement Table 3 `[K]`, total losses ($): benchmark minus
+          expenditures when negative, else 0. NULL in an open year.
+
+      - name: SETTLEMENT_MINIMUM_SAVINGS_RATE
+        description: >
+          Settlement Table 3 `[L]`, the minimum savings rate CMS applied, as
+          written. Compare with `ESTIMATED_MSR` (`[U]`, a proportion). NULL
+          in an open year.
+
+      - name: SETTLEMENT_SAVINGS_OR_LOSSES_REALIZED
+        description: >
+          Settlement Table 3 `[P]`, savings or losses realized, as written
+          (text). CMS's verdict beside the projected `SAVINGS_STATUS`. NULL
+          in an open year.
+
+      - name: SETTLEMENT_FINAL_SHARING_RATE
+        description: >
+          Settlement Table 3 `[CC]`, the final sharing rate, as written.
+          NULL in an open year.
+
+      - name: SETTLEMENT_SHARED_SAVINGS
+        description: >
+          Settlement Table 3 `[EE]`, shared savings ($). NULL in an open
+          year.
+
+      - name: SETTLEMENT_EARNED_PERFORMANCE_PAYMENT
+        description: >
+          Settlement Table 3 `[HH]`, the earned performance payment ($): the
+          lesser of shared savings after sequestration and the cap. NULL in
+          an open year.
+
+      - name: SETTLEMENT_NET_EARNED_PERFORMANCE_PAYMENT
+        description: >
+          Settlement Table 3 `[MM]`, the net earned performance payment ($):
+          `[HH]` less any advance investment payment recouped. NULL in an
+          open year.
+
+      - name: SETTLEMENT_PAYMENT_DUE_TO_CMS
+        description: >
+          Settlement Table 3 `[UU]`, the payment due to CMS ($) for shared
+          losses. NULL in an open year.
+
   - name: fct_projected_benchmark_by_enrollment_type_current
     description: >
       The default read path over `fct_projected_benchmark_by_enrollment_type`:
@@ -678,6 +788,29 @@ models:
         data_tests:
           - not_null
 
+      - name: IS_SETTLED
+        description: >
+          As on the full-grain fact: true when `fct_settlement` has a row
+          for the ACO and year.
+        data_tests:
+          - not_null
+
+      - name: SETTLEMENT_SUBMISSION_ID
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_UPDATED_BENCHMARK
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_BENEFICIARY_PROPORTION
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_PER_CAPITA_EXPENDITURE
+        description: >
+          As on the full-grain fact.
+
   - name: fct_projected_savings_current
     description: >
       The default read path over `fct_projected_savings`: the same figures,
@@ -835,6 +968,61 @@ models:
         data_tests:
           - not_null
 
+      - name: IS_SETTLED
+        description: >
+          As on the full-grain fact: true when `fct_settlement` has a row
+          for the ACO and year.
+        data_tests:
+          - not_null
+
+      - name: SETTLEMENT_SUBMISSION_ID
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_UPDATED_BENCHMARK
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_PER_CAPITA_EXPENDITURE
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_TOTAL_SAVINGS
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_TOTAL_LOSSES
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_MINIMUM_SAVINGS_RATE
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_SAVINGS_OR_LOSSES_REALIZED
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_FINAL_SHARING_RATE
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_SHARED_SAVINGS
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_EARNED_PERFORMANCE_PAYMENT
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_NET_EARNED_PERFORMANCE_PAYMENT
+        description: >
+          As on the full-grain fact.
+
+      - name: SETTLEMENT_PAYMENT_DUE_TO_CMS
+        description: >
+          As on the full-grain fact.
+
 # ---------------------------------------------------------------------------
 # Unit tests
 #
@@ -901,7 +1089,19 @@ unit_tests:
       [K] under (0.67, 0.33) instead of (2/3, 1/3) would be 1.1127500000000001
       and 1.0825 — wrong in the fourth decimal, far outside any rounding.
 
+      The year is settled (TUVA-160), so each row also carries Table 2 [G]
+      and [H] and Table 3 [C] at its own type, beside the projection and
+      without touching it: ESRD 1100, 0.2 and 900; disabled 2200, 0.3 and
+      1800. The aged types' decoy values, and another ACO's settlement of the
+      same year, must not appear.
+
     given:
+
+      - input: ref('fct_settlement')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'S-SUB', UPDATED_BENCHMARK_ESRD: 1100, UPDATED_BENCHMARK_DISABLED: 2200, UPDATED_BENCHMARK_AGED_DUAL: -1, UPDATED_BENCHMARK_AGED_NON_DUAL: -1, UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_ESRD: 0.2, UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_DISABLED: 0.3, UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_AGED_DUAL: -1, UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_AGED_NON_DUAL: -1, PER_CAPITA_EXPENDITURE_ESRD: 900, PER_CAPITA_EXPENDITURE_DISABLED: 1800, PER_CAPITA_EXPENDITURE_AGED_DUAL: -1, PER_CAPITA_EXPENDITURE_AGED_NON_DUAL: -1}
+          # Decoy: another ACO's settlement of the same year.
+          - {ACO_ID: 'OTHER-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'S-OTHER', UPDATED_BENCHMARK_ESRD: -1, UPDATED_BENCHMARK_DISABLED: -1, UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_ESRD: -1, UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_DISABLED: -1, PER_CAPITA_EXPENDITURE_ESRD: -1, PER_CAPITA_EXPENDITURE_DISABLED: -1}
 
       - input: ref('mssp_enrollment_type')
         rows:
@@ -985,6 +1185,11 @@ unit_tests:
           ENROLLMENT_PROPORTION: 0.15
           ACPT_PERFORMANCE_YEAR_LABEL: 'PY2'
           IS_CALCULABLE: true
+          IS_SETTLED: true
+          SETTLEMENT_SUBMISSION_ID: 'S-SUB'
+          SETTLEMENT_UPDATED_BENCHMARK: 1100
+          SETTLEMENT_BENEFICIARY_PROPORTION: 0.2
+          SETTLEMENT_PER_CAPITA_EXPENDITURE: 900
         - ENROLLMENT_TYPE: 'disabled'
           NATIONAL_BASE_EXPENDITURE_PER_CAPITA: 400
           NATIONAL_CURRENT_EXPENDITURE_PER_CAPITA: 440
@@ -998,6 +1203,11 @@ unit_tests:
           ENROLLMENT_PROPORTION: 0.25
           ACPT_PERFORMANCE_YEAR_LABEL: 'PY2'
           IS_CALCULABLE: true
+          IS_SETTLED: true
+          SETTLEMENT_SUBMISSION_ID: 'S-SUB'
+          SETTLEMENT_UPDATED_BENCHMARK: 2200
+          SETTLEMENT_BENEFICIARY_PROPORTION: 0.3
+          SETTLEMENT_PER_CAPITA_EXPENDITURE: 1800
 
   - name: test_mean_benchmark_savings_and_verdicts
     model: fct_projected_savings
@@ -1054,6 +1264,9 @@ unit_tests:
       that appear, not the ones that should have.
 
     given:
+
+      - input: ref('fct_settlement')
+        rows: []
 
       - input: ref('fct_projected_benchmark_by_enrollment_type')
         rows:
@@ -1161,6 +1374,9 @@ unit_tests:
 
     given:
 
+      - input: ref('fct_settlement')
+        rows: []
+
       - input: ref('fct_projected_benchmark_by_enrollment_type')
         rows:
           - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q1', QUARTER_NUM: 1, BENCHMARK_SUBMISSION_ID: 'B-SUB', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-1', ANNUAL_EXPENDITURE_BENCHMARK_YEAR: 1999, ANNUAL_EXPENDITURE_SUBMISSION_ID: 'B-SUB', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: false, ENROLLMENT_TYPE: 'esrd',          ENROLLMENT_PROPORTION: 0.1, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 1000}
@@ -1205,6 +1421,60 @@ unit_tests:
           MSR_BASIS_APPLIED: 'fixed'
           ESTIMATED_MSR: 0.015
           IS_AGREEMENT_DEFAULTED: false
+
+  - name: test_settled_year_sits_beside_the_projection
+    model: fct_projected_savings
+    description: >
+      TUVA-160. Two performance years with the same projection, [P] 3000 and
+      [Q] 2700, so [R] 0.1 over an [U] of 0.087: above_msr in both.
+
+      2000 is settled: fct_settlement has a row for the ACO and year, so
+      IS_SETTLED is true and the row carries CMS's final figures beside the
+      projection, copied as written, the text [P] included. The projection
+      columns are the same as 2001's: the settlement replaces nothing.
+
+      2001 is open. The only 2001 settlement belongs to another ACO, so
+      IS_SETTLED is false and every settlement column is NULL.
+
+    given:
+
+      - input: ref('fct_settlement')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'S-SUB-2000', UPDATED_BENCHMARK: 3100, PER_CAPITA_EXPENDITURE: 2650, TOTAL_SAVINGS: 450000, TOTAL_LOSSES: 0, MINIMUM_SAVINGS_RATE: 0.02, SAVINGS_OR_LOSSES_REALIZED: 'Savings', FINAL_SHARING_RATE: 0.5, SHARED_SAVINGS: 225000, EARNED_PERFORMANCE_PAYMENT: 220500, NET_EARNED_PERFORMANCE_PAYMENT: 220500, PAYMENT_DUE_TO_CMS: 0}
+          # Decoy: another ACO's settlement of the open year.
+          - {ACO_ID: 'OTHER-ACO', PERFORMANCE_YEAR: 2001, SUBMISSION_ID: 'S-OTHER', UPDATED_BENCHMARK: -1, PER_CAPITA_EXPENDITURE: -1, TOTAL_SAVINGS: -1, TOTAL_LOSSES: -1, MINIMUM_SAVINGS_RATE: -1, SAVINGS_OR_LOSSES_REALIZED: 'Losses', FINAL_SHARING_RATE: -1, SHARED_SAVINGS: -1, EARNED_PERFORMANCE_PAYMENT: -1, NET_EARNED_PERFORMANCE_PAYMENT: -1, PAYMENT_DUE_TO_CMS: -1}
+
+      - input: ref('fct_projected_benchmark_by_enrollment_type')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B-SUB-2000', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2000', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'esrd', ENROLLMENT_PROPORTION: 0.1, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 1000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B-SUB-2000', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2000', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'disabled', ENROLLMENT_PROPORTION: 0.2, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B-SUB-2000', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2000', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'aged_dual', ENROLLMENT_PROPORTION: 0.3, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 3000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B-SUB-2000', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2000', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_PROPORTION: 0.4, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 4000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2001, PERIOD: '2001Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B-SUB-2001', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2001', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'esrd', ENROLLMENT_PROPORTION: 0.1, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 1000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2001, PERIOD: '2001Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B-SUB-2001', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2001', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'disabled', ENROLLMENT_PROPORTION: 0.2, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 2000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2001, PERIOD: '2001Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B-SUB-2001', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2001', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'aged_dual', ENROLLMENT_PROPORTION: 0.3, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 3000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2001, PERIOD: '2001Q4', QUARTER_NUM: 4, BENCHMARK_SUBMISSION_ID: 'B-SUB-2001', IS_LATEST_BENCHMARK_SUBMISSION: true, QUARTERLY_SUBMISSION_ID: 'Q-SUB-2001', ACPT_PERFORMANCE_YEAR_LABEL: 'PY1', IS_AGREEMENT_DEFAULTED: true, ENROLLMENT_TYPE: 'aged_non_dual', ENROLLMENT_PROPORTION: 0.4, PROJECTED_UPDATED_BENCHMARK_EXPENDITURE: 4000}
+
+      - input: ref('int_expenditures_quarterly')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q4', SUBMISSION_ID: 'Q-SUB-2000', METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: 'total', VALUE_NUMERIC: 2700}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, PERIOD: '2000Q4', SUBMISSION_ID: 'Q-SUB-2000', METRIC: 'total_assigned_beneficiaries', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: null, VALUE_NUMERIC: 1000}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2001, PERIOD: '2001Q4', SUBMISSION_ID: 'Q-SUB-2001', METRIC: 'total_expenditures_per_capita', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: 'total', VALUE_NUMERIC: 2700}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2001, PERIOD: '2001Q4', SUBMISSION_ID: 'Q-SUB-2001', METRIC: 'total_assigned_beneficiaries', COLUMN_VARIANT: 'aco_specific', ENROLLMENT_TYPE: null, VALUE_NUMERIC: 1000}
+
+      - input: ref('mssp_aco_agreement')
+        rows: []
+
+      - input: ref('mssp_msr_lookup')
+        rows:
+          - {ASSIGNED_BENEFICIARIES_LOW: null, ASSIGNED_BENEFICIARIES_HIGH: 999,  MSR_AT_LOW: 0.122, MSR_AT_HIGH: 0.122}
+          - {ASSIGNED_BENEFICIARIES_LOW: 1000, ASSIGNED_BENEFICIARIES_HIGH: 2999, MSR_AT_LOW: 0.087, MSR_AT_HIGH: 0.050}
+          - {ASSIGNED_BENEFICIARIES_LOW: 3000, ASSIGNED_BENEFICIARIES_HIGH: null, MSR_AT_LOW: 0.050, MSR_AT_HIGH: 0.050}
+
+    expect:
+      rows:
+        - {PERIOD: '2000Q4', MEAN_PROJECTED_UPDATED_BENCHMARK: 3000.0, PROJECTED_SAVINGS_PERCENTAGE: 0.1, ESTIMATED_MSR: 0.087, SAVINGS_STATUS: 'above_msr', IS_SETTLED: true,  SETTLEMENT_SUBMISSION_ID: 'S-SUB-2000', SETTLEMENT_UPDATED_BENCHMARK: 3100, SETTLEMENT_PER_CAPITA_EXPENDITURE: 2650, SETTLEMENT_TOTAL_SAVINGS: 450000, SETTLEMENT_TOTAL_LOSSES: 0,    SETTLEMENT_MINIMUM_SAVINGS_RATE: 0.02, SETTLEMENT_SAVINGS_OR_LOSSES_REALIZED: 'Savings', SETTLEMENT_FINAL_SHARING_RATE: 0.5,  SETTLEMENT_SHARED_SAVINGS: 225000, SETTLEMENT_EARNED_PERFORMANCE_PAYMENT: 220500, SETTLEMENT_NET_EARNED_PERFORMANCE_PAYMENT: 220500, SETTLEMENT_PAYMENT_DUE_TO_CMS: 0}
+        - {PERIOD: '2001Q4', MEAN_PROJECTED_UPDATED_BENCHMARK: 3000.0, PROJECTED_SAVINGS_PERCENTAGE: 0.1, ESTIMATED_MSR: 0.087, SAVINGS_STATUS: 'above_msr', IS_SETTLED: false, SETTLEMENT_SUBMISSION_ID: null,         SETTLEMENT_UPDATED_BENCHMARK: null, SETTLEMENT_PER_CAPITA_EXPENDITURE: null, SETTLEMENT_TOTAL_SAVINGS: null,   SETTLEMENT_TOTAL_LOSSES: null, SETTLEMENT_MINIMUM_SAVINGS_RATE: null, SETTLEMENT_SAVINGS_OR_LOSSES_REALIZED: null,      SETTLEMENT_FINAL_SHARING_RATE: null, SETTLEMENT_SHARED_SAVINGS: null,   SETTLEMENT_EARNED_PERFORMANCE_PAYMENT: null,   SETTLEMENT_NET_EARNED_PERFORMANCE_PAYMENT: null,   SETTLEMENT_PAYMENT_DUE_TO_CMS: null}
 
   - name: test_current_per_type_keeps_latest_calculable_rows_and_divides_by_twelve
     model: fct_projected_benchmark_by_enrollment_type_current

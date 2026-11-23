@@ -77,6 +77,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `assert_member_month_settlement_agrees_with_aco_settlement`: the member
     fact's settlement [I], and its mean score where it covers every scored
     settlement month, against the ACO fact's.
+- Settled years beside the projection (TUVA-160). Every savings and
+  benchmark fact gains `IS_SETTLED`, true when `fct_settlement` has a row for
+  the ACO and performance year, and `SETTLEMENT_*` columns copied from it,
+  NULL in an open year. The projection columns are unchanged, and an open
+  year's rows are identical to before. The README's "Settled and projected
+  years" records the decision and the columns per fact.
+  - `fct_projected_savings`, `fct_projected_savings_current`,
+    `fact_benchmark_aco_quarter`: `SETTLEMENT_SUBMISSION_ID`,
+    `SETTLEMENT_UPDATED_BENCHMARK`, `SETTLEMENT_PER_CAPITA_EXPENDITURE`,
+    `SETTLEMENT_TOTAL_SAVINGS`, `SETTLEMENT_TOTAL_LOSSES`,
+    `SETTLEMENT_MINIMUM_SAVINGS_RATE`,
+    `SETTLEMENT_SAVINGS_OR_LOSSES_REALIZED`, `SETTLEMENT_FINAL_SHARING_RATE`,
+    `SETTLEMENT_SHARED_SAVINGS`, `SETTLEMENT_EARNED_PERFORMANCE_PAYMENT`,
+    `SETTLEMENT_NET_EARNED_PERFORMANCE_PAYMENT`,
+    `SETTLEMENT_PAYMENT_DUE_TO_CMS`.
+  - `fct_projected_benchmark_by_enrollment_type` and its `_current`
+    version: `SETTLEMENT_SUBMISSION_ID`, and at the row's type
+    `SETTLEMENT_UPDATED_BENCHMARK`, `SETTLEMENT_BENEFICIARY_PROPORTION` and
+    `SETTLEMENT_PER_CAPITA_EXPENDITURE`.
+  - `fact_member_month_benchmark`: `SETTLEMENT_SUBMISSION_ID`,
+    `SETTLEMENT_FLAT_BENCHMARK_PMPM` and
+    `SETTLEMENT_ENROLLMENT_TYPE_BENCHMARK_PMPM`.
+  - `assert_facts_carry_the_settlement_beside_the_projection`: every fact's
+    settlement columns against `fct_settlement`, and NULL in open years.
 - `alr_mbi_to_person` and `enroll_flag_type`: the ALR MBI-to-person
   crosswalk and the EnrollFlag-to-type mapping as macros, shared by
   `int_member_month_risk` and the settlement member-months.

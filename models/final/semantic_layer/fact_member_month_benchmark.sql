@@ -66,6 +66,11 @@
     join is on person and month alone, like the projection's: should two
     settlement MBIs resolve to one person-month, the directly matched MBI,
     then the lowest ACO and MBI, is kept, so the grain holds.
+
+    IS_SETTLED (TUVA-160) is fct_settlement having a row for the row's ACO
+    and year; ACO_ID is the projection's, so a year with no projection is not
+    shown as settled. Beside the flat and type rates sit the settled ones,
+    Table 2 [I] / 12 and the [G] of the month's settlement type / 12.
 -#}
 
 with member_months as (
@@ -298,6 +303,23 @@ settlement as (
 
 ),
 
+-- CMS's settled result for the ACO and year (TUVA-160): one row per ACO
+-- and performance year. Renamed on the way in, so the final select's bare
+-- column names stay unambiguous.
+settled_year as (
+
+    select
+        ACO_ID                                              as SETTLED_ACO_ID,
+        PERFORMANCE_YEAR                                    as SETTLED_PERFORMANCE_YEAR,
+        SUBMISSION_ID                                       as SETTLED_SUBMISSION_ID,
+        UPDATED_BENCHMARK                                   as SETTLED_UPDATED_BENCHMARK
+        {%- for enrollment_type in settlement_enrollment_types() %},
+        UPDATED_BENCHMARK_{{ enrollment_type | upper }}{{ ' ' * (34 - enrollment_type | length) }}as SETTLED_UPDATED_BENCHMARK_{{ enrollment_type | upper }}
+        {%- endfor %}
+    from {{ ref('fct_settlement') }}
+
+),
+
 capped as (
 
     select
@@ -354,9 +376,24 @@ select
     settlement.SETTLEMENT_ENROLLMENT_TYPE                   as SETTLEMENT_ENROLLMENT_TYPE,
     settlement.SETTLEMENT_RISK_SCORE                        as SETTLEMENT_RISK_SCORE,
     settlement.SETTLEMENT_RISK_RATIO                        as SETTLEMENT_RISK_RATIO,
-    settlement.SETTLEMENT_FINAL_RISK_RATIO                  as SETTLEMENT_FINAL_RISK_RATIO
+    settlement.SETTLEMENT_FINAL_RISK_RATIO                  as SETTLEMENT_FINAL_RISK_RATIO,
+
+    {#- CMS's settled benchmark beside the projection's rates (TUVA-160):
+        Table 2 [I] / 12 beside the flat rate, and the [G] of the month's
+        settlement type / 12 beside the type rate. NULL in a year not
+        settled; the type rate is also NULL on a month the settlement
+        population does not cover. -#}
+    settled_year.SETTLED_ACO_ID is not null                 as IS_SETTLED,
+    settled_year.SETTLED_SUBMISSION_ID                      as SETTLEMENT_SUBMISSION_ID,
+    {{ to_double('settled_year.SETTLED_UPDATED_BENCHMARK') }} / {{ to_double(12) }}
+                                                            as SETTLEMENT_FLAT_BENCHMARK_PMPM,
+    {{ to_double(settlement_field_at_type('settled_year', 'SETTLED_UPDATED_BENCHMARK', 'settlement.SETTLEMENT_ENROLLMENT_TYPE')) }}
+        / {{ to_double(12) }}                               as SETTLEMENT_ENROLLMENT_TYPE_BENCHMARK_PMPM
 
 from capped
 left join settlement
     on settlement.PERSON_ID = capped.PERSON_ID
     and settlement.YEAR_MONTH = capped.YEAR_MONTH
+left join settled_year
+    on settled_year.SETTLED_ACO_ID = capped.ACO_ID
+    and settled_year.SETTLED_PERFORMANCE_YEAR = capped.PERFORMANCE_YEAR

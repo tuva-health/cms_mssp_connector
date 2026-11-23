@@ -22,6 +22,12 @@
     reference implementation returns English sentences for [V] and [W] because
     it renders them straight onto a page; a warehouse column that has to be
     string-matched to be used is a worse version of the same fact.
+
+    Settled years (TUVA-160) carry CMS's final result beside the projection:
+    IS_SETTLED where fct_settlement has a row for the ACO and year, and the
+    SETTLEMENT_* columns copied from it (settlement_outcome_columns). The
+    projection's columns are computed exactly as for an open year, whose
+    settlement columns are NULL.
 -#}
 
 with per_enrollment_type as (
@@ -255,59 +261,91 @@ savings as (
 
     from msr
 
+),
+
+projected_savings as (
+
+    select
+        ACO_ID                                              as ACO_ID,
+        PERFORMANCE_YEAR                                    as PERFORMANCE_YEAR,
+        PERIOD                                              as PERIOD,
+        QUARTER_NUM                                         as QUARTER_NUM,
+        BENCHMARK_SUBMISSION_ID                             as BENCHMARK_SUBMISSION_ID,
+        IS_LATEST_BENCHMARK_SUBMISSION                      as IS_LATEST_BENCHMARK_SUBMISSION,
+
+        MEAN_PROJECTED_UPDATED_BENCHMARK                    as MEAN_PROJECTED_UPDATED_BENCHMARK,
+        ACO_EXPENDITURE_PER_CAPITA                          as ACO_EXPENDITURE_PER_CAPITA,
+        PROJECTED_SAVINGS_PERCENTAGE                        as PROJECTED_SAVINGS_PERCENTAGE,
+        ASSIGNED_BENEFICIARIES                              as ASSIGNED_BENEFICIARIES,
+        MSR_TYPE                                            as MSR_TYPE,
+        FIXED_MSR_RATE                                      as FIXED_MSR_RATE,
+        ACO_TRACK                                           as ACO_TRACK,
+        MSR_BASIS_APPLIED                                   as MSR_BASIS_APPLIED,
+        ESTIMATED_MSR                                       as ESTIMATED_MSR,
+
+        {#- [V] Expenditures against the projected updated benchmark. Equality
+            reads as false: two doubles are equal essentially never, and "not
+            below" is the honest reading of it. -#}
+        case
+            when MEAN_PROJECTED_UPDATED_BENCHMARK is null
+                 or ACO_EXPENDITURE_PER_CAPITA is null      then cast(null as {{ dbt.type_boolean() }})
+            else {{ to_double('ACO_EXPENDITURE_PER_CAPITA') }}
+                 < MEAN_PROJECTED_UPDATED_BENCHMARK
+        end                                                 as EXPENDITURES_BELOW_BENCHMARK,
+
+        {#- [W] Savings against the minimum savings rate. -#}
+        case
+            when PROJECTED_SAVINGS_PERCENTAGE is null
+                 or ESTIMATED_MSR is null                   then cast(null as {{ dbt.type_boolean() }})
+            else PROJECTED_SAVINGS_PERCENTAGE > 0
+                 and PROJECTED_SAVINGS_PERCENTAGE > ESTIMATED_MSR
+        end                                                 as SAVINGS_EXCEEDS_MSR,
+
+        case
+            when PROJECTED_SAVINGS_PERCENTAGE is null
+                 or ESTIMATED_MSR is null                   then cast(null as {{ dbt.type_string() }})
+            when PROJECTED_SAVINGS_PERCENTAGE <= 0          then 'no_savings'
+            when PROJECTED_SAVINGS_PERCENTAGE > ESTIMATED_MSR
+                                                            then 'above_msr'
+            else 'below_msr'
+        end                                                 as SAVINGS_STATUS,
+
+        MEAN_PROJECTED_UPDATED_BENCHMARK is not null        as IS_CALCULABLE,
+
+        QUARTERLY_SUBMISSION_ID                             as QUARTERLY_SUBMISSION_ID,
+        ANNUAL_EXPENDITURE_BENCHMARK_YEAR                   as ANNUAL_EXPENDITURE_BENCHMARK_YEAR,
+        ANNUAL_EXPENDITURE_SUBMISSION_ID                    as ANNUAL_EXPENDITURE_SUBMISSION_ID,
+        ACPT_PERFORMANCE_YEAR_LABEL                         as ACPT_PERFORMANCE_YEAR_LABEL,
+        IS_AGREEMENT_DEFAULTED                              as IS_AGREEMENT_DEFAULTED
+
+    from savings
+
+),
+
+{#- CMS's settled result for the year (TUVA-160), beside the projection: one
+    row per ACO and performance year, so the join keeps the grain. -#}
+settlement as (
+
+    select
+        ACO_ID,
+        PERFORMANCE_YEAR
+        {%- for field, column in settlement_outcome_columns() %},
+        {{ field }}
+        {%- endfor %}
+    from {{ ref('fct_settlement') }}
+
 )
 
 select
-    ACO_ID                                              as ACO_ID,
-    PERFORMANCE_YEAR                                    as PERFORMANCE_YEAR,
-    PERIOD                                              as PERIOD,
-    QUARTER_NUM                                         as QUARTER_NUM,
-    BENCHMARK_SUBMISSION_ID                             as BENCHMARK_SUBMISSION_ID,
-    IS_LATEST_BENCHMARK_SUBMISSION                      as IS_LATEST_BENCHMARK_SUBMISSION,
+    projected_savings.*,
 
-    MEAN_PROJECTED_UPDATED_BENCHMARK                    as MEAN_PROJECTED_UPDATED_BENCHMARK,
-    ACO_EXPENDITURE_PER_CAPITA                          as ACO_EXPENDITURE_PER_CAPITA,
-    PROJECTED_SAVINGS_PERCENTAGE                        as PROJECTED_SAVINGS_PERCENTAGE,
-    ASSIGNED_BENEFICIARIES                              as ASSIGNED_BENEFICIARIES,
-    MSR_TYPE                                            as MSR_TYPE,
-    FIXED_MSR_RATE                                      as FIXED_MSR_RATE,
-    ACO_TRACK                                           as ACO_TRACK,
-    MSR_BASIS_APPLIED                                   as MSR_BASIS_APPLIED,
-    ESTIMATED_MSR                                       as ESTIMATED_MSR,
+    settlement.ACO_ID is not null                       as IS_SETTLED
+    {%- for field, column in settlement_outcome_columns() %},
+    settlement.{{ field }}{{ ' ' * (35 - field | length) }}as {{ column }}
+    {%- endfor %}
 
-    {#- [V] Expenditures against the projected updated benchmark. Equality
-        reads as false: two doubles are equal essentially never, and "not
-        below" is the honest reading of it. -#}
-    case
-        when MEAN_PROJECTED_UPDATED_BENCHMARK is null
-             or ACO_EXPENDITURE_PER_CAPITA is null      then cast(null as {{ dbt.type_boolean() }})
-        else {{ to_double('ACO_EXPENDITURE_PER_CAPITA') }}
-             < MEAN_PROJECTED_UPDATED_BENCHMARK
-    end                                                 as EXPENDITURES_BELOW_BENCHMARK,
+from projected_savings
 
-    {#- [W] Savings against the minimum savings rate. -#}
-    case
-        when PROJECTED_SAVINGS_PERCENTAGE is null
-             or ESTIMATED_MSR is null                   then cast(null as {{ dbt.type_boolean() }})
-        else PROJECTED_SAVINGS_PERCENTAGE > 0
-             and PROJECTED_SAVINGS_PERCENTAGE > ESTIMATED_MSR
-    end                                                 as SAVINGS_EXCEEDS_MSR,
-
-    case
-        when PROJECTED_SAVINGS_PERCENTAGE is null
-             or ESTIMATED_MSR is null                   then cast(null as {{ dbt.type_string() }})
-        when PROJECTED_SAVINGS_PERCENTAGE <= 0          then 'no_savings'
-        when PROJECTED_SAVINGS_PERCENTAGE > ESTIMATED_MSR
-                                                        then 'above_msr'
-        else 'below_msr'
-    end                                                 as SAVINGS_STATUS,
-
-    MEAN_PROJECTED_UPDATED_BENCHMARK is not null        as IS_CALCULABLE,
-
-    QUARTERLY_SUBMISSION_ID                             as QUARTERLY_SUBMISSION_ID,
-    ANNUAL_EXPENDITURE_BENCHMARK_YEAR                   as ANNUAL_EXPENDITURE_BENCHMARK_YEAR,
-    ANNUAL_EXPENDITURE_SUBMISSION_ID                    as ANNUAL_EXPENDITURE_SUBMISSION_ID,
-    ACPT_PERFORMANCE_YEAR_LABEL                         as ACPT_PERFORMANCE_YEAR_LABEL,
-    IS_AGREEMENT_DEFAULTED                              as IS_AGREEMENT_DEFAULTED
-
-from savings
+left join settlement
+    on settlement.ACO_ID = projected_savings.ACO_ID
+   and settlement.PERFORMANCE_YEAR = projected_savings.PERFORMANCE_YEAR

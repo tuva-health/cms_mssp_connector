@@ -91,6 +91,10 @@
     to reach into that model; assert_aco_quarter_projection_agrees_with_
     member_fact holds the two together.
 
+    IS_SETTLED and the settlement outcome columns (TUVA-160) come through
+    from fct_projected_savings_current as they are, the same on every quarter
+    row of a settled year.
+
     All arithmetic goes through to_double and safe_divide; see the macros.
 -#}
 
@@ -135,6 +139,10 @@ with projections as (
         ANNUAL_EXPENDITURE_SUBMISSION_ID,
         ACPT_PERFORMANCE_YEAR_LABEL,
         IS_AGREEMENT_DEFAULTED,
+        IS_SETTLED,
+        {%- for field, column in settlement_outcome_columns() %}
+        {{ column }},
+        {%- endfor %}
 
         {#- the member fact's rule: latest quarter of the year, lowest ACO on ties -#}
         row_number() over (
@@ -631,7 +639,15 @@ select
     case settlement_ratios.SETTLEMENT_CAP_BINDING_FLAG
         when 1 then true
         when 0 then false
-    end                                                     as SETTLEMENT_IS_CAP_BINDING
+    end                                                     as SETTLEMENT_IS_CAP_BINDING,
+
+    {#- CMS's settled result (TUVA-160), from fct_settlement through
+        fct_projected_savings_current: the same on every quarter row of a
+        settled year, IS_SETTLED false and NULL for a year not settled -#}
+    projections.IS_SETTLED                                  as IS_SETTLED
+    {%- for field, column in settlement_outcome_columns() %},
+    projections.{{ column }}{{ ' ' * (44 - column | length) }}as {{ column }}
+    {%- endfor %}
 
 from projections
 

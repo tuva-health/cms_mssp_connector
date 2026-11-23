@@ -505,6 +505,77 @@ models:
       - name: SETTLEMENT_IS_CAP_BINDING
         description: True when the weighted-average [D] exceeds [H].
 
+      - name: IS_SETTLED
+        description: >
+          True when `fct_settlement` has a row for the ACO and performance
+          year: CMS has settled the year, and the `SETTLEMENT_*` columns
+          carry its final figures beside the projection, which is unchanged.
+          False for an open year, whose `SETTLEMENT_*` columns are all NULL.
+          See the README, "Settled and projected years". The same on every
+          quarter row of the year.
+        data_tests:
+          - not_null
+
+      - name: SETTLEMENT_SUBMISSION_ID
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_UPDATED_BENCHMARK
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_PER_CAPITA_EXPENDITURE
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_TOTAL_SAVINGS
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_TOTAL_LOSSES
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_MINIMUM_SAVINGS_RATE
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_SAVINGS_OR_LOSSES_REALIZED
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_FINAL_SHARING_RATE
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_SHARED_SAVINGS
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_EARNED_PERFORMANCE_PAYMENT
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_NET_EARNED_PERFORMANCE_PAYMENT
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_PAYMENT_DUE_TO_CMS
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:

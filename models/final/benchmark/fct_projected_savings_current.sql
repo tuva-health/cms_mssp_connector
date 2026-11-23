@@ -66,6 +66,12 @@ select
     ANNUAL_EXPENDITURE_BENCHMARK_YEAR                   as ANNUAL_EXPENDITURE_BENCHMARK_YEAR,
     ANNUAL_EXPENDITURE_SUBMISSION_ID                    as ANNUAL_EXPENDITURE_SUBMISSION_ID,
     ACPT_PERFORMANCE_YEAR_LABEL                         as ACPT_PERFORMANCE_YEAR_LABEL,
-    IS_AGREEMENT_DEFAULTED                              as IS_AGREEMENT_DEFAULTED
+    IS_AGREEMENT_DEFAULTED                              as IS_AGREEMENT_DEFAULTED,
+
+    {#- the settlement beside the projection (TUVA-160), as on the full-grain fact -#}
+    IS_SETTLED                                          as IS_SETTLED
+    {%- for field, column in settlement_outcome_columns() %},
+    {{ column }}{{ ' ' * (52 - column | length) }}as {{ column }}
+    {%- endfor %}
 
 from projected_savings
