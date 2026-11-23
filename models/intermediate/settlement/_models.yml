@@ -4,14 +4,14 @@ models:
 
   - name: int_settlement_values
     description: >
-      The final settlement (STLMT) workbook's Table 2, Table 3 and Table A1,
-      typed and stacked: one row per cell in a lettered section, for every
-      delivery. `fct_settlement` reads the preferred delivery from here.
+      The final settlement (STLMT) workbook's Tables 1, 2, 3, A1 and A2,
+      typed and stacked: one row per cell, for every delivery, each mapped to
+      the settlement field it is (`FACT`, `FIELD_NAME`). The settlement facts
+      read the preferred delivery from here.
 
-      Values are found by labels, never by position: `TABLE_CODE`,
-      `SECTION_CODE`, `ENROLLMENT_TYPE` (from the row label) and
-      `COLUMN_PERIOD` (from the column label). The sheet layouts are not yet
-      checked against a delivered workbook (TUVA-158).
+      A cell is found by its labels, never its position: `TABLE_CODE`,
+      `SECTION_KEY`, `ROW_KIND`, `ENROLLMENT_TYPE` and `COLUMN_KEY`, matched
+      against `settlement_field_map()` in `macros/settlement_fields.sql`.
 
     config:
       schema: _int_input_layer
@@ -25,6 +25,18 @@ models:
               - ROW_NUM
               - COLUMN_GROUP_LABEL
               - COLUMN_LABEL
+
+      # One cell per field per workbook, so the facts' max() never picks
+      # between two values.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - FILE_PATH
+              - FACT
+              - FIELD_NAME
+              - ENROLLMENT_TYPE
+          config:
+            where: "FIELD_NAME is not null"
 
     columns:
       - name: ACO_ID
@@ -69,20 +81,28 @@ models:
           - not_null
 
       - name: TABLE_CODE
-        description: "`2`, `3` or `A1`: the settlement sheet the cell came from."
+        description: "`1`, `2`, `3`, `A1` or `A2`: the settlement sheet the cell came from."
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['2', '3', 'A1']
+                values: ['1', '2', '3', 'A1', 'A2']
+
+      - name: BLOCK_LABEL
+        description: Table A2's block title, verbatim; NULL on the other sheets.
 
       - name: GROUP_LABEL
         description: Nearest unbracketed heading above the row, such as Table 3's step headings.
 
       - name: SECTION_CODE
-        description: "The `[X]` code on the section heading, brackets stripped: `I`, `P`, `BB`."
-        data_tests:
-          - not_null
+        description: "The `[X]` code on the section heading, brackets stripped: `I`, `P`, `BB`, `A2`. NULL on Tables A1 and A2."
+
+      - name: SECTION_KEY
+        description: >
+          What the field map matches the row's section on: `SECTION_CODE`;
+          on Table A2, which has no codes, its block, `CMS_HCC` or
+          `DEMOGRAPHIC`, from `BLOCK_LABEL`. NULL on Table A1, whose letters
+          label its columns.
 
       - name: SECTION_LABEL
         description: Section heading text, verbatim.
@@ -92,42 +112,75 @@ models:
         data_tests:
           - not_null
 
+      - name: ROW_KIND
+        description: "`CODE`, `DETAIL` or `TOTAL`, as the pipeline writes it (see `stg_stlmt_table_2`)."
+        data_tests:
+          - not_null
+
       - name: ENROLLMENT_TYPE
         description: >
-          The row's enrollment type from `mssp_enrollment_type` (`esrd`,
-          `disabled`, `aged_dual`, `aged_non_dual`). `total` for the lettered
-          row's own value, whose row label is the section label. `unmapped`
-          for any other row in the section, which `fct_settlement` does not
-          read.
+          On a `DETAIL` row, the row's enrollment type from
+          `mssp_enrollment_type` (`esrd`, `disabled`, `aged_dual`,
+          `aged_non_dual`), `weighted_average` for Table A1's Weighted
+          Average row, and `unmapped` for any other label. `total` on a
+          `CODE` or `TOTAL` row: the ACO's own value.
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual', 'aged_disabled', 'total', 'unmapped']
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual', 'aged_disabled', 'weighted_average', 'total', 'unmapped']
 
       - name: COLUMN_GROUP_LABEL
         description: Outer label of a two-row column header; NULL on a single header.
+
+      - name: COLUMN_CODE
+        description: Table A1's column letter, `A`-`I`; NULL on the other sheets.
 
       - name: COLUMN_LABEL
         description: Source column header, verbatim.
         data_tests:
           - not_null
 
-      - name: COLUMN_PERIOD
+      - name: COLUMN_KEY
         description: >
-          `BY3` or `PY` (`Performance Year`) from the column label. NULL for
-          any other column, such as Table 3's `Result`.
+          What the field map matches the column on: Table A1's letter
+          (`COLUMN_CODE`); elsewhere the period from the label, `BY1`, `BY2`,
+          `BY3`, `PY` (`PY` or `Performance Year`), `BENCHMARK_PERIOD`
+          (Table 2's `Benchmark Period`) or `BENCHMARK` (Table 1's
+          `Benchmark`). NULL for any other label.
+
+      - name: FACT
+        description: >
+          The settlement fact that reads this cell: `settlement`
+          (`fct_settlement`), `risk` (`fct_settlement_risk`),
+          `historical_benchmark` (`fct_settlement_historical_benchmark`) or
+          `renormalization` (`fct_settlement_renormalization`). NULL on a
+          cell no fact reads.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['settlement', 'risk', 'historical_benchmark', 'renormalization']
+
+      - name: FIELD_NAME
+        description: >
+          The fact column this cell fills. On `fct_settlement` a per-type
+          field carries its type, `<field>_<TYPE>`. NULL on a cell no fact
+          reads.
+
+      - name: FIELD_KIND
+        description: "`numeric` (the fact reads `VALUE_NUMERIC`) or `text` (`VALUE_TEXT`, as written)."
 
       - name: VALUE_TEXT
-        description: The cell verbatim. `fct_settlement` keeps text results such as `N/A` as text.
+        description: The cell verbatim. Y/N flags and results stay text.
 
       - name: VALUE_NUMERIC
-        description: The cell as a number, thousands separators removed; NULL when not a number.
+        description: The cell as a number, thousands separators removed and E-notation read; NULL when not a number.
 
       - name: IS_PLACEHOLDER
         description: >
-          True for an empty cell or CMS's `-`. `N/A` is not a placeholder: on
-          Table 3 `[P]` it is the result.
+          True for a cell CMS left blank: empty, or a dash (the en dash
+          U+2013 CMS writes, or a hyphen). A fact reads it as NULL. Y/N and
+          other text are values.
         data_tests:
           - not_null
 
@@ -158,11 +211,6 @@ unit_tests:
       the embargo flag, not the stamp, decides. A second ACO has only the
       embargoed copy, which must still rank first: the fallback.
 
-      A row outside any lettered section is dropped. The lettered row's own
-      value maps to `total`, a per-type row to its type, and an unknown row
-      to `unmapped`. `BY3` and `Performance Year` columns map to periods,
-      `Result` to none. `-` is a placeholder, `N/A` is not.
-
     given:
 
       - input: ref('mssp_enrollment_type')
@@ -171,29 +219,98 @@ unit_tests:
 
       - input: ref('stg_stlmt_table_2')
         rows:
-          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T0000000', IS_EMBARGOED: true,  FILE_PATH: 'e.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', SECTION_LABEL: 'Updated Benchmark ($)', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100', VALUE_NUMERIC: 100}
-          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T1111111', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', SECTION_LABEL: 'Updated Benchmark ($)', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100', VALUE_NUMERIC: 100}
-          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T9999999', IS_EMBARGOED: null,  FILE_PATH: 'x.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', SECTION_LABEL: 'Updated Benchmark ($)', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100', VALUE_NUMERIC: 100}
-          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T1111111', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', ROW_NUM: 3, SECTION_CODE: 'H', SECTION_LABEL: 'Updated Expenditure', ROW_LABEL: 'ESRD',                  COLUMN_LABEL: 'BY3',              VALUE_TEXT: '-',   VALUE_NUMERIC: null}
-          # Outside any lettered section: dropped.
-          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T1111111', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', ROW_NUM: 1, SECTION_CODE: null, SECTION_LABEL: null, ROW_LABEL: 'Table of Contents', COLUMN_LABEL: 'BY3', VALUE_TEXT: null, VALUE_NUMERIC: null}
-          # Only the embargoed copy for this ACO.
-          - {ACO_ID: 'OTHER-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T0000000', IS_EMBARGOED: true, FILE_PATH: 'o.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', SECTION_LABEL: 'Updated Benchmark ($)', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100', VALUE_NUMERIC: 100}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T0000000', IS_EMBARGOED: true,  FILE_PATH: 'e.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', ROW_KIND: 'CODE', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T1111111', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', ROW_KIND: 'CODE', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T9999999', IS_EMBARGOED: null,  FILE_PATH: 'x.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', ROW_KIND: 'CODE', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100'}
+          - {ACO_ID: 'OTHER-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T0000000', IS_EMBARGOED: true, FILE_PATH: 'o.xlsx', ROW_NUM: 5, SECTION_CODE: 'I', ROW_KIND: 'CODE', ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '100'}
 
+      - input: ref('stg_stlmt_table_1')
+        rows: []
       - input: ref('stg_stlmt_table_3')
-        rows:
-          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T1111111', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', ROW_NUM: 7, SECTION_CODE: 'P', SECTION_LABEL: 'Savings Realized', ROW_LABEL: 'Savings Realized', COLUMN_LABEL: 'Result', VALUE_TEXT: 'N/A', VALUE_NUMERIC: null}
-          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.D009999.T1111111', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', ROW_NUM: 8, SECTION_CODE: 'P', SECTION_LABEL: 'Savings Realized', ROW_LABEL: 'Some Other Row',   COLUMN_LABEL: 'Result', VALUE_TEXT: 'x',   VALUE_NUMERIC: null}
-
+        rows: []
       - input: ref('stg_stlmt_table_a1')
+        rows: []
+      - input: ref('stg_stlmt_table_a2')
         rows: []
 
     expect:
       rows:
-        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T0000000', TABLE_CODE: '2', SECTION_CODE: 'I', ENROLLMENT_TYPE: 'total',    COLUMN_PERIOD: 'PY',  IS_PLACEHOLDER: false, SUBMISSION_RANK: 3, IS_PREFERRED_SUBMISSION: false}
-        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T1111111', TABLE_CODE: '2', SECTION_CODE: 'I', ENROLLMENT_TYPE: 'total',    COLUMN_PERIOD: 'PY',  IS_PLACEHOLDER: false, SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}
-        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T9999999', TABLE_CODE: '2', SECTION_CODE: 'I', ENROLLMENT_TYPE: 'total',    COLUMN_PERIOD: 'PY',  IS_PLACEHOLDER: false, SUBMISSION_RANK: 2, IS_PREFERRED_SUBMISSION: false}
-        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T1111111', TABLE_CODE: '2', SECTION_CODE: 'H', ENROLLMENT_TYPE: 'esrd',     COLUMN_PERIOD: 'BY3', IS_PLACEHOLDER: true,  SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}
-        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T1111111', TABLE_CODE: '3', SECTION_CODE: 'P', ENROLLMENT_TYPE: 'total',    COLUMN_PERIOD: null,  IS_PLACEHOLDER: false, SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}
-        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T1111111', TABLE_CODE: '3', SECTION_CODE: 'P', ENROLLMENT_TYPE: 'unmapped', COLUMN_PERIOD: null,  IS_PLACEHOLDER: false, SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}
-        - {ACO_ID: 'OTHER-ACO', SUBMISSION_ID: 'STLMT.D009999.T0000000', TABLE_CODE: '2', SECTION_CODE: 'I', ENROLLMENT_TYPE: 'total',    COLUMN_PERIOD: 'PY',  IS_PLACEHOLDER: false, SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}
+        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T0000000', SUBMISSION_RANK: 3, IS_PREFERRED_SUBMISSION: false}
+        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T1111111', SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}
+        - {ACO_ID: 'TEST-ACO',  SUBMISSION_ID: 'STLMT.D009999.T9999999', SUBMISSION_RANK: 2, IS_PREFERRED_SUBMISSION: false}
+        - {ACO_ID: 'OTHER-ACO', SUBMISSION_ID: 'STLMT.D009999.T0000000', SUBMISSION_RANK: 1, IS_PREFERRED_SUBMISSION: true}
+
+  - name: test_settlement_cells_map_to_fields_by_their_labels
+    model: int_settlement_values
+    description: >
+      Each cell maps to its field by section, row kind, enrollment type and
+      column, in the real layout: Table 2 `[A]` reads `Benchmark Period` for
+      the types and its `TOTAL` row, `[B]` both columns (BY3 and PY), `[I]`
+      the `CODE` row's `Performance Year`; Table 3 `[C]` per type and
+      `[BB]` as text; Table A1 by column letter, its Weighted Average row
+      included; Table A2 by block title; Table 1 `[L]` in `Benchmark`. A
+      cell in a column the map does not expect (Table 2 `[C]`'s `Benchmark
+      Period`), an unknown type label and Table 1's single-valued `[I]` map
+      to no field. The en dash, a hyphen and an empty cell are
+      placeholders; `N` is not.
+
+    given:
+
+      - input: ref('mssp_enrollment_type')
+        rows:
+          - {ROW_LABEL_UPPER: 'ESRD',     ENROLLMENT_TYPE: 'esrd',     ENROLLMENT_TYPE_LABEL: 'ESRD',     ENROLLMENT_TYPE_SORT: 1}
+          - {ROW_LABEL_UPPER: 'DISABLED', ENROLLMENT_TYPE: 'disabled', ENROLLMENT_TYPE_LABEL: 'Disabled', ENROLLMENT_TYPE_SORT: 2}
+
+      - input: ref('stg_stlmt_table_2')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 6,  SECTION_CODE: 'A', ROW_KIND: 'DETAIL', ROW_LABEL: 'ESRD',              COLUMN_LABEL: 'Benchmark Period', VALUE_TEXT: '900'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 6,  SECTION_CODE: 'A', ROW_KIND: 'DETAIL', ROW_LABEL: 'ESRD',              COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '–'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 10, SECTION_CODE: 'A', ROW_KIND: 'TOTAL',  ROW_LABEL: 'Historical Benchmark Expenditures After Applying Adjustment', COLUMN_LABEL: 'Benchmark Period', VALUE_TEXT: '950'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 12, SECTION_CODE: 'B', ROW_KIND: 'DETAIL', ROW_LABEL: 'Disabled',          COLUMN_LABEL: 'Benchmark Period', VALUE_TEXT: '0.9'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 12, SECTION_CODE: 'B', ROW_KIND: 'DETAIL', ROW_LABEL: 'Disabled',          COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '0.95'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 16, SECTION_CODE: 'C', ROW_KIND: 'DETAIL', ROW_LABEL: 'ESRD',              COLUMN_LABEL: 'Benchmark Period', VALUE_TEXT: '7'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 17, SECTION_CODE: 'C', ROW_KIND: 'DETAIL', ROW_LABEL: 'Aged/Unknown',      COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '1'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 40, SECTION_CODE: 'I', ROW_KIND: 'CODE',   ROW_LABEL: 'Updated Benchmark ($)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '1000'}
+
+      - input: ref('stg_stlmt_table_3')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 7,  SECTION_CODE: 'C',  ROW_KIND: 'DETAIL', ROW_LABEL: 'ESRD', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '80'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 33, SECTION_CODE: 'BB', ROW_KIND: 'CODE',   ROW_LABEL: 'ACO Met Criteria for Opportunities for Low Revenue ACOs to Share in Savings (Y/N)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: 'N'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 34, SECTION_CODE: 'DD', ROW_KIND: 'CODE',   ROW_LABEL: 'Shared Loss Rate (%)', COLUMN_LABEL: 'Performance Year', VALUE_TEXT: '-'}
+
+      - input: ref('stg_stlmt_table_a1')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 5, SECTION_CODE: null, ROW_KIND: 'DETAIL', ROW_LABEL: 'ESRD',              COLUMN_CODE: 'I', COLUMN_LABEL: 'Final Risk Ratio (Capped)',     VALUE_TEXT: '1.01'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 9, SECTION_CODE: null, ROW_KIND: 'DETAIL', ROW_LABEL: 'Weighted Average ', COLUMN_CODE: 'D', COLUMN_LABEL: 'CMS-HCC Risk Ratio (Uncapped)', VALUE_TEXT: '1.02'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 9, SECTION_CODE: null, ROW_KIND: 'DETAIL', ROW_LABEL: 'Weighted Average ', COLUMN_CODE: 'A', COLUMN_LABEL: 'Risk Score Weights',            VALUE_TEXT: null}
+
+      - input: ref('stg_stlmt_table_a2')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 6,  BLOCK_LABEL: 'National Assignable Fee for Service Mean CMS-HCC Risk Scores Used to Renormalize CMS-HCC Risk Scores',         ROW_KIND: 'DETAIL', ROW_LABEL: 'ESRD', COLUMN_LABEL: 'BY1', VALUE_TEXT: '1.05'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 13, BLOCK_LABEL: 'National Assignable Fee for Service Mean Demographic Risk Scores Used to Renormalize Demographic Risk Scores', ROW_KIND: 'DETAIL', ROW_LABEL: 'ESRD', COLUMN_LABEL: 'PY',  VALUE_TEXT: '1.04'}
+
+      - input: ref('stg_stlmt_table_1')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 60, SECTION_CODE: 'L', ROW_KIND: 'DETAIL', ROW_LABEL: 'ESRD',          COLUMN_LABEL: 'Benchmark', VALUE_TEXT: '900'}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, FILE_PATH: 'u.xlsx', ROW_NUM: 50, SECTION_CODE: 'I', ROW_KIND: 'CODE',   ROW_LABEL: 'Historical Benchmark Before Regional Adjustment', COLUMN_LABEL: 'Benchmark', VALUE_TEXT: '950'}
+
+    expect:
+      rows:
+        - {TABLE_CODE: '2',  SECTION_KEY: 'A',           ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'esrd',             COLUMN_KEY: 'BENCHMARK_PERIOD', FACT: 'settlement',           FIELD_NAME: 'HISTORICAL_BENCHMARK_ESRD',               FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
+        - {TABLE_CODE: '2',  SECTION_KEY: 'A',           ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'esrd',             COLUMN_KEY: 'PY',               FACT: null,                   FIELD_NAME: null,                                      FIELD_KIND: null,      IS_PLACEHOLDER: true}
+        - {TABLE_CODE: '2',  SECTION_KEY: 'A',           ROW_KIND: 'TOTAL',  ENROLLMENT_TYPE: 'total',            COLUMN_KEY: 'BENCHMARK_PERIOD', FACT: 'settlement',           FIELD_NAME: 'HISTORICAL_BENCHMARK',                    FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
+        - {TABLE_CODE: '2',  SECTION_KEY: 'B',           ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'disabled',         COLUMN_KEY: 'BENCHMARK_PERIOD', FACT: 'settlement',           FIELD_NAME: 'BY3_CMS_HCC_RISK_SCORE_DISABLED',         FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
+        - {TABLE_CODE: '2',  SECTION_KEY: 'B',           ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'disabled',         COLUMN_KEY: 'PY',               FACT: 'settlement',           FIELD_NAME: 'PY_CMS_HCC_RISK_SCORE_DISABLED',          FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
+        - {TABLE_CODE: '2',  SECTION_KEY: 'C',           ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'esrd',             COLUMN_KEY: 'BENCHMARK_PERIOD', FACT: null,                   FIELD_NAME: null,                                      FIELD_KIND: null,      IS_PLACEHOLDER: false}
+        - {TABLE_CODE: '2',  SECTION_KEY: 'C',           ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'unmapped',         COLUMN_KEY: 'PY',               FACT: null,                   FIELD_NAME: null,                                      FIELD_KIND: null,      IS_PLACEHOLDER: false}
+        - {TABLE_CODE: '2',  SECTION_KEY: 'I',           ROW_KIND: 'CODE',   ENROLLMENT_TYPE: 'total',            COLUMN_KEY: 'PY',               FACT: 'settlement',           FIELD_NAME: 'UPDATED_BENCHMARK',                       FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
+        - {TABLE_CODE: '3',  SECTION_KEY: 'C',           ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'esrd',             COLUMN_KEY: 'PY',               FACT: 'settlement',           FIELD_NAME: 'PER_CAPITA_EXPENDITURE_ESRD',             FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
+        - {TABLE_CODE: '3',  SECTION_KEY: 'BB',          ROW_KIND: 'CODE',   ENROLLMENT_TYPE: 'total',            COLUMN_KEY: 'PY',               FACT: 'settlement',           FIELD_NAME: 'MET_LOW_REVENUE_SHARING_CRITERIA',        FIELD_KIND: 'text',    IS_PLACEHOLDER: false}
+        - {TABLE_CODE: '3',  SECTION_KEY: 'DD',          ROW_KIND: 'CODE',   ENROLLMENT_TYPE: 'total',            COLUMN_KEY: 'PY',               FACT: 'settlement',           FIELD_NAME: 'SHARED_LOSS_RATE',                        FIELD_KIND: 'numeric', IS_PLACEHOLDER: true}
+        - {TABLE_CODE: 'A1', SECTION_KEY: null,          ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'esrd',             COLUMN_KEY: 'I',                FACT: 'risk',                 FIELD_NAME: 'FINAL_RISK_RATIO',                        FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
+        - {TABLE_CODE: 'A1', SECTION_KEY: null,          ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'weighted_average', COLUMN_KEY: 'D',                FACT: 'risk',                 FIELD_NAME: 'UNCAPPED_RISK_RATIO',                     FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
+        - {TABLE_CODE: 'A1', SECTION_KEY: null,          ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'weighted_average', COLUMN_KEY: 'A',                FACT: 'risk',                 FIELD_NAME: 'RISK_SCORE_WEIGHT',                       FIELD_KIND: 'numeric', IS_PLACEHOLDER: true}
+        - {TABLE_CODE: 'A2', SECTION_KEY: 'CMS_HCC',     ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'esrd',             COLUMN_KEY: 'BY1',              FACT: 'renormalization',      FIELD_NAME: 'CMS_HCC_NATIONAL_MEAN_BY1',               FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
+        - {TABLE_CODE: 'A2', SECTION_KEY: 'DEMOGRAPHIC', ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'esrd',             COLUMN_KEY: 'PY',               FACT: 'renormalization',      FIELD_NAME: 'DEMOGRAPHIC_NATIONAL_MEAN_PY',            FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
+        - {TABLE_CODE: '1',  SECTION_KEY: 'L',           ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'esrd',             COLUMN_KEY: 'BENCHMARK',        FACT: 'historical_benchmark', FIELD_NAME: 'HISTORICAL_BENCHMARK',                    FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
+        - {TABLE_CODE: '1',  SECTION_KEY: 'I',           ROW_KIND: 'CODE',   ENROLLMENT_TYPE: 'total',            COLUMN_KEY: 'BENCHMARK',        FACT: null,                   FIELD_NAME: null,                                      FIELD_KIND: null,      IS_PLACEHOLDER: false}

@@ -18,7 +18,7 @@ Current staging groups:
 - `mssp`: MSSP payment and utilization files
 - `shadow_bundles`: shadow bundle source files
 - `benchmark`: historical benchmark and expenditure/utilization workbooks
-- `settlement`: the final settlement (STLMT) workbook's Tables 2, 3 and A1
+- `settlement`: the final settlement (STLMT) workbook's Tables 1, 2, 3, A1 and A2
 
 Model metadata in the `_models.yml` files configures these staging models into the `_stg_input_layer` schema.
 
@@ -27,7 +27,7 @@ tables, configured into the `_int_input_layer` schema:
 
 - `benchmark`: typed facts over the BNMRK / AEXPU / QEXPU workbooks
 - `member`: enrollment type and CMS prospective risk score per member-month
-- `settlement`: the settlement workbook's cells, ranked by delivery
+- `settlement`: the settlement workbook's cells, ranked by delivery and mapped to fields
 
 The staging models are faithful but untyped — one row per worksheet cell, every
 value in a text column — so an input to the historical benchmark is a
@@ -44,8 +44,9 @@ deliveries without choosing between them:
 - `int_expenditures_annual` — AEXPU Table 1, by benchmark year
 - `int_expenditures_quarterly` — QEXPU Table 1
 - `int_expenditures_regional` — QEXPU Table 2, regional expenditures and weights
-- `int_settlement_values` — STLMT Tables 2, 3 and A1, one row per cell in a
-  lettered section, with the embargoed and unembargoed deliveries ranked
+- `int_settlement_values` — STLMT Tables 1, 2, 3, A1 and A2, one row per cell,
+  with the embargoed and unembargoed deliveries ranked and each cell mapped to
+  the settlement field it is
 
 They calculate nothing. Deriving the benchmark from these inputs is the job of
 the final layer.
@@ -78,10 +79,15 @@ models:
   projected updated benchmark and the ACO's expenditure also expressed per
   member per month (`*_PMPM`, the annual figure divided by twelve)
 - `fct_settlement` — CMS's final settled result, one row per ACO and
-  performance year, read from the settlement workbook's Table 2 and Table 3
+  performance year: the settlement workbook's Table 2 `[A]`-`[I]` (per
+  enrollment type) and Table 3 `[A]`-`[UU]`
 - `fct_settlement_risk` — the settlement workbook's Table A1, one row per ACO,
-  performance year, section and enrollment type, BY3 and performance year
-  side by side
+  performance year and enrollment type, a column per letter `[A]`-`[I]`, and
+  the `Weighted Average` row as `ENROLLMENT_TYPE = 'weighted_average'`
+- `fct_settlement_historical_benchmark` — Table 1's per-enrollment-type rows,
+  by benchmark year, with `[L]` (`HISTORICAL_BENCHMARK`)
+- `fct_settlement_renormalization` — Table A2's national mean CMS-HCC and
+  demographic risk scores, per enrollment type, BY1-BY3 and PY
 
 Two things about their grain govern how they must be queried, and both are
 documented at length in `models/final/benchmark/_models.yml`:
@@ -110,25 +116,32 @@ defaults and every output row it produces is flagged `IS_AGREEMENT_DEFAULTED`.
 
 CMS settles each performance year in a final settlement bundle, around August
 to November of the following year, and can deliver it twice: embargoed and
-unembargoed, with the same workbook. `fct_settlement` reads the unembargoed
-copy when both are there (`SETTLEMENT_DELIVERY_COUNT` says how many came). It
-reads the workbook's result and never recomputes it. In particular, a
-low-revenue ACO below its minimum savings rate can still share savings at half
-the rate: Table 3 `[P]` (`SAVINGS_REALIZED`) then reads `N/A` and `[BB]`
-(`T3_BB`) carries the result, and both come through as written.
+unembargoed. The settlement workbooks in the two copies are byte-identical;
+`fct_settlement` reads the unembargoed one when both are there
+(`SETTLEMENT_DELIVERY_COUNT` says how many came). Only the embargoed directory
+carries the settlement AALR and the AEXPU; the unembargoed one has neither.
 
-The settlement layouts are not yet checked against a delivered workbook, so
-the models find a value by its section code, row label and column label,
-never its position, and two tests fail loudly on a shape they do not expect:
-`assert_settlement_values_are_unambiguous` (a row with two values) and
-`assert_settlement_fields_are_numeric` (a figure that does not parse). A
-field has a meaningful name only where one letter is known to mean one thing:
-`UPDATED_BENCHMARK` (Table 2 `[I]`), `ASSIGNED_BENEFICIARIES`, `PERSON_YEARS`,
-`PER_CAPITA_EXPENDITURE`, `BENCHMARK_PER_CAPITA` and `SAVINGS_REALIZED` (Table
-3 `[A]`, `[B]`, `[E]`, `[F]` and `[P]`). The rest are named by code
-(`T2_<code>_<type>`, `T3_<code>`) and documented with what their range of rows
-covers; `macros/settlement_fields.sql` lists both kinds. Table A1 stays tall
-in `fct_settlement_risk` until its codes are confirmed.
+The facts read the workbook's results and never recompute them. Every field
+has a meaningful name and its CMS code, documented with CMS's footnote meaning
+in `models/final/settlement/_models.yml`. Y/N flags and text results stay text
+(Table 3 `[P]`, `[T]`, `[W]`, `[Z]`, `[AA]`, `[BB]`, `[II]`). `[BB]`
+(`MET_LOW_REVENUE_SHARING_CRITERIA`) is the low-revenue criteria flag; the
+low-revenue outcome shows in `FINAL_SHARING_RATE` (`[CC]`) and the payment
+fields (`[EE]`, `[HH]`).
+
+Each field is mapped to one cell by its labels: the sheet, the row's `[X]`
+code (Table A2's block title; Table A1's letters label its columns), the row's
+kind and enrollment type, and the column (Table 2's `Benchmark Period` or
+`Performance Year`, Table 1's `BY1`-`BY3` or `Benchmark`, Table A1's letter).
+`macros/settlement_fields.sql` holds the map. CMS's blank, an en dash, is NULL,
+and a figure in E-notation reads as its number. Four tests keep the map honest
+on every delivery: `assert_settlement_cells_are_mapped` (a value no field
+reads), `assert_settlement_fields_are_present` (a field whose cell is missing),
+`assert_settlement_fields_are_numeric` (a figure that does not parse), and
+`assert_settlement_cross_table_identities`, which checks the figures CMS's
+footnotes tie together: Table 2 `[C]` = A1 `[I]`, Table 2 `[A]` = Table 1
+`[L]`, Table 3 `[D]` = Table 2 `[H]`, Table 3 `[F]` = Table 2 `[I]`, and
+`[MM]` = `[HH]` - `[KK]`.
 
 `int_expenditures_annual` leaves out the AEXPU workbook the settlement bundle
 also carries: it reports the performance year, not a benchmark year.
@@ -396,9 +409,11 @@ long/tidy column contract:
 - `qexpu_table_3`
 - `qexpu_parameters`
 
-The settlement (`STLMT`) workbook loads the same way. The connector reads three
-of its tables, `stlmt_table_2`, `stlmt_table_3` and `stlmt_table_a1`, which also
-carry `is_embargoed` (workbook contract 1.2.0).
+The settlement (`STLMT`) workbook loads the same way, with three more grammar
+columns (`block_label`, `row_kind`, `column_code`) and `is_embargoed`
+(workbook contract 1.3.0). The connector reads five of its tables,
+`stlmt_table_1`, `stlmt_table_2`, `stlmt_table_3`, `stlmt_table_a1` and
+`stlmt_table_a2`.
 
 Some of these are legitimately absent from a given delivery rather than missing:
 `bnmrk_table_6` does not appear in the preliminary benchmark delivery, and

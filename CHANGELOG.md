@@ -16,25 +16,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selection given. See `integration_tests/README.md`.
 - `fct_settlement`: CMS's final settled result for a performance year, one
   row per ACO and performance year, read from the final settlement (STLMT)
-  workbook's Table 2 (updated benchmark) and Table 3 (shared savings and
-  losses). When the embargoed and unembargoed deliveries are both present,
-  the unembargoed one is read. A low-revenue ACO's result comes through as
-  written: `SAVINGS_REALIZED` (`[P]`) keeps `N/A` and `T3_BB` carries the
-  shared savings. Fields whose meaning is pinned have names
-  (`UPDATED_BENCHMARK`, `ASSIGNED_BENEFICIARIES`, `PERSON_YEARS`,
-  `PER_CAPITA_EXPENDITURE`, `BENCHMARK_PER_CAPITA`, `SAVINGS_REALIZED`); the
-  rest are named by code (`T2_<code>_<type>`, `T3_<code>`) and may be
-  renamed once checked against a delivered workbook.
-- `fct_settlement_risk`: the settlement workbook's Table A1, one row per
-  section and enrollment type with the BY3 and performance-year values side
-  by side.
-- `stg_stlmt_table_2`, `stg_stlmt_table_3`, `stg_stlmt_table_a1` and
-  `int_settlement_values` beneath them. **Breaking:** the connector now
-  reads three STLMT relations (`stlmt_table_2`, `stlmt_table_3`,
-  `stlmt_table_a1`), and `workbook_contract` is pinned to cms_mssp_pipeline's
-  workbook contract 1.2.0. The staging views fail to build against a pipeline
-  release that does not write those tables; release with a pipeline that
-  does.
+  workbook in its real CMS layout: Table 2 `[A]`-`[I]` per enrollment type
+  (`[B]` split into BY3 and PY) and Table 3 `[A]`-`[UU]` (`[C]` and `[D]`
+  per type). Every field has a meaningful name, documented with its CMS code
+  and footnote meaning. Y/N flags and text results stay text. When the
+  embargoed and unembargoed deliveries are both present, the unembargoed one
+  is read.
+- `fct_settlement_risk`: the settlement workbook's Table A1, one row per ACO,
+  performance year and enrollment type, a column per letter (weight, BY3 and
+  PY CMS-HCC scores, uncapped ratio, BY3 and PY demographic scores,
+  demographic ratio, aggregate cap, final capped ratio), and the
+  `Weighted Average` row as `ENROLLMENT_TYPE = 'weighted_average'`.
+- `fct_settlement_historical_benchmark`: Table 1's per-enrollment-type rows
+  by benchmark year, with `[L]` as `HISTORICAL_BENCHMARK`.
+- `fct_settlement_renormalization`: Table A2's national mean CMS-HCC and
+  demographic risk scores, per enrollment type, BY1-BY3 and PY.
+- `stg_stlmt_table_1`, `stg_stlmt_table_2`, `stg_stlmt_table_3`,
+  `stg_stlmt_table_a1`, `stg_stlmt_table_a2` and `int_settlement_values`
+  beneath them. Each field is mapped to one cell by sheet, row code (Table
+  A2's block), row kind, enrollment type and column
+  (`macros/settlement_fields.sql`); CMS's en-dash blank is NULL and
+  E-notation figures parse. New tests: `assert_settlement_cells_are_mapped`,
+  `assert_settlement_fields_are_present` and
+  `assert_settlement_cross_table_identities` (Table 2 `[C]` = A1 `[I]`,
+  Table 2 `[A]` = Table 1 `[L]`, Table 3 `[D]` = Table 2 `[H]`, Table 3
+  `[F]` = Table 2 `[I]`, `[MM]` = `[HH]` - `[KK]`).
+  **Breaking:** the connector now reads five STLMT relations
+  (`stlmt_table_1`, `stlmt_table_2`, `stlmt_table_3`, `stlmt_table_a1`,
+  `stlmt_table_a2`) in their real-layout schema, and `workbook_contract` is
+  pinned to cms_mssp_pipeline's workbook contract 1.3.0. The staging views
+  fail to build against a pipeline release that does not write those tables
+  and columns; release with a pipeline that does.
+- **Renamed from the first, unreleased settlement build** (no migration: it
+  never shipped). The coded names are gone: `T2_<code>_<type>` are now
+  `HISTORICAL_BENCHMARK_<TYPE>` (`[A]`), `BY3_CMS_HCC_RISK_SCORE_<TYPE>` and
+  `PY_CMS_HCC_RISK_SCORE_<TYPE>` (`[B]`), `CAPPED_RISK_RATIO_<TYPE>` (`[C]`),
+  `RISK_ADJUSTED_HISTORICAL_BENCHMARK_<TYPE>` (`[D]`),
+  `NATIONAL_REGIONAL_UPDATE_FACTOR_<TYPE>` (`[E]`),
+  `THREE_WAY_UPDATE_FACTOR_<TYPE>` (`[F]`), `UPDATED_BENCHMARK_<TYPE>`
+  (`[G]`) and `BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION_<TYPE>` (`[H]`);
+  `T3_<code>` are named for their footnote meaning (for example `T3_BB` is
+  `MET_LOW_REVENUE_SHARING_CRITERIA`, a Y/N flag, `T3_CC` is
+  `FINAL_SHARING_RATE`, `T3_HH` is `EARNED_PERFORMANCE_PAYMENT`, `T3_MM` is
+  `NET_EARNED_PERFORMANCE_PAYMENT`; `T3_II` is `APPLICABLE_PAYMENT`, text).
+  `SAVINGS_REALIZED` is `SAVINGS_OR_LOSSES_REALIZED`.
+  `PERSON_YEARS_<TYPE>` is removed: Table 3 `[B]` is a single value.
+  `fct_settlement_risk` is wide (one row per type) instead of one row per
+  section, so `SECTION_CODE`, `SECTION_LABEL`, `BY3_VALUE`, `PY_VALUE` and
+  their `_TEXT` columns are gone.
 
 ### Fixed
 

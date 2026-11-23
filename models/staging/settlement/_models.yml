@@ -1,16 +1,16 @@
 version: 2
 
-# Staging views over the final settlement (STLMT) workbook's Table 2, Table 3
-# and Table A1, the three sheets fct_settlement reads.
+# Staging views over the five final settlement (STLMT) workbook sheets the
+# settlement facts read: Tables 1, 2, 3, A1 and A2.
 #
-# The relations share the cell-grain schema of the benchmark workbooks (see
-# models/staging/benchmark/_models.yml), plus IS_EMBARGOED. Grain:
-# (FILE_PATH, ROW_NUM, COLUMN_GROUP_LABEL, COLUMN_LABEL).
+# The relations share the pipeline's `stlmt_cell_grain` schema (workbook
+# contract 1.3.0): the benchmark workbooks' cell grain, plus BLOCK_LABEL,
+# ROW_KIND and COLUMN_CODE, which keep the real layout explicit, and
+# IS_EMBARGOED. Grain: (FILE_PATH, ROW_NUM, COLUMN_GROUP_LABEL, COLUMN_LABEL).
+# The layout is the PY2025 CMS template's. int_settlement_values maps each
+# cell to its field by its labels, never by position.
 #
-# The sheet layouts are not yet checked against a delivered workbook
-# (TUVA-158): no real STLMT workbook or public template is on hand. Nothing
-# here reads a fixed position. int_settlement_values finds values by section
-# code, row label and column label.
+# CMS writes a blank cell as an en dash (U+2013), not a hyphen.
 
 models:
 
@@ -18,7 +18,8 @@ models:
     description: >
       Settlement workbook sheet `Table 2 - Updated Benchmark`: the updated
       benchmark `[I]` and the per-enrollment-type values `[A]`-`[H]` it is
-      built from.
+      built from, in two value columns, `Benchmark Period` and `Performance
+      Year`.
 
     config:
       schema: _stg_input_layer
@@ -32,33 +33,46 @@ models:
               - COLUMN_GROUP_LABEL
               - COLUMN_LABEL
 
-      # CMS's markers stay text: '-' means "not applicable", not zero, and
-      # 'N/A' on [P] is a result in its own right.
+      # CMS's markers stay text: a dash means blank, not zero, and Y/N and
+      # results are text in their own right.
       - dbt_utils.expression_is_true:
           arguments:
             expression: "VALUE_NUMERIC is null"
           config:
-            where: "trim(VALUE_TEXT) in ('-', '', 'N/A') or right(trim(VALUE_TEXT), 1) = '%'"
+            where: "trim(VALUE_TEXT) in ('–', '-', '', 'N/A', 'NA', 'Y', 'N') or right(trim(VALUE_TEXT), 1) = '%'"
 
-      # A plain or comma-grouped decimal literal must produce a number, so a
-      # formatted dollar figure cannot drop out silently. "Numeric-looking" is
-      # defined without the macro under test: a leading sign, then only
-      # digits, commas and a point, with at least one digit.
+      # A number must produce a number, so a formatted dollar figure or a
+      # large one in E-notation cannot drop out silently. "Numeric-looking" is
+      # defined without the macro under test. Plain or comma-grouped: a
+      # leading sign, then only digits, commas and a point, with at least one
+      # digit. E-notation ('1.25E8'): digits, a point and signs around a
+      # single E that is not the first character.
       - dbt_utils.expression_is_true:
           arguments:
             expression: "VALUE_NUMERIC is not null"
           config:
             where: >-
               VALUE_TEXT is not null
-              and length(trim(VALUE_TEXT)) > 0
-              and length(translate(ltrim(trim(VALUE_TEXT), '+-'), '0123456789.,', '')) = 0
               and length(translate(trim(VALUE_TEXT), '0123456789', '')) < length(trim(VALUE_TEXT))
+              and (
+                length(translate(ltrim(trim(VALUE_TEXT), '+-'), '0123456789.,', '')) = 0
+                or (
+                  length(translate(upper(trim(VALUE_TEXT)), '0123456789.+-', '')) = 1
+                  and position('E' in upper(trim(VALUE_TEXT))) > 1
+                )
+              )
 
     columns: &settlement_columns
       - name: ROW_NUM
         description: 1-based index of the source worksheet row. Part of the grain.
         data_tests:
           - not_null
+
+      - name: BLOCK_LABEL
+        description: >
+          Title of the block the row sits in, on a sheet stacked from
+          title/header/data blocks: Table A2's CMS-HCC block, then its
+          demographic block. NULL on every other sheet.
 
       - name: GROUP_LABEL
         description: >
@@ -68,39 +82,60 @@ models:
       - name: SECTION_CODE
         description: >
           Code from the `[X]` prefix on the section heading, brackets
-          stripped: `I`, `P`, `BB`. NULL where the heading carries none.
+          stripped: `I`, `P`, `BB`, `A2`. NULL where the heading carries none,
+          and on Table A1, whose letters label its columns (`COLUMN_CODE`).
 
       - name: SECTION_LABEL
         description: Section heading text with any `[X]` prefix removed.
 
       - name: ROW_LABEL
         description: >
-          Column A of the source row. A lettered row's own value has the
-          section's label here; a per-type value has the enrollment type
-          (`ESRD`, `Disabled`, `Aged/dual`, `Aged/non-dual`).
+          Column A of the source row: the section's label on a lettered row,
+          the enrollment type (`ESRD`, `Disabled`, `Aged/dual`,
+          `Aged/non-dual`) on a per-type row, `Weighted Average` on Table
+          A1's last row.
         data_tests:
           - not_null
+
+      - name: ROW_KIND
+        description: >
+          What the source row is, as the pipeline writes it. `CODE`: the
+          lettered row itself, whose cells are its value (Table 3 `[A]`).
+          `DETAIL`: a row under a lettered or group heading (an enrollment
+          type, a Table A1 or A2 row). `TOTAL`: an unlettered row repeating
+          its section's label, closing it with the total (Table 2 `[A]`).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['CODE', 'DETAIL', 'TOTAL']
 
       - name: COLUMN_GROUP_LABEL
         description: Outer label of a two-row column header; NULL on a single header.
 
+      - name: COLUMN_CODE
+        description: >
+          The letter closing the source column's header, cut from it: Table
+          A1's `[A]`-`[I]`. NULL on every other sheet.
+
       - name: COLUMN_LABEL
         description: >
-          Header label of the source column, such as `BY3` or `Performance
-          Year`. Never NULL.
+          Header label of the source column, without any `COLUMN_CODE`:
+          `BY1`-`BY3`, `PY`, `Performance Year`, `Benchmark Period`,
+          `Benchmark`, or Table A1's score names. Never NULL.
         data_tests:
           - not_null
 
       - name: VALUE_TEXT
         description: >
-          The source cell verbatim: `'-'`, `'N/A'` and `'-1,234'` arrive as
-          written. NULL only where the cell is empty.
+          The source cell verbatim: the en dash, `'Y'` and `'-1,234'` arrive
+          as written. NULL only where the cell is empty.
 
       - name: VALUE_NUMERIC
         description: >
-          `VALUE_TEXT` as a number, with thousands separators removed
-          (`cast_settlement_numeric_or_null`). NULL where the cell is not a
-          number: `'-'`, `''`, `'N/A'`, percentages and text.
+          `VALUE_TEXT` as a number, with thousands separators removed and
+          E-notation read (`cast_settlement_numeric_or_null`). NULL where the
+          cell is not a number: a dash, `''`, Y/N and other text.
 
       - name: FILE_PATH
         description: Full path of the source workbook. Part of the grain.
@@ -148,11 +183,24 @@ models:
           when neither the stamp nor a notice file settles it. A reader
           prefers FALSE.
 
+  - name: stg_stlmt_table_1
+    description: >
+      Settlement workbook sheet `Table 1 - Historical Benchmark`: the
+      historical benchmark by benchmark year (`BY1`-`BY3`) and in the
+      `Benchmark` column, `[A1]`-`[M]`.
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *settlement_data_tests
+
+    columns: *settlement_columns
+
   - name: stg_stlmt_table_3
     description: >
       Settlement workbook sheet `Table 3 - Shared Savings Losses`: the
-      settled savings or losses, from assigned beneficiaries `[A]` through
-      the net payment after advance investment payment recoupment.
+      settled savings or losses, `[A]` assigned beneficiaries through `[UU]`
+      payment due to CMS, in one value column, `Performance Year`.
 
     config:
       schema: _stg_input_layer
@@ -163,9 +211,23 @@ models:
 
   - name: stg_stlmt_table_a1
     description: >
-      Settlement workbook sheet `Table A1 - Risk`: CMS-HCC and demographic
-      risk scores by enrollment type for BY3 and the performance year, and
-      the ratios and cap between them.
+      Settlement workbook sheet `Table A1 - Risk`: one row per enrollment
+      type and a `Weighted Average` row; its letters `[A]`-`[I]` label the
+      columns (`COLUMN_CODE`).
+
+    config:
+      schema: _stg_input_layer
+
+    data_tests: *settlement_data_tests
+
+    columns: *settlement_columns
+
+  - name: stg_stlmt_table_a2
+    description: >
+      Settlement workbook sheet `Table A2 - Renormalization`: the national
+      assignable FFS mean CMS-HCC and demographic risk scores CMS
+      renormalizes by, per enrollment type for `BY1`-`BY3` and `PY`, in two
+      blocks told apart by `BLOCK_LABEL`. No letters.
 
     config:
       schema: _stg_input_layer
@@ -176,12 +238,13 @@ models:
 
 unit_tests:
 
-  - name: test_settlement_figures_parse_with_thousands_separators
+  - name: test_settlement_figures_parse_formatted_and_e_notation
     model: stg_stlmt_table_3
     description: >
-      The settlement keeps formatted figures verbatim (TUVA-158). A
-      comma-grouped figure, negative or not, parses to its number; CMS's '-'
-      and 'N/A' stay NULL and keep their text.
+      The settlement keeps figures verbatim. A comma-grouped figure,
+      negative or not, and one in E-notation parse to their number. CMS's
+      blank (the en dash U+2013), a hyphen and Y/N stay NULL and keep their
+      text.
 
     given:
       - input: source('mssp_raw', 'stlmt_table_3')
@@ -189,13 +252,21 @@ unit_tests:
           - {ROW_NUM: 1, VALUE_TEXT: '-1,234'}
           - {ROW_NUM: 2, VALUE_TEXT: '1,234,567.89'}
           - {ROW_NUM: 3, VALUE_TEXT: '0.5'}
-          - {ROW_NUM: 4, VALUE_TEXT: '-'}
-          - {ROW_NUM: 5, VALUE_TEXT: 'N/A'}
+          - {ROW_NUM: 4, VALUE_TEXT: '1.25E8'}
+          - {ROW_NUM: 5, VALUE_TEXT: '5.0E7'}
+          - {ROW_NUM: 6, VALUE_TEXT: '1.5E-4'}
+          - {ROW_NUM: 7, VALUE_TEXT: '–'}
+          - {ROW_NUM: 8, VALUE_TEXT: '-'}
+          - {ROW_NUM: 9, VALUE_TEXT: 'Y'}
 
     expect:
       rows:
         - {ROW_NUM: 1, VALUE_TEXT: '-1,234',       VALUE_NUMERIC: -1234}
         - {ROW_NUM: 2, VALUE_TEXT: '1,234,567.89', VALUE_NUMERIC: 1234567.89}
         - {ROW_NUM: 3, VALUE_TEXT: '0.5',          VALUE_NUMERIC: 0.5}
-        - {ROW_NUM: 4, VALUE_TEXT: '-',            VALUE_NUMERIC: null}
-        - {ROW_NUM: 5, VALUE_TEXT: 'N/A',          VALUE_NUMERIC: null}
+        - {ROW_NUM: 4, VALUE_TEXT: '1.25E8',       VALUE_NUMERIC: 125000000}
+        - {ROW_NUM: 5, VALUE_TEXT: '5.0E7',        VALUE_NUMERIC: 50000000}
+        - {ROW_NUM: 6, VALUE_TEXT: '1.5E-4',       VALUE_NUMERIC: 0.00015}
+        - {ROW_NUM: 7, VALUE_TEXT: '–',            VALUE_NUMERIC: null}
+        - {ROW_NUM: 8, VALUE_TEXT: '-',            VALUE_NUMERIC: null}
+        - {ROW_NUM: 9, VALUE_TEXT: 'Y',            VALUE_NUMERIC: null}
