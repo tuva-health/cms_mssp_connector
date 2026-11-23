@@ -197,6 +197,38 @@ score_basis as (
 
 ),
 
+-- The settled year's Table A1 as computed from the settlement population
+-- (TUVA-162, M-SETTLE), one row per ACO and year, beside the projection.
+settlement_ratios as (
+
+    select
+        ACO_ID,
+        PERFORMANCE_YEAR,
+        max(AGGREGATE_UNCAPPED_RISK_RATIO)                  as SETTLEMENT_AGGREGATE_RISK_RATIO,
+        max(AGGREGATE_DEMOGRAPHIC_RISK_RATIO)               as SETTLEMENT_AGGREGATE_DEMOGRAPHIC_RISK_RATIO,
+        max(AGGREGATE_CAP)                                  as SETTLEMENT_AGGREGATE_CAP,
+        max(case when IS_CAP_BINDING then 1 when not IS_CAP_BINDING then 0 end)
+                                                            as SETTLEMENT_CAP_BINDING_FLAG
+        {%- for enrollment_type in enrollment_types %}
+        {%- set t = enrollment_type | upper %},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then RISK_SCORE_WEIGHT end)
+                                                            as SETTLEMENT_RISK_SCORE_WEIGHT_{{ t }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then PY_CMS_HCC_RISK_SCORE end)
+                                                            as SETTLEMENT_PY_RISK_SCORE_{{ t }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then UNCAPPED_RISK_RATIO end)
+                                                            as SETTLEMENT_RISK_RATIO_{{ t }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then PY_DEMOGRAPHIC_RISK_SCORE end)
+                                                            as SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_{{ t }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then DEMOGRAPHIC_RISK_RATIO end)
+                                                            as SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_{{ t }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then FINAL_RISK_RATIO end)
+                                                            as SETTLEMENT_FINAL_RISK_RATIO_{{ t }}
+        {%- endfor %}
+    from {{ ref('int_settlement_risk_ratio') }}
+    group by ACO_ID, PERFORMANCE_YEAR
+
+),
+
 -- [M], the enrollment proportion, and the two weight factors, at every
 -- quarter row of the latest calculable delivery.
 enrollment_types as (
@@ -576,7 +608,30 @@ select
     projections.ANNUAL_EXPENDITURE_BENCHMARK_YEAR           as ANNUAL_EXPENDITURE_BENCHMARK_YEAR,
     projections.ANNUAL_EXPENDITURE_SUBMISSION_ID            as ANNUAL_EXPENDITURE_SUBMISSION_ID,
     projections.ACPT_PERFORMANCE_YEAR_LABEL                 as ACPT_PERFORMANCE_YEAR_LABEL,
-    projections.IS_AGREEMENT_DEFAULTED                      as IS_AGREEMENT_DEFAULTED
+    projections.IS_AGREEMENT_DEFAULTED                      as IS_AGREEMENT_DEFAULTED,
+
+    {#- the settlement view beside the projection (TUVA-162): the settled
+        year's A1 computed from the settlement population, the same on every
+        quarter row of the year, NULL for a year not settled -#}
+    {%- for enrollment_type in enrollment_types %}
+    {%- set t = enrollment_type | upper %}
+    settlement_ratios.SETTLEMENT_RISK_SCORE_WEIGHT_{{ t }}  as SETTLEMENT_RISK_SCORE_WEIGHT_{{ t }},
+    settlement_ratios.SETTLEMENT_PY_RISK_SCORE_{{ t }}      as SETTLEMENT_PY_RISK_SCORE_{{ t }},
+    settlement_ratios.SETTLEMENT_RISK_RATIO_{{ t }}         as SETTLEMENT_RISK_RATIO_{{ t }},
+    settlement_ratios.SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_{{ t }}
+                                                            as SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_{{ t }},
+    settlement_ratios.SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_{{ t }}
+                                                            as SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_{{ t }},
+    settlement_ratios.SETTLEMENT_FINAL_RISK_RATIO_{{ t }}   as SETTLEMENT_FINAL_RISK_RATIO_{{ t }},
+    {%- endfor %}
+    settlement_ratios.SETTLEMENT_AGGREGATE_RISK_RATIO       as SETTLEMENT_AGGREGATE_RISK_RATIO,
+    settlement_ratios.SETTLEMENT_AGGREGATE_DEMOGRAPHIC_RISK_RATIO
+                                                            as SETTLEMENT_AGGREGATE_DEMOGRAPHIC_RISK_RATIO,
+    settlement_ratios.SETTLEMENT_AGGREGATE_CAP              as SETTLEMENT_AGGREGATE_CAP,
+    case settlement_ratios.SETTLEMENT_CAP_BINDING_FLAG
+        when 1 then true
+        when 0 then false
+    end                                                     as SETTLEMENT_IS_CAP_BINDING
 
 from projections
 
@@ -588,3 +643,7 @@ left join scenario
 
 left join score_basis
     on score_basis.PERFORMANCE_YEAR = projections.PERFORMANCE_YEAR
+
+left join settlement_ratios
+    on settlement_ratios.ACO_ID = projections.ACO_ID
+    and settlement_ratios.PERFORMANCE_YEAR = projections.PERFORMANCE_YEAR

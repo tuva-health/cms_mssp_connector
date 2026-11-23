@@ -56,6 +56,16 @@
     rest of the project; see those macros. The ratio divides by [C] as printed:
     the assignment-list scores are already on the national mean of 1.0 basis
     that [C] is renormalised to, which int_member_month_risk documents.
+
+    Settled years (TUVA-162) carry CMS's settlement view beside the
+    projection, never in place of it: the month's type and score from the
+    settlement AALR (int_settlement_member_month_risk), that score over the
+    settlement workbook's BY3 [B] for the type, and the type's final A1 [I]
+    as computed from the settlement population (int_settlement_risk_ratio).
+    They are NULL on a month the settlement population does not cover. The
+    join is on person and month alone, like the projection's: should two
+    settlement MBIs resolve to one person-month, the directly matched MBI,
+    then the lowest ACO and MBI, is kept, so the grain holds.
 -#}
 
 with member_months as (
@@ -253,6 +263,41 @@ adjusted as (
 
 ),
 
+-- One settlement row per person-month (TUVA-162).
+settlement_ranked as (
+
+    select
+        settlement_months.PERSON_ID,
+        settlement_months.YEAR_MONTH,
+        settlement_months.ENROLLMENT_TYPE                   as SETTLEMENT_ENROLLMENT_TYPE,
+        settlement_months.RISK_SCORE                        as SETTLEMENT_RISK_SCORE,
+        {{ safe_divide('settlement_months.RISK_SCORE', 'settlement_ratio.BY3_CMS_HCC_RISK_SCORE') }}
+                                                            as SETTLEMENT_RISK_RATIO,
+        settlement_ratio.FINAL_RISK_RATIO                   as SETTLEMENT_FINAL_RISK_RATIO,
+        row_number() over (
+            partition by settlement_months.PERSON_ID, settlement_months.YEAR_MONTH
+            order by
+                case when settlement_months.MBI_CROSSWALK_SOURCE = 'direct' then 0 else 1 end,
+                settlement_months.ACO_ID,
+                settlement_months.BENE_MBI_ID
+        )                                                   as SETTLEMENT_RANK
+    from {{ ref('int_settlement_member_month_risk') }} as settlement_months
+    left join {{ ref('int_settlement_risk_ratio') }} as settlement_ratio
+        on settlement_ratio.ACO_ID = settlement_months.ACO_ID
+        and settlement_ratio.PERFORMANCE_YEAR = settlement_months.PERFORMANCE_YEAR
+        and settlement_ratio.ENROLLMENT_TYPE = settlement_months.ENROLLMENT_TYPE
+    where settlement_months.PERSON_ID is not null
+
+),
+
+settlement as (
+
+    select *
+    from settlement_ranked
+    where SETTLEMENT_RANK = 1
+
+),
+
 capped as (
 
     select
@@ -268,10 +313,10 @@ capped as (
 select
     MEMBER_MONTH_ID,
     MEMBER_MONTH_SK,
-    PERSON_ID,
+    capped.PERSON_ID                                        as PERSON_ID,
     DATA_SOURCE,
     PATIENT_SOURCE_KEY,
-    YEAR_MONTH,
+    capped.YEAR_MONTH                                       as YEAR_MONTH,
     PERFORMANCE_YEAR,
     ACO_ID,
     IS_ASSIGNED,
@@ -303,6 +348,15 @@ select
     BENCHMARK_QUARTER_NUM,
     BENCHMARK_SUBMISSION_ID,
     QUARTERLY_SUBMISSION_ID,
-    IS_AGREEMENT_DEFAULTED
+    IS_AGREEMENT_DEFAULTED,
+
+    {#- the settlement view beside the projection (TUVA-162) -#}
+    settlement.SETTLEMENT_ENROLLMENT_TYPE                   as SETTLEMENT_ENROLLMENT_TYPE,
+    settlement.SETTLEMENT_RISK_SCORE                        as SETTLEMENT_RISK_SCORE,
+    settlement.SETTLEMENT_RISK_RATIO                        as SETTLEMENT_RISK_RATIO,
+    settlement.SETTLEMENT_FINAL_RISK_RATIO                  as SETTLEMENT_FINAL_RISK_RATIO
 
 from capped
+left join settlement
+    on settlement.PERSON_ID = capped.PERSON_ID
+    and settlement.YEAR_MONTH = capped.YEAR_MONTH

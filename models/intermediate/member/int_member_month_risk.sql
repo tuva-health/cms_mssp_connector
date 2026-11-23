@@ -169,38 +169,6 @@ pinned_delivery as (
 
 ),
 
-cclf_beneficiary_xref as (
-
-    select
-        cast(prvs_num as {{ dbt.type_string() }})               as PREVIOUS_MBI,
-        cast(crnt_num as {{ dbt.type_string() }})               as CURRENT_MBI
-    from {{ ref('medicare_cclf_connector', 'int_beneficiary_xref_deduped') }}
-    where prvs_num is not null
-      and crnt_num is not null
-
-),
-
-excluded_beneficiary_xref as (
-
-    select
-        PREVIOUS_MBI,
-        CURRENT_MBI
-    from (
-        select
-            cast(PREVIOUS_BENE_MBI as {{ dbt.type_string() }})  as PREVIOUS_MBI,
-            cast(CURRENT_BENE_MBI as {{ dbt.type_string() }})   as CURRENT_MBI,
-            row_number() over (
-                partition by PREVIOUS_BENE_MBI
-                order by PERFORMANCE_YEAR desc, REPORT_MONTH desc, FILE_DATE desc nulls last, FILE_PATH desc
-            )                                                   as MAPPING_RANK
-        from {{ ref('stg_excluded_beneficiary_mbi_xref') }}
-        where PREVIOUS_BENE_MBI is not null
-          and CURRENT_BENE_MBI is not null
-    ) as ranked
-    where MAPPING_RANK = 1
-
-),
-
 -- Every assignment-list MBI, resolved to a Tuva person once.
 mbi_keys as (
 
@@ -208,36 +176,7 @@ mbi_keys as (
 
 ),
 
-mbi_resolved as (
-
-    select
-        mbi_keys.BENE_MBI_ID,
-        case
-            when direct.PERSON_ID is not null        then direct.PERSON_ID
-            when via_cclf.PERSON_ID is not null      then via_cclf.PERSON_ID
-            when via_excluded.PERSON_ID is not null  then via_excluded.PERSON_ID
-        end                                                     as PERSON_ID,
-        case
-            when direct.PERSON_ID is not null        then 'direct'
-            when via_cclf.PERSON_ID is not null      then 'cclf_beneficiary_xref'
-            when via_excluded.PERSON_ID is not null  then 'excluded_beneficiary_mbi_xref'
-        end                                                     as MBI_CROSSWALK_SOURCE
-    from mbi_keys
-
-    left join persons as direct
-        on direct.PERSON_ID = mbi_keys.BENE_MBI_ID
-
-    left join cclf_beneficiary_xref
-        on cclf_beneficiary_xref.PREVIOUS_MBI = mbi_keys.BENE_MBI_ID
-    left join persons as via_cclf
-        on via_cclf.PERSON_ID = cclf_beneficiary_xref.CURRENT_MBI
-
-    left join excluded_beneficiary_xref
-        on excluded_beneficiary_xref.PREVIOUS_MBI = mbi_keys.BENE_MBI_ID
-    left join persons as via_excluded
-        on via_excluded.PERSON_ID = excluded_beneficiary_xref.CURRENT_MBI
-
-),
+{{ alr_mbi_to_person() }},
 
 -- Every assignment-list row resolved to a person, flagged when it comes from
 -- the pinned delivery of the month's own calendar year.

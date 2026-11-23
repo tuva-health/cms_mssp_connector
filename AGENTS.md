@@ -6,6 +6,8 @@ This file provides guidance to Agents when working with code in this repository.
 
 This is a dbt project (`cms_mssp_connector`, repo [tuva-health/cms_mssp_connector](https://github.com/tuva-health/cms_mssp_connector)) that stages the raw CMS Medicare Shared Savings Program files [cms_mssp_pipeline](https://github.com/tuva-health/cms_mssp_pipeline) loads, derives the benchmark and projected-savings facts from the CMS benchmark workbooks, and adds member-month benchmark facts beside the Tuva semantic layer. `packages.yml` pins [cms_alr_connector](https://github.com/tuva-health/cms_alr_connector) `v1.1.1`, which brings [medicare_cclf_connector](https://github.com/tuva-health/medicare_cclf_connector) `v1.0.2` and [Tuva Core](https://github.com/tuva-health/tuva-core) `v1.0.0` (dbt package name `the_tuva_project`). It also pins the semantic-layer package, the five marts it builds on and [CMS chronic conditions](https://github.com/tuva-health/cms_chronic_conditions), all at `v1.0.0`; move these pins together. The release is a container image (see the README). Client forks deploy it.
 
+**Pending pin bump.** The settlement risk models (TUVA-162) read `ref('cms_aalr_connector', 'aalr_settlement_population')`, which `cms_alr_connector` v1.1.1 does not have. They compile once the pin moves to the ALR release that ships it; that bump, with the ALR seeds re-copied at its tag, is still to come.
+
 ## Before you start
 
 - **Running dbt, tests or CI**: read [integration_tests/README.md](integration_tests/README.md).

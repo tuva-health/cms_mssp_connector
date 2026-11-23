@@ -56,8 +56,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ratio projects a flat score trend. `performance_year_scores` for a year
   scored from monthly columns, `mixed` for both. The README explains why.
 
+- Settled-year risk ratios from the settlement population (TUVA-162,
+  method M-SETTLE). Compiles once `cms_alr_connector` is pinned at the
+  release that ships `aalr_settlement_population`; that pin bump is pending.
+  - `int_settlement_member_month_risk`: the settlement AALR's eligible
+    person-months, typed by EnrollFlag, with the month's own score as
+    printed and the demographic score of its type.
+  - `int_settlement_risk_ratio`: Table A1 [A]-[I] per type computed from
+    them, with BY3 [B]/[E] from the settlement workbook's A1 and the weights'
+    benchmark from its Table 1 [L].
+  - `fact_benchmark_aco_quarter`: `SETTLEMENT_*` columns per type (weight,
+    PY score, ratio, PY demographic score, demographic ratio, final ratio)
+    and the aggregate ratio, demographic ratio, cap and binding flag, beside
+    the projection.
+  - `fact_member_month_benchmark`: `SETTLEMENT_ENROLLMENT_TYPE`,
+    `SETTLEMENT_RISK_SCORE`, `SETTLEMENT_RISK_RATIO` and
+    `SETTLEMENT_FINAL_RISK_RATIO`.
+  - `assert_settlement_risk_reproduces_table_a1` (warn): the fact's
+    settlement columns against the workbook's A1, relative 1e-4.
+- `alr_mbi_to_person`: the ALR MBI-to-person crosswalk as a macro, shared
+  by `int_member_month_risk` and the settlement member-months.
+
 ### Changed
 
+- `integration_tests/seeds/alr_cclf/`: the ALR CSVs are copied from the
+  unreleased `cms_alr_connector` change that adds the settlement population
+  (settlement AALRs A15/A16, benchmark AALR A17, unmatchable file A18). The
+  connector's `alr_file_without_file_parameters` test is set to `warn` in
+  `integration_tests`, as in its own project, because A18 is deliberate.
 - **Breaking:** `int_member_month_risk` types a member-month by its ALR
   EnrollFlag first, then the type score column, then the eligibility codes
   (was score column first). CMS types a person-month by its EnrollFlag; a quarterly or initial

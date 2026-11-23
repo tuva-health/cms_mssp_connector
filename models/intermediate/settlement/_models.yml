@@ -200,6 +200,161 @@ models:
         data_tests:
           - not_null
 
+  - name: int_settlement_member_month_risk
+    description: >
+      The settlement population's eligible person-months (TUVA-162, method
+      M-SETTLE from TUVA-161): one row per ACO, performance year, settlement
+      beneficiary and month whose EnrollFlag is 1-4, from the latest
+      delivery of cms_alr_connector's `aalr_settlement_population`. The
+      month's flag is its type; its score is the settlement AALR's
+      `BENE_RSK_R_SCRE_NN` for the month, as printed. A settlement AALR never
+      governs a month: these rows reach the facts only as settlement columns
+      beside the projection.
+
+    config:
+      schema: _int_input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ACO_ID
+              - PERFORMANCE_YEAR
+              - BENE_MBI_ID
+              - YEAR_MONTH
+
+    columns:
+      - name: ACO_ID
+        description: ACO ID of the settlement delivery (`A<ACO>`).
+        data_tests:
+          - not_null
+      - name: PERFORMANCE_YEAR
+        description: The settled performance year.
+        data_tests:
+          - not_null
+      - name: DELIVERY_ID
+        description: The settlement delivery the row is read from, the latest of the ACO and year.
+      - name: BENE_MBI_ID
+        description: The beneficiary's MBI as the settlement AALR lists it.
+        data_tests:
+          - not_null
+      - name: PERSON_ID
+        description: >
+          The Tuva person the MBI resolves to, by the same crosswalk order as
+          `int_member_month_risk` (`alr_mbi_to_person`). NULL for a
+          beneficiary Tuva does not carry; the row is kept, because CMS's
+          ratio counts every reconciled beneficiary.
+      - name: MBI_CROSSWALK_SOURCE
+        description: How the MBI was mapped to `PERSON_ID`, as in `int_member_month_risk`. NULL when unresolved.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['direct', 'cclf_beneficiary_xref', 'excluded_beneficiary_mbi_xref']
+      - name: YEAR_MONTH
+        description: Calendar month as `YYYYMM`; month NN of the settlement AALR is month NN of the performance year.
+        data_tests:
+          - not_null
+      - name: ENROLL_FLAG
+        description: The month's `EnrollFlag`, 1-4.
+      - name: ENROLLMENT_TYPE
+        description: >
+          The month's type from its flag: 1 `esrd`, 2 `disabled`, 3
+          `aged_dual`, 4 `aged_non_dual`, as CMS types a person-month.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual']
+      - name: RISK_SCORE
+        description: >
+          The month's CMS-HCC score, `BENE_RSK_R_SCRE_NN`, as printed: already
+          on the national-mean-of-1.0 basis, and the performance year's own
+          score. NULL when CMS left the month unscored; the month still
+          counts as a person-month.
+      - name: DEMOGRAPHIC_RISK_SCORE
+        description: The beneficiary's `DEM_*` score for the month's type (`DEM_ESRD_SCORE`, `DEM_DIS_SCORE`, `DEM_AGDU_SCORE` or `DEM_AGND_SCORE`).
+
+  - name: int_settlement_risk_ratio
+    description: >
+      The settled performance year's Table A1, computed from the settlement
+      population (TUVA-162, method M-SETTLE): one row per ACO, performance
+      year and enrollment type, for a year with a settlement population.
+      Columns carry `fct_settlement_risk`'s names, so the two compare column
+      for column. The PY scores ([C], [F]) and person years come from
+      `int_settlement_member_month_risk`; BY3 ([B], [E]) from the settlement
+      workbook's A1 and the weights' benchmark from its Table 1 [L]
+      (`fct_settlement_historical_benchmark`), not from the benchmark report.
+      The model's header has the formulas.
+
+    config:
+      schema: _int_input_layer
+
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - ACO_ID
+              - PERFORMANCE_YEAR
+              - ENROLLMENT_TYPE
+
+    columns:
+      - name: ACO_ID
+        description: ACO ID.
+        data_tests:
+          - not_null
+      - name: PERFORMANCE_YEAR
+        description: The settled performance year.
+        data_tests:
+          - not_null
+      - name: ENROLLMENT_TYPE
+        description: "`esrd`, `disabled`, `aged_dual` or `aged_non_dual`."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['esrd', 'disabled', 'aged_dual', 'aged_non_dual']
+      - name: ELIGIBLE_MEMBER_MONTHS
+        description: The type's eligible person-months, scored or not.
+      - name: SCORED_MEMBER_MONTHS
+        description: Those with a score, the months the PY CMS-HCC mean is taken over.
+      - name: PERSON_YEARS
+        description: "`ELIGIBLE_MEMBER_MONTHS / 12`: CMS's sum of `BENE_PSNYRS` for the type, Table 3 [B]."
+      - name: HISTORICAL_BENCHMARK
+        description: The settlement workbook's Table 1 [L] for the type, the benchmark the weights use.
+      - name: RISK_SCORE_WEIGHT
+        description: "[A]: `HISTORICAL_BENCHMARK x PERSON_YEARS` over its sum across the year's types."
+      - name: BY3_CMS_HCC_RISK_SCORE
+        description: "[B]: the settlement workbook's A1 [B]."
+      - name: PY_CMS_HCC_RISK_SCORE
+        description: >
+          [C]: the mean score over the type's scored person-months. Unscored
+          months are left out of the mean but still count as person years.
+          That is an assumption: real data checked so far had none.
+      - name: UNCAPPED_RISK_RATIO
+        description: "[D]: `[C] / [B]`."
+      - name: BY3_DEMOGRAPHIC_RISK_SCORE
+        description: "[E]: the settlement workbook's A1 [E]."
+      - name: PY_DEMOGRAPHIC_RISK_SCORE
+        description: "[F]: the mean demographic score over the type's person-months."
+      - name: DEMOGRAPHIC_RISK_RATIO
+        description: "[G]: `[F] / [E]`."
+      - name: AGGREGATE_UNCAPPED_RISK_RATIO
+        description: >
+          The weighted average of [D], A1's `Weighted Average` [D]. NULL when
+          a type with person years has no benchmark, or a weighted type has
+          no ratio.
+      - name: AGGREGATE_DEMOGRAPHIC_RISK_RATIO
+        description: The weighted average of [G], A1's `Weighted Average` [G], NULL on the same terms.
+      - name: AGGREGATE_CAP
+        description: "[H]: the weighted-average [G] plus `mssp_risk_score_cap` (0.03)."
+      - name: IS_CAP_BINDING
+        description: True when the weighted-average [D] exceeds [H]. NULL when either is unknown.
+      - name: FINAL_RISK_RATIO
+        description: >
+          [I]: [H] when the weighted-average [D] exceeds [H], else the type's
+          [D], A1's own rule. Feeds Table 2 [C].
+
+
 unit_tests:
 
   - name: test_unembargoed_delivery_ranks_first
@@ -314,3 +469,166 @@ unit_tests:
         - {TABLE_CODE: 'A2', SECTION_KEY: 'DEMOGRAPHIC', ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'esrd',             COLUMN_KEY: 'PY',               FACT: 'renormalization',      FIELD_NAME: 'DEMOGRAPHIC_NATIONAL_MEAN_PY',            FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
         - {TABLE_CODE: '1',  SECTION_KEY: 'L',           ROW_KIND: 'DETAIL', ENROLLMENT_TYPE: 'esrd',             COLUMN_KEY: 'BENCHMARK',        FACT: 'historical_benchmark', FIELD_NAME: 'HISTORICAL_BENCHMARK',                    FIELD_KIND: 'numeric', IS_PLACEHOLDER: false}
         - {TABLE_CODE: '1',  SECTION_KEY: 'I',           ROW_KIND: 'CODE',   ENROLLMENT_TYPE: 'total',            COLUMN_KEY: 'BENCHMARK',        FACT: null,                   FIELD_NAME: null,                                      FIELD_KIND: null,      IS_PLACEHOLDER: false}
+
+  - name: test_settlement_member_months_from_the_settlement_aalr
+    model: int_settlement_member_month_risk
+    description: >
+      S1  Latest delivery. Month 1 flag 4, month 2 flag 3, month 3 flag 0:
+          two rows, typed `aged_non_dual` then `aged_dual`, each with its own
+          month's score and the DEM score of its type. Month 3 is not a
+          person-month, so its 9.9 never appears.
+      S1  is also in an earlier delivery of the same year, with other flags
+          and scores: only the latest delivery is read.
+      S3  Latest delivery, not on the Tuva spine, month 1 flag 1 and no
+          score: kept, with a NULL person and a NULL score.
+      OLD4  A retired MBI the CCLF crosswalk maps to Tuva person P4, month 12.
+      Decoy: S9, only in the earlier delivery, has no rows.
+
+    given:
+
+      - input: ref('cms_aalr_connector', 'aalr_settlement_population')
+        rows:
+          - {aco_id: 'A1', performance_year: '2025', delivery_id: 'P.A1.ACO.AALR.Y2025.D259999.T1111111', is_latest_delivery: true,  bene_mbi_id: 'S1', enrollflag1: 4, enrollflag2: 3, enrollflag3: 0, bene_rsk_r_scre_01: 1.1, bene_rsk_r_scre_02: 1.2, bene_rsk_r_scre_03: 9.9, dem_agnd_score: 0.9, dem_agdu_score: 1.7, dem_esrd_score: 8.8}
+          - {aco_id: 'A1', performance_year: '2025', delivery_id: 'P.A1.ACO.AALR.Y2025.D259999.T0000000', is_latest_delivery: false, bene_mbi_id: 'S1', enrollflag1: 1, enrollflag2: 1, bene_rsk_r_scre_01: 7.7, bene_rsk_r_scre_02: 7.7, dem_esrd_score: 7.7}
+          - {aco_id: 'A1', performance_year: '2025', delivery_id: 'P.A1.ACO.AALR.Y2025.D259999.T0000000', is_latest_delivery: false, bene_mbi_id: 'S9', enrollflag1: 4, bene_rsk_r_scre_01: 1.0, dem_agnd_score: 1.0}
+          - {aco_id: 'A1', performance_year: '2025', delivery_id: 'P.A1.ACO.AALR.Y2025.D259999.T1111111', is_latest_delivery: true,  bene_mbi_id: 'S3', enrollflag1: 1, dem_esrd_score: 1.3}
+          - {aco_id: 'A1', performance_year: '2025', delivery_id: 'P.A1.ACO.AALR.Y2025.D259999.T1111111', is_latest_delivery: true,  bene_mbi_id: 'OLD4', enrollflag12: 2, bene_rsk_r_scre_12: 0.8, dem_dis_score: 0.6}
+
+      - input: ref('the_tuva_project', 'core__member_month')
+        rows:
+          - {person_id: 'S1', member_id: 'S1', year_month: '202501', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+          - {person_id: 'P4', member_id: 'P4', year_month: '202512', payer: 'medicare', plan: 'medicare', data_source: 'medicare'}
+
+      - input: ref('medicare_cclf_connector', 'int_beneficiary_xref_deduped')
+        rows:
+          - {prvs_num: 'OLD4', crnt_num: 'P4'}
+
+      - input: ref('stg_excluded_beneficiary_mbi_xref')
+        rows: []
+
+    expect:
+      rows:
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'S1',   PERSON_ID: 'S1', MBI_CROSSWALK_SOURCE: 'direct',                YEAR_MONTH: '202501', ENROLL_FLAG: 4, ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.1,  DEMOGRAPHIC_RISK_SCORE: 0.9}
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'S1',   PERSON_ID: 'S1', MBI_CROSSWALK_SOURCE: 'direct',                YEAR_MONTH: '202502', ENROLL_FLAG: 3, ENROLLMENT_TYPE: 'aged_dual',     RISK_SCORE: 1.2,  DEMOGRAPHIC_RISK_SCORE: 1.7}
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'S3',   PERSON_ID: null, MBI_CROSSWALK_SOURCE: null,                    YEAR_MONTH: '202501', ENROLL_FLAG: 1, ENROLLMENT_TYPE: 'esrd',          RISK_SCORE: null, DEMOGRAPHIC_RISK_SCORE: 1.3}
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'OLD4', PERSON_ID: 'P4', MBI_CROSSWALK_SOURCE: 'cclf_beneficiary_xref', YEAR_MONTH: '202512', ENROLL_FLAG: 2, ENROLLMENT_TYPE: 'disabled',      RISK_SCORE: 0.8,  DEMOGRAPHIC_RISK_SCORE: 0.6}
+
+  - name: test_settlement_risk_ratio_reproduces_table_a1
+    model: int_settlement_risk_ratio
+    description: >
+      M-SETTLE against a synthetic Table A1. Every value is dyadic, so the
+      expected [A], [C], [D], [F], [G], [H] and [I] are exact, well inside
+      1e-12.
+
+      2025, the cap does not bind. Aged/non-dual: B1's 12 months (6 at 1.0,
+      6 at 1.5) and B2's first 6 (1.25), so [C] 1.25 over 18 months, 1.5
+      person years. Aged/dual: B2 retyped by its flag for months 7-12, [C]
+      2.0, 0.5 person years. Disabled: B3's 12 months, month 12 unscored, so
+      [C] is the mean of 11 scores (1.0) but the person years are 1.0.
+      [L] 1000, 1000 and 2000 give weights 0.375, 0.125 and 0.5. ESRD is in
+      the workbook with no eligible month: weight 0, no PY score, no ratio,
+      and the aggregates still resolve. R = 0.375 x 1.0 + 0.125 x 0.5 + 0.5
+      x 1.0 = 0.9375; the weighted [G] is 1.125, so [H] is 1.155. R is
+      below [H], so [I] is each type's [D].
+
+      2026, the cap binds. Aged/non-dual and ESRD, one beneficiary each,
+      equal weights; [D] 2.0 and 1.0 give R 1.5, above [H] = 1.0 + 0.03, so
+      [I] is 1.03 for both.
+
+      Decoys: the workbook's weighted-average row, and another ACO's
+      workbook rows with no settlement population.
+
+    given:
+
+      - input: ref('int_settlement_member_month_risk')
+        rows:
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202501', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202502', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202503', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202504', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202505', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202506', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202507', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.5, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202508', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.5, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202509', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.5, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202510', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.5, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202511', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.5, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B1', YEAR_MONTH: '202512', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.5, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202501', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.25, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202502', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.25, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202503', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.25, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202504', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.25, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202505', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.25, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202506', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.25, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202507', ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 2.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202508', ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 2.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202509', ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 2.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202510', ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 2.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202511', ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 2.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B2', YEAR_MONTH: '202512', ENROLLMENT_TYPE: 'aged_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 2.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202501', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202502', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202503', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202504', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202505', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202506', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202507', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202508', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202509', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202510', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202511', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, BENE_MBI_ID: 'B3', YEAR_MONTH: '202512', ENROLLMENT_TYPE: 'disabled', RISK_SCORE: null, DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202601', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202602', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202603', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202604', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202605', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202606', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202607', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202608', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202609', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202610', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202611', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B5', YEAR_MONTH: '202612', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202601', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202602', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202603', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202604', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202605', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202606', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202607', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202608', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202609', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202610', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202611', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202612', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+
+      - input: ref('fct_settlement_risk')
+        rows:
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'aged_non_dual',    BY3_CMS_HCC_RISK_SCORE: 1.25, BY3_DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'aged_dual',        BY3_CMS_HCC_RISK_SCORE: 4.0,  BY3_DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'disabled',         BY3_CMS_HCC_RISK_SCORE: 1.0,  BY3_DEMOGRAPHIC_RISK_SCORE: 0.75}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'esrd',             BY3_CMS_HCC_RISK_SCORE: 2.0,  BY3_DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'weighted_average', BY3_CMS_HCC_RISK_SCORE: 9.9,  BY3_DEMOGRAPHIC_RISK_SCORE: 9.9}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'aged_non_dual',    BY3_CMS_HCC_RISK_SCORE: 1.0,  BY3_DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'esrd',             BY3_CMS_HCC_RISK_SCORE: 4.0,  BY3_DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A2', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'aged_non_dual',    BY3_CMS_HCC_RISK_SCORE: 1.0,  BY3_DEMOGRAPHIC_RISK_SCORE: 1.0}
+
+      - input: ref('fct_settlement_historical_benchmark')
+        rows:
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'aged_non_dual', HISTORICAL_BENCHMARK: 1000}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'aged_dual',     HISTORICAL_BENCHMARK: 1000}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'disabled',      HISTORICAL_BENCHMARK: 2000}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'esrd',          HISTORICAL_BENCHMARK: 4000}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'aged_non_dual', HISTORICAL_BENCHMARK: 1000}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'esrd',          HISTORICAL_BENCHMARK: 1000}
+          - {ACO_ID: 'A2', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'aged_non_dual', HISTORICAL_BENCHMARK: 1000}
+
+    expect:
+      rows:
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'aged_non_dual', ELIGIBLE_MEMBER_MONTHS: 18, SCORED_MEMBER_MONTHS: 18, PERSON_YEARS: 1.5, RISK_SCORE_WEIGHT: 0.375, PY_CMS_HCC_RISK_SCORE: 1.25, UNCAPPED_RISK_RATIO: 1.0,  PY_DEMOGRAPHIC_RISK_SCORE: 1.0,  DEMOGRAPHIC_RISK_RATIO: 1.0,  AGGREGATE_UNCAPPED_RISK_RATIO: 0.9375, AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.125, AGGREGATE_CAP: 1.155, IS_CAP_BINDING: false, FINAL_RISK_RATIO: 1.0}
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'aged_dual',     ELIGIBLE_MEMBER_MONTHS: 6,  SCORED_MEMBER_MONTHS: 6,  PERSON_YEARS: 0.5, RISK_SCORE_WEIGHT: 0.125, PY_CMS_HCC_RISK_SCORE: 2.0,  UNCAPPED_RISK_RATIO: 0.5,  PY_DEMOGRAPHIC_RISK_SCORE: 2.0,  DEMOGRAPHIC_RISK_RATIO: 2.0,  AGGREGATE_UNCAPPED_RISK_RATIO: 0.9375, AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.125, AGGREGATE_CAP: 1.155, IS_CAP_BINDING: false, FINAL_RISK_RATIO: 0.5}
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'disabled',      ELIGIBLE_MEMBER_MONTHS: 12, SCORED_MEMBER_MONTHS: 11, PERSON_YEARS: 1.0, RISK_SCORE_WEIGHT: 0.5,   PY_CMS_HCC_RISK_SCORE: 1.0,  UNCAPPED_RISK_RATIO: 1.0,  PY_DEMOGRAPHIC_RISK_SCORE: 0.75, DEMOGRAPHIC_RISK_RATIO: 1.0,  AGGREGATE_UNCAPPED_RISK_RATIO: 0.9375, AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.125, AGGREGATE_CAP: 1.155, IS_CAP_BINDING: false, FINAL_RISK_RATIO: 1.0}
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'esrd',          ELIGIBLE_MEMBER_MONTHS: 0,  SCORED_MEMBER_MONTHS: 0,  PERSON_YEARS: 0.0, RISK_SCORE_WEIGHT: 0.0,   PY_CMS_HCC_RISK_SCORE: null, UNCAPPED_RISK_RATIO: null, PY_DEMOGRAPHIC_RISK_SCORE: null, DEMOGRAPHIC_RISK_RATIO: null, AGGREGATE_UNCAPPED_RISK_RATIO: 0.9375, AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.125, AGGREGATE_CAP: 1.155, IS_CAP_BINDING: false, FINAL_RISK_RATIO: null}
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'aged_non_dual', ELIGIBLE_MEMBER_MONTHS: 12, SCORED_MEMBER_MONTHS: 12, PERSON_YEARS: 1.0, RISK_SCORE_WEIGHT: 0.5,   PY_CMS_HCC_RISK_SCORE: 2.0,  UNCAPPED_RISK_RATIO: 2.0,  PY_DEMOGRAPHIC_RISK_SCORE: 1.0,  DEMOGRAPHIC_RISK_RATIO: 1.0,  AGGREGATE_UNCAPPED_RISK_RATIO: 1.5,    AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.0,   AGGREGATE_CAP: 1.03,  IS_CAP_BINDING: true,  FINAL_RISK_RATIO: 1.03}
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'esrd',          ELIGIBLE_MEMBER_MONTHS: 12, SCORED_MEMBER_MONTHS: 12, PERSON_YEARS: 1.0, RISK_SCORE_WEIGHT: 0.5,   PY_CMS_HCC_RISK_SCORE: 4.0,  UNCAPPED_RISK_RATIO: 1.0,  PY_DEMOGRAPHIC_RISK_SCORE: 1.0,  DEMOGRAPHIC_RISK_RATIO: 1.0,  AGGREGATE_UNCAPPED_RISK_RATIO: 1.5,    AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.0,   AGGREGATE_CAP: 1.03,  IS_CAP_BINDING: true,  FINAL_RISK_RATIO: 1.03}

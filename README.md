@@ -359,10 +359,30 @@ The connector adds two facts of its own to that schema, under
   other score for the month, and CMS's own settlement types the month by
   the flag too.
 
+  Settled years carry CMS's settlement view beside the projection
+  (TUVA-162). Once the settlement AALR is delivered, the PY's own scores
+  exist, and the facts compute Table A1 from them by method M-SETTLE:
+  `int_settlement_member_month_risk` types each eligible person-month of the
+  settlement population (`aalr_settlement_population`, latest delivery) by
+  its EnrollFlag and reads that month's `BENE_RSK_R_SCRE_NN` as printed;
+  `int_settlement_risk_ratio` takes the person-month means per type ([C],
+  [F]), divides by the settlement workbook's BY3 [B] and [E] (not the
+  benchmark report's: CMS rescores some BY3 beneficiaries at
+  reconciliation), weights by Table 1 [L] times person years ([A]), and
+  applies A1's cap: [H] is the weighted [G] plus 0.03, and every type takes
+  [H] when the weighted [D] exceeds it ([I]). `fact_benchmark_aco_quarter`
+  carries the result as `SETTLEMENT_*` columns on every quarter row of the
+  settled year, and `fact_member_month_benchmark` carries the month's
+  settlement type, score, ratio and final [I]. The projection's own columns
+  do not change. A warn-level test holds the fact's settlement columns to
+  the workbook's own A1 within a relative 1e-4. A unit test pins the
+  arithmetic.
+
   Unscored months are left out of the mean: an assigned, typed month with no
   score is not counted as zero or as the type's average. This is an
-  assumption, not a CMS rule. Real data checked so far had no unscored
-  eligible months, so the effect has not been observed.
+  assumption, not a CMS rule, and it holds for settled years too (the month
+  still counts as a person year there). Real data checked so far had no
+  unscored eligible months, so the effect has not been observed.
 
   Everything is NULL-safe and nothing is defaulted: a type with no assigned,
   scored member-months leaves the aggregate, the factor and the capped
@@ -460,6 +480,12 @@ the raw tables this connector reads, so the two are released in pairs:
 | cms_mssp_connector | cms_mssp_pipeline | medicare_cclf_connector (via cms_alr_connector) |
 |---|---|---|
 | v1.0.1 | v0.4.0 | v1.0.2 (cms_alr_connector v1.1.1) |
+
+**Pending pin bump.** The settlement risk models (TUVA-162) read
+`ref('cms_aalr_connector', 'aalr_settlement_population')`, which
+`cms_alr_connector` v1.1.1 does not have. They compile once the pin moves to
+the ALR release that ships it; that bump, with the ALR seeds re-copied at its
+tag, is still to come.
 
 - `dbt-labs/dbt_utils`
 - `tuva-health/cms_alr_connector` `v1.1.1`, which brings

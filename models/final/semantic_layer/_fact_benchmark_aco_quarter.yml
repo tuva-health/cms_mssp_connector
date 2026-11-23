@@ -433,6 +433,78 @@ models:
           missing and the prospective trend was defaulted, so `[M]`, `[P]`
           and every figure here rest on a guess.
 
+      - name: SETTLEMENT_RISK_SCORE_WEIGHT_ESRD
+        description: >
+          Settled years only (TUVA-162): the type's A1 [A] weight as computed
+          from the settlement population (`int_settlement_risk_ratio`),
+          beside the projection's `RISK_RATIO_WEIGHT`. The same on every
+          quarter row of the year; NULL for a year with no settlement
+          population. Compare with `fct_settlement_risk.RISK_SCORE_WEIGHT`.
+      - name: SETTLEMENT_PY_RISK_SCORE_ESRD
+        description: >
+          A1 [C]: the mean settlement AALR monthly score over the type's
+          scored person-months, the PY's own scores (the projection's
+          `PY_MEAN_RISK_SCORE` is BY3-year based).
+      - name: SETTLEMENT_RISK_RATIO_ESRD
+        description: A1 [D], [C] over the settlement workbook's BY3 [B].
+      - name: SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_ESRD
+        description: A1 [F], the mean demographic score.
+      - name: SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_ESRD
+        description: A1 [G], [F] over the settlement workbook's BY3 [E].
+      - name: SETTLEMENT_FINAL_RISK_RATIO_ESRD
+        description: A1 [I], the cap [H] where the weighted [D] exceeds it, else [D].
+
+      - name: SETTLEMENT_RISK_SCORE_WEIGHT_DISABLED
+        description: As for ESRD.
+      - name: SETTLEMENT_PY_RISK_SCORE_DISABLED
+        description: As for ESRD.
+      - name: SETTLEMENT_RISK_RATIO_DISABLED
+        description: As for ESRD.
+      - name: SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_DISABLED
+        description: As for ESRD.
+      - name: SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_DISABLED
+        description: As for ESRD.
+      - name: SETTLEMENT_FINAL_RISK_RATIO_DISABLED
+        description: As for ESRD.
+
+      - name: SETTLEMENT_RISK_SCORE_WEIGHT_AGED_DUAL
+        description: As for ESRD.
+      - name: SETTLEMENT_PY_RISK_SCORE_AGED_DUAL
+        description: As for ESRD.
+      - name: SETTLEMENT_RISK_RATIO_AGED_DUAL
+        description: As for ESRD.
+      - name: SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_AGED_DUAL
+        description: As for ESRD.
+      - name: SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_AGED_DUAL
+        description: As for ESRD.
+      - name: SETTLEMENT_FINAL_RISK_RATIO_AGED_DUAL
+        description: As for ESRD.
+
+      - name: SETTLEMENT_RISK_SCORE_WEIGHT_AGED_NON_DUAL
+        description: As for ESRD.
+      - name: SETTLEMENT_PY_RISK_SCORE_AGED_NON_DUAL
+        description: As for ESRD.
+      - name: SETTLEMENT_RISK_RATIO_AGED_NON_DUAL
+        description: As for ESRD.
+      - name: SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_AGED_NON_DUAL
+        description: As for ESRD.
+      - name: SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_AGED_NON_DUAL
+        description: As for ESRD.
+      - name: SETTLEMENT_FINAL_RISK_RATIO_AGED_NON_DUAL
+        description: As for ESRD.
+
+      - name: SETTLEMENT_AGGREGATE_RISK_RATIO
+        description: A1's weighted-average [D], from the settlement population.
+      - name: SETTLEMENT_AGGREGATE_DEMOGRAPHIC_RISK_RATIO
+        description: A1's weighted-average [G].
+      - name: SETTLEMENT_AGGREGATE_CAP
+        description: >
+          A1 [H]: the weighted-average [G] plus `mssp_risk_score_cap`. Unlike
+          the projection's flat `CAP_UPPER_BOUND`, it carries the ACO's
+          demographic growth, which only the settlement population supplies.
+      - name: SETTLEMENT_IS_CAP_BINDING
+        description: True when the weighted-average [D] exceeds [H].
+
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -513,6 +585,9 @@ unit_tests:
       NULL with no scored month (2029).
 
     given:
+
+      - input: ref('int_settlement_risk_ratio')
+        rows: []
 
       - input: ref('fct_projected_savings_current')
         rows:
@@ -637,12 +712,24 @@ unit_tests:
                others have zero person years), at ratio 1.03, so R is 1.03.
                The cap binds only above the bound, so the factor is 1 and the
                flag false.
+      Settlement (TUVA-162): 2025 is settled. The settlement columns carry
+      int_settlement_risk_ratio's A1 for A1 2025 on the row, beside the
+      projection's own ratios, which do not move; a type with no settlement
+      row (disabled) is NULL, and so is every settlement column in 2024 and
+      2023 (another ACO's 2024 is a decoy).
       fact_member_month_benchmark's
       test_capped_rates_reconcile_with_every_enrollment_type_scored takes the
       2025 factor from here and shows the member rates average to this
       benchmark.
 
     given:
+
+      - input: ref('int_settlement_risk_ratio')
+        rows:
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE_WEIGHT: 0.5, PY_CMS_HCC_RISK_SCORE: 2.0, UNCAPPED_RISK_RATIO: 2.0, PY_DEMOGRAPHIC_RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_RATIO: 1.0, AGGREGATE_UNCAPPED_RISK_RATIO: 1.5, AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.0, AGGREGATE_CAP: 1.03, IS_CAP_BINDING: true, FINAL_RISK_RATIO: 1.03}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'esrd',          RISK_SCORE_WEIGHT: 0.5, PY_CMS_HCC_RISK_SCORE: 4.0, UNCAPPED_RISK_RATIO: 1.0, PY_DEMOGRAPHIC_RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_RATIO: 1.0, AGGREGATE_UNCAPPED_RISK_RATIO: 1.5, AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.0, AGGREGATE_CAP: 1.03, IS_CAP_BINDING: true, FINAL_RISK_RATIO: 1.03}
+          # Decoy: another ACO's settled year.
+          - {ACO_ID: 'A9', PERFORMANCE_YEAR: 2024, ENROLLMENT_TYPE: 'esrd',          RISK_SCORE_WEIGHT: 1.0, PY_CMS_HCC_RISK_SCORE: 9.9, UNCAPPED_RISK_RATIO: 9.9, PY_DEMOGRAPHIC_RISK_SCORE: 9.9, DEMOGRAPHIC_RISK_RATIO: 9.9, AGGREGATE_UNCAPPED_RISK_RATIO: 9.9, AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 9.9, AGGREGATE_CAP: 9.93, IS_CAP_BINDING: false, FINAL_RISK_RATIO: 9.9}
 
       - input: ref('fct_projected_savings_current')
         rows:
@@ -700,6 +787,6 @@ unit_tests:
 
     expect:
       rows:
-        - {PERFORMANCE_YEAR: 2025, PERIOD: '2025Q3', IS_CURRENT_PROJECTION: true, BY3_RISK_SCORE_AGED_DUAL: 1.125, RISK_RATIO_ESRD: 1.5, RISK_RATIO_DISABLED: 1.25, RISK_RATIO_AGED_DUAL: 1.25, RISK_RATIO_AGED_NON_DUAL: 1.25, AGGREGATE_RISK_RATIO: 1.3125, CAP_FACTOR: 0.7847619047619048, IS_CAP_BINDING: true,  RISK_ADJUSTED_BENCHMARK_UNCAPPED: 62250, RISK_ADJUSTED_BENCHMARK: 48851.42857142857, RISK_ADJUSTED_BENCHMARK_PMPM: 4070.952380952381}
-        - {PERFORMANCE_YEAR: 2024, PERIOD: '2024Q4', IS_CURRENT_PROJECTION: true, BY3_RISK_SCORE_AGED_DUAL: 1.125, RISK_RATIO_ESRD: 1.0, RISK_RATIO_DISABLED: 0.5,  RISK_RATIO_AGED_DUAL: 1.0,  RISK_RATIO_AGED_NON_DUAL: 1.0,  AGGREGATE_RISK_RATIO: 0.875,  CAP_FACTOR: 1.0, IS_CAP_BINDING: false, RISK_ADJUSTED_BENCHMARK_UNCAPPED: 10500, RISK_ADJUSTED_BENCHMARK: 10500, RISK_ADJUSTED_BENCHMARK_PMPM: 875}
-        - {PERFORMANCE_YEAR: 2023, PERIOD: '2023Q4', IS_CURRENT_PROJECTION: true, BY3_RISK_SCORE_AGED_DUAL: 1.0,   RISK_RATIO_ESRD: 1.0, RISK_RATIO_DISABLED: 1.0,  RISK_RATIO_AGED_DUAL: 1.0,  RISK_RATIO_AGED_NON_DUAL: 1.03, AGGREGATE_RISK_RATIO: 1.03,   CAP_FACTOR: 1.0, IS_CAP_BINDING: false, RISK_ADJUSTED_BENCHMARK_UNCAPPED: 12360, RISK_ADJUSTED_BENCHMARK: 12360, RISK_ADJUSTED_BENCHMARK_PMPM: 1030}
+        - {PERFORMANCE_YEAR: 2025, PERIOD: '2025Q3', IS_CURRENT_PROJECTION: true, BY3_RISK_SCORE_AGED_DUAL: 1.125, RISK_RATIO_ESRD: 1.5, RISK_RATIO_DISABLED: 1.25, RISK_RATIO_AGED_DUAL: 1.25, RISK_RATIO_AGED_NON_DUAL: 1.25, AGGREGATE_RISK_RATIO: 1.3125, CAP_FACTOR: 0.7847619047619048, IS_CAP_BINDING: true,  RISK_ADJUSTED_BENCHMARK_UNCAPPED: 62250, RISK_ADJUSTED_BENCHMARK: 48851.42857142857, RISK_ADJUSTED_BENCHMARK_PMPM: 4070.952380952381, SETTLEMENT_RISK_SCORE_WEIGHT_ESRD: 0.5, SETTLEMENT_PY_RISK_SCORE_ESRD: 4.0, SETTLEMENT_RISK_RATIO_ESRD: 1.0, SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_ESRD: 1.0, SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_ESRD: 1.0, SETTLEMENT_FINAL_RISK_RATIO_ESRD: 1.03, SETTLEMENT_RISK_RATIO_AGED_NON_DUAL: 2.0, SETTLEMENT_FINAL_RISK_RATIO_AGED_NON_DUAL: 1.03, SETTLEMENT_RISK_RATIO_DISABLED: null, SETTLEMENT_AGGREGATE_RISK_RATIO: 1.5, SETTLEMENT_AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.0, SETTLEMENT_AGGREGATE_CAP: 1.03, SETTLEMENT_IS_CAP_BINDING: true}
+        - {PERFORMANCE_YEAR: 2024, PERIOD: '2024Q4', IS_CURRENT_PROJECTION: true, BY3_RISK_SCORE_AGED_DUAL: 1.125, RISK_RATIO_ESRD: 1.0, RISK_RATIO_DISABLED: 0.5,  RISK_RATIO_AGED_DUAL: 1.0,  RISK_RATIO_AGED_NON_DUAL: 1.0,  AGGREGATE_RISK_RATIO: 0.875,  CAP_FACTOR: 1.0, IS_CAP_BINDING: false, RISK_ADJUSTED_BENCHMARK_UNCAPPED: 10500, RISK_ADJUSTED_BENCHMARK: 10500, RISK_ADJUSTED_BENCHMARK_PMPM: 875, SETTLEMENT_RISK_SCORE_WEIGHT_ESRD: null, SETTLEMENT_PY_RISK_SCORE_ESRD: null, SETTLEMENT_RISK_RATIO_ESRD: null, SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_ESRD: null, SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_ESRD: null, SETTLEMENT_FINAL_RISK_RATIO_ESRD: null, SETTLEMENT_RISK_RATIO_AGED_NON_DUAL: null, SETTLEMENT_FINAL_RISK_RATIO_AGED_NON_DUAL: null, SETTLEMENT_RISK_RATIO_DISABLED: null, SETTLEMENT_AGGREGATE_RISK_RATIO: null, SETTLEMENT_AGGREGATE_DEMOGRAPHIC_RISK_RATIO: null, SETTLEMENT_AGGREGATE_CAP: null, SETTLEMENT_IS_CAP_BINDING: null}
+        - {PERFORMANCE_YEAR: 2023, PERIOD: '2023Q4', IS_CURRENT_PROJECTION: true, BY3_RISK_SCORE_AGED_DUAL: 1.0,   RISK_RATIO_ESRD: 1.0, RISK_RATIO_DISABLED: 1.0,  RISK_RATIO_AGED_DUAL: 1.0,  RISK_RATIO_AGED_NON_DUAL: 1.03, AGGREGATE_RISK_RATIO: 1.03,   CAP_FACTOR: 1.0, IS_CAP_BINDING: false, RISK_ADJUSTED_BENCHMARK_UNCAPPED: 12360, RISK_ADJUSTED_BENCHMARK: 12360, RISK_ADJUSTED_BENCHMARK_PMPM: 1030, SETTLEMENT_RISK_SCORE_WEIGHT_ESRD: null, SETTLEMENT_PY_RISK_SCORE_ESRD: null, SETTLEMENT_RISK_RATIO_ESRD: null, SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_ESRD: null, SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_ESRD: null, SETTLEMENT_FINAL_RISK_RATIO_ESRD: null, SETTLEMENT_RISK_RATIO_AGED_NON_DUAL: null, SETTLEMENT_FINAL_RISK_RATIO_AGED_NON_DUAL: null, SETTLEMENT_RISK_RATIO_DISABLED: null, SETTLEMENT_AGGREGATE_RISK_RATIO: null, SETTLEMENT_AGGREGATE_DEMOGRAPHIC_RISK_RATIO: null, SETTLEMENT_AGGREGATE_CAP: null, SETTLEMENT_IS_CAP_BINDING: null}
