@@ -112,6 +112,19 @@ case
 end
 {%- endset -%}
 
+{#- The five sums over the types, each (name, per-type term). They are added
+    as four named terms in the order above rather than with sum(), as
+    fct_projected_savings adds [P]: double addition is not associative, and
+    sum() would leave the order to the rows' physical order and the query
+    plan, so the last bit of a ratio could change with nothing else. -#}
+{%- set totals = [
+        ('WEIGHT_TOTAL',                     'WEIGHT'),
+        ('WEIGHTED_RISK_RATIO_TOTAL',        'WEIGHT * RISK_RATIO'),
+        ('WEIGHTED_GROWTH_TOTAL',            'WEIGHT * NATIONAL_GROWTH_PROJECTED'),
+        ('RISK_ADJUSTED_BENCHMARK_UNCAPPED', 'ENROLLMENT_PROPORTION * ENROLLMENT_TYPE_BENCHMARK * RISK_RATIO'),
+        ('RISK_ADJUSTED_BENCHMARK_CLIPPED',  'ENROLLMENT_PROPORTION * ENROLLMENT_TYPE_BENCHMARK * ' ~ clipped_ratio)
+    ] -%}
+
 with projections as (
 
     select
@@ -417,15 +430,15 @@ aggregated as (
                 else 0
             end) = 0                                        as HAS_COMPLETE_GROWTH,
 
-        sum(WEIGHT)                                         as WEIGHT_TOTAL,
-        sum(WEIGHT * RISK_RATIO)                            as WEIGHTED_RISK_RATIO_TOTAL,
-        sum(WEIGHT * NATIONAL_GROWTH_PROJECTED)             as WEIGHTED_GROWTH_TOTAL,
-        sum(ENROLLMENT_PROPORTION * ENROLLMENT_TYPE_BENCHMARK * RISK_RATIO)
-                                                            as RISK_ADJUSTED_BENCHMARK_UNCAPPED,
-
-        {#- the CMS method's sum, meaningful only where the cap binds -#}
-        sum(ENROLLMENT_PROPORTION * ENROLLMENT_TYPE_BENCHMARK * {{ clipped_ratio | indent(12) }})
-                                                            as RISK_ADJUSTED_BENCHMARK_CLIPPED
+        {#- the five sums' terms, one per type, added in a fixed order below -#}
+        {%- for total, term in totals %}
+        {%- for enrollment_type in enrollment_types %}
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then {{ term | indent(12) }} end)
+                                                            as {{ total }}_TERM_{{ enrollment_type | upper }}
+        {%- if not loop.last %},{% endif %}
+        {%- endfor %}
+        {%- if not loop.last %},{% endif %}
+        {%- endfor %}
 
         {%- for enrollment_type in enrollment_types %},
 
@@ -448,10 +461,29 @@ aggregated as (
 
 ),
 
+-- Each sum as four named terms in a fixed order. A NULL term is left out,
+-- as sum() leaves out a NULL row, and the total is NULL only when every
+-- term is; adding the 0 that stands in for a missing term is exact.
+summed as (
+
+    select
+        aggregated.*
+        {%- for total, term in totals %},
+        case
+            when {% for enrollment_type in enrollment_types %}{{ total }}_TERM_{{ enrollment_type | upper }} is null{% if not loop.last %} and {% endif %}{% endfor %}
+                then {{ to_double('null') }}
+            else {% for enrollment_type in enrollment_types %}coalesce({{ total }}_TERM_{{ enrollment_type | upper }}, {{ to_double(0) }}){% if not loop.last %}
+               + {% endif %}{% endfor %}
+        end                                                 as {{ total }}
+        {%- endfor %}
+    from aggregated
+
+),
+
 ratios as (
 
     select
-        aggregated.*,
+        summed.*,
 
         case
             when HAS_COMPLETE_RATIOS
@@ -466,7 +498,7 @@ ratios as (
         {{ to_double(cap) }}                                as RISK_SCORE_CAP,
         {{ to_double(1) }} + {{ to_double(cap) }}           as CAP_UPPER_BOUND
 
-    from aggregated
+    from summed
 
 ),
 

@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     PY score, ratio, PY demographic score, demographic ratio, final ratio)
     and the aggregate ratio, demographic ratio, cap and binding flag, beside
     the projection.
+  - `fact_benchmark_aco_quarter` adds its five sums over the enrollment
+    types (the weight total, the weighted ratio and growth, and the two
+    risk-adjusted benchmarks) as four named terms in a fixed order, as
+    `fct_projected_savings` adds `[P]`, instead of with `sum()`. The
+    aggregate no longer depends on the physical order of its input rows.
   - `fact_member_month_benchmark`: `SETTLEMENT_ENROLLMENT_TYPE`,
     `SETTLEMENT_RISK_SCORE`, `SETTLEMENT_RISK_RATIO` and
     `SETTLEMENT_FINAL_RISK_RATIO`.
