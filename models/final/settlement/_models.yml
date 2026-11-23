@@ -263,27 +263,27 @@ models:
           Table 2 `[G]`, aged/non-dual. Updated benchmark expenditures ($):
           `[D]` x `[F]`.
 
-      - name: BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION_ESRD
+      - name: UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_ESRD
         description: >
           Table 2 `[H]`, ESRD. Assigned beneficiary proportions: the type's
           share of performance-year person years, as Table 2 weights `[G]`.
           Equals Table 3 `[D]` (`ASSIGNED_BENEFICIARY_PROPORTION_<TYPE>`).
 
-      - name: BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION_DISABLED
+      - name: UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_DISABLED
         description: >
           Table 2 `[H]`, disabled. Assigned beneficiary proportions: the
           type's share of performance-year person years, as Table 2 weights
           `[G]`. Equals Table 3 `[D]`
           (`ASSIGNED_BENEFICIARY_PROPORTION_<TYPE>`).
 
-      - name: BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION_AGED_DUAL
+      - name: UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_AGED_DUAL
         description: >
           Table 2 `[H]`, aged/dual. Assigned beneficiary proportions: the
           type's share of performance-year person years, as Table 2 weights
           `[G]`. Equals Table 3 `[D]`
           (`ASSIGNED_BENEFICIARY_PROPORTION_<TYPE>`).
 
-      - name: BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION_AGED_NON_DUAL
+      - name: UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_AGED_NON_DUAL
         description: >
           Table 2 `[H]`, aged/non-dual. Assigned beneficiary proportions: the
           type's share of performance-year person years, as Table 2 weights
@@ -325,25 +325,23 @@ models:
       - name: ASSIGNED_BENEFICIARY_PROPORTION_ESRD
         description: >
           Table 3 `[D]`, ESRD. Assigned beneficiary proportions. Equals Table
-          2 `[H]` (`BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION_<TYPE>`).
+          2 `[H]` (`UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_<TYPE>`).
 
       - name: ASSIGNED_BENEFICIARY_PROPORTION_DISABLED
         description: >
           Table 3 `[D]`, disabled. Assigned beneficiary proportions. Equals
-          Table 2 `[H]`
-          (`BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION_<TYPE>`).
+          Table 2 `[H]` (`UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_<TYPE>`).
 
       - name: ASSIGNED_BENEFICIARY_PROPORTION_AGED_DUAL
         description: >
           Table 3 `[D]`, aged/dual. Assigned beneficiary proportions. Equals
-          Table 2 `[H]`
-          (`BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION_<TYPE>`).
+          Table 2 `[H]` (`UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_<TYPE>`).
 
       - name: ASSIGNED_BENEFICIARY_PROPORTION_AGED_NON_DUAL
         description: >
           Table 3 `[D]`, aged/non-dual. Assigned beneficiary proportions.
           Equals Table 2 `[H]`
-          (`BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION_<TYPE>`).
+          (`UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_<TYPE>`).
 
       - name: PER_CAPITA_EXPENDITURE
         description: >
@@ -995,3 +993,21 @@ unit_tests:
     expect:
       rows:
         - {ENROLLMENT_TYPE: 'disabled', PERSON_YEARS_BY1: null, PERSON_YEARS_BY3: 800, HISTORICAL_BENCHMARK: 14000}
+
+  - name: test_settlement_renormalization_reads_both_blocks_by_year
+    model: fct_settlement_renormalization
+    description: >
+      Table A2's two blocks, one row per type: the CMS-HCC and demographic
+      means each in their own column by year, from the preferred delivery.
+
+    given:
+
+      - input: ref('int_settlement_values')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true,  FACT: 'renormalization', ENROLLMENT_TYPE: 'esrd', FIELD_NAME: 'CMS_HCC_NATIONAL_MEAN_BY1',    FIELD_KIND: 'numeric', VALUE_TEXT: '1.05', VALUE_NUMERIC: 1.05, IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.U', IS_EMBARGOED: false, FILE_PATH: 'u.xlsx', IS_PREFERRED_SUBMISSION: true,  FACT: 'renormalization', ENROLLMENT_TYPE: 'esrd', FIELD_NAME: 'DEMOGRAPHIC_NATIONAL_MEAN_PY', FIELD_KIND: 'numeric', VALUE_TEXT: '1.04', VALUE_NUMERIC: 1.04, IS_PLACEHOLDER: false}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, SUBMISSION_ID: 'STLMT.E', IS_EMBARGOED: true,  FILE_PATH: 'e.xlsx', IS_PREFERRED_SUBMISSION: false, FACT: 'renormalization', ENROLLMENT_TYPE: 'esrd', FIELD_NAME: 'CMS_HCC_NATIONAL_MEAN_BY1',    FIELD_KIND: 'numeric', VALUE_TEXT: '9',    VALUE_NUMERIC: 9,    IS_PLACEHOLDER: false}
+
+    expect:
+      rows:
+        - {SUBMISSION_ID: 'STLMT.U', ENROLLMENT_TYPE: 'esrd', CMS_HCC_NATIONAL_MEAN_BY1: 1.05, CMS_HCC_NATIONAL_MEAN_PY: null, DEMOGRAPHIC_NATIONAL_MEAN_PY: 1.04}

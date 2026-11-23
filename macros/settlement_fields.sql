@@ -44,7 +44,7 @@
         ('2', 'E',  'DETAIL', 'PY',               'NATIONAL_REGIONAL_UPDATE_FACTOR',         'numeric', true),
         ('2', 'F',  'DETAIL', 'PY',               'THREE_WAY_UPDATE_FACTOR',                 'numeric', true),
         ('2', 'G',  'DETAIL', 'PY',               'UPDATED_BENCHMARK',                       'numeric', true),
-        ('2', 'H',  'DETAIL', 'PY',               'BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION', 'numeric', true),
+        ('2', 'H',  'DETAIL', 'PY',               'UPDATED_BENCHMARK_BENEFICIARY_PROPORTION', 'numeric', true),
         ('2', 'I',  'CODE',   'PY',               'UPDATED_BENCHMARK',                       'numeric', false),
 
         ('3', 'A',  'CODE',   'PY', 'ASSIGNED_BENEFICIARIES',                 'numeric', false),
@@ -154,29 +154,40 @@
 {%- endmacro -%}
 
 {#-
+    The settlement facts: (fact, its fields, the row values its per-type
+    fields are read for), and whether the fact is one row per ACO and
+    performance year. On such a fact a per-type field becomes one column per
+    type, `<field>_<TYPE>`; on the others the type is the row.
+-#}
+{%- macro settlement_facts() -%}
+    {{ return([
+        ('settlement',           settlement_fields(),                      settlement_enrollment_types(), true),
+        ('risk',                 settlement_risk_fields(),                 settlement_risk_rows(),        false),
+        ('historical_benchmark', settlement_historical_benchmark_fields(), settlement_enrollment_types(), false),
+        ('renormalization',      settlement_renormalization_fields(),      settlement_enrollment_types(), false)
+    ]) }}
+{%- endmacro -%}
+
+{#- A field's column name for one row value: `<field>_<TYPE>` on a fact that is
+    one row per ACO and performance year, else the field's own name. -#}
+{%- macro settlement_column_name(name, type, types_are_columns) -%}
+    {{ return(name ~ '_' ~ (type | upper) if types_are_columns else name) }}
+{%- endmacro -%}
+
+{#-
     Every field cell, one row each: the map int_settlement_values joins its
-    cells to. A per-type field is one row per enrollment type: on
-    fct_settlement its FIELD_NAME carries the type (`<field>_<TYPE>`); on the
-    per-type facts it does not. A CODE or TOTAL row's ENROLLMENT_TYPE is
-    'total'.
+    cells to. A per-type field is one row per enrollment type (FIELD_NAME as
+    settlement_column_name gives it); a CODE or TOTAL row's ENROLLMENT_TYPE
+    is 'total'.
 -#}
 {%- macro settlement_field_map() -%}
     {%- set rows = [] -%}
-    {%- for fact, fields, types in [
-            ('settlement',            settlement_fields(),                       settlement_enrollment_types()),
-            ('risk',                  settlement_risk_fields(),                  settlement_risk_rows()),
-            ('historical_benchmark',  settlement_historical_benchmark_fields(),  settlement_enrollment_types()),
-            ('renormalization',       settlement_renormalization_fields(),       settlement_enrollment_types())
-        ] -%}
+    {%- for fact, fields, types, types_are_columns in settlement_facts() -%}
         {%- for table, section, row_kind, column_key, name, kind, per_type in fields -%}
-            {%- if per_type -%}
-                {%- for type in types -%}
-                    {%- set field_name = name ~ '_' ~ (type | upper) if fact == 'settlement' else name -%}
-                    {%- do rows.append([table, section, row_kind, type, column_key, fact, field_name, kind]) -%}
-                {%- endfor -%}
-            {%- else -%}
-                {%- do rows.append([table, section, row_kind, 'total', column_key, fact, name, kind]) -%}
-            {%- endif -%}
+            {%- for type in (types if per_type else ['total']) -%}
+                {%- do rows.append([table, section, row_kind, type, column_key, fact,
+                                    settlement_column_name(name, type, types_are_columns and per_type), kind]) -%}
+            {%- endfor -%}
         {%- endfor -%}
     {%- endfor -%}
 
@@ -194,23 +205,15 @@
     {%- endfor %}
 {%- endmacro -%}
 
-{#- The FIELD_NAMEs of one fact, in map order, for the facts' pivots. -#}
+{#- The (column name, kind) of one fact, in map order, for its pivot. -#}
 {%- macro settlement_fact_columns(fact) -%}
     {%- set columns = [] -%}
-    {%- set fields, types = {
-            'settlement':           (settlement_fields(),                      settlement_enrollment_types()),
-            'risk':                 (settlement_risk_fields(),                 settlement_risk_rows()),
-            'historical_benchmark': (settlement_historical_benchmark_fields(), settlement_enrollment_types()),
-            'renormalization':      (settlement_renormalization_fields(),      settlement_enrollment_types())
-        }[fact] -%}
-    {%- for _table, _section, _row_kind, _column_key, name, kind, per_type in fields -%}
-        {%- if fact == 'settlement' and per_type -%}
-            {%- for type in types -%}
-                {%- do columns.append((name ~ '_' ~ (type | upper), kind)) -%}
+    {%- for this_fact, fields, types, types_are_columns in settlement_facts() if this_fact == fact -%}
+        {%- for _table, _section, _row_kind, _column_key, name, kind, per_type in fields -%}
+            {%- for type in (types if types_are_columns and per_type else [none]) -%}
+                {%- do columns.append((settlement_column_name(name, type, types_are_columns and per_type), kind)) -%}
             {%- endfor -%}
-        {%- else -%}
-            {%- do columns.append((name, kind)) -%}
-        {%- endif -%}
+        {%- endfor -%}
     {%- endfor -%}
     {{ return(columns) }}
 {%- endmacro -%}

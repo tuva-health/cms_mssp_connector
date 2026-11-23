@@ -11,7 +11,9 @@
     The facts read each figure where it is written, so a disagreement means a
     field is mapped to the wrong cell. The workbook stores doubles, so the
     comparison allows float rounding (settlement_values_differ). A pair with
-    a blank side is not compared.
+    a blank side is not compared, except that a blank [KK] (no advance
+    investment payment to recoup) counts as 0, so [MM] = [HH] is still
+    checked.
 -#}
 
 {%- set types = settlement_enrollment_types() -%}
@@ -63,7 +65,7 @@ checks as (
         ACO_ID, PERFORMANCE_YEAR,
         'T3 [D] = T2 [H], {{ type }}',
         ASSIGNED_BENEFICIARY_PROPORTION_{{ type | upper }},
-        BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION_{{ type | upper }}
+        UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_{{ type | upper }}
     from settlement
     union all
 {%- endfor %}
@@ -78,7 +80,7 @@ checks as (
         ACO_ID, PERFORMANCE_YEAR,
         'T3 [MM] = [HH] - [KK]',
         NET_EARNED_PERFORMANCE_PAYMENT,
-        EARNED_PERFORMANCE_PAYMENT - AIP_RECOUPMENT
+        EARNED_PERFORMANCE_PAYMENT - coalesce(AIP_RECOUPMENT, 0)
     from settlement
 
 )

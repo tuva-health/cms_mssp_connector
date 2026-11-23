@@ -1,6 +1,7 @@
 {#-
-    The staging select for one settlement (STLMT) workbook relation. All
-    thirteen share one schema (workbook contract 1.3.0, `stlmt_cell_grain`):
+    The staging select for one settlement (STLMT) workbook relation, for the
+    five the settlement facts read. The pipeline's thirteen STLMT relations
+    share one schema (workbook contract 1.3.0, `stlmt_cell_grain`):
     the benchmark workbooks' cell grain plus BLOCK_LABEL, ROW_KIND and
     COLUMN_CODE, the grammar that keeps the real layout explicit, and
     IS_EMBARGOED.

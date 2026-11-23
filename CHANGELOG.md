@@ -47,19 +47,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pinned to cms_mssp_pipeline's workbook contract 1.3.0. The staging views
   fail to build against a pipeline release that does not write those tables
   and columns; release with a pipeline that does.
+
+
+### Changed
+
 - **Renamed from the first, unreleased settlement build** (no migration: it
-  never shipped). The coded names are gone: `T2_<code>_<type>` are now
-  `HISTORICAL_BENCHMARK_<TYPE>` (`[A]`), `BY3_CMS_HCC_RISK_SCORE_<TYPE>` and
-  `PY_CMS_HCC_RISK_SCORE_<TYPE>` (`[B]`), `CAPPED_RISK_RATIO_<TYPE>` (`[C]`),
-  `RISK_ADJUSTED_HISTORICAL_BENCHMARK_<TYPE>` (`[D]`),
-  `NATIONAL_REGIONAL_UPDATE_FACTOR_<TYPE>` (`[E]`),
-  `THREE_WAY_UPDATE_FACTOR_<TYPE>` (`[F]`), `UPDATED_BENCHMARK_<TYPE>`
-  (`[G]`) and `BENCHMARK_ASSIGNED_BENEFICIARY_PROPORTION_<TYPE>` (`[H]`);
-  `T3_<code>` are named for their footnote meaning (for example `T3_BB` is
-  `MET_LOW_REVENUE_SHARING_CRITERIA`, a Y/N flag, `T3_CC` is
-  `FINAL_SHARING_RATE`, `T3_HH` is `EARNED_PERFORMANCE_PAYMENT`, `T3_MM` is
-  `NET_EARNED_PERFORMANCE_PAYMENT`; `T3_II` is `APPLICABLE_PAYMENT`, text).
-  `SAVINGS_REALIZED` is `SAVINGS_OR_LOSSES_REALIZED`.
+  never shipped). The coded names are gone. Table 2: `T2_A_<TYPE>` →
+  `HISTORICAL_BENCHMARK_<TYPE>`, `T2_B_<TYPE>` → `BY3_CMS_HCC_RISK_SCORE_<TYPE>`
+  and `PY_CMS_HCC_RISK_SCORE_<TYPE>`, `T2_C_<TYPE>` → `CAPPED_RISK_RATIO_<TYPE>`,
+  `T2_D_<TYPE>` → `RISK_ADJUSTED_HISTORICAL_BENCHMARK_<TYPE>`, `T2_E_<TYPE>` →
+  `NATIONAL_REGIONAL_UPDATE_FACTOR_<TYPE>`, `T2_F_<TYPE>` →
+  `THREE_WAY_UPDATE_FACTOR_<TYPE>`, `T2_G_<TYPE>` → `UPDATED_BENCHMARK_<TYPE>`,
+  `T2_H_<TYPE>` → `UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_<TYPE>`. Table 3:
+  `T3_G` → `TOTAL_EXPENDITURES`, `T3_H` → `TOTAL_BENCHMARK_EXPENDITURES`,
+  `T3_I` → `BENCHMARK_MINUS_EXPENDITURES`, `T3_J` → `TOTAL_SAVINGS`, `T3_L`
+  → `MINIMUM_SAVINGS_RATE`, `T3_N` → `MINIMUM_SAVINGS_AMOUNT`, `T3_X` →
+  `MAXIMUM_SHARING_RATE`, `T3_Y` → `QUALITY_SCORE`, `T3_Z` →
+  `MET_QUALITY_STANDARD`, `T3_AA` → `MET_ALTERNATIVE_QUALITY_STANDARD`,
+  `T3_BB` → `MET_LOW_REVENUE_SHARING_CRITERIA`, `T3_CC` →
+  `FINAL_SHARING_RATE`, `T3_EE` → `SHARED_SAVINGS`, `T3_FF` →
+  `SHARED_SAVINGS_CAP`, `T3_GG` → `SEQUESTRATION_ADJUSTMENT`, `T3_HH` →
+  `EARNED_PERFORMANCE_PAYMENT`, `T3_II` → `APPLICABLE_PAYMENT`, `T3_JJ` →
+  `MAXIMUM_AIP_RECOUPMENT`, `T3_KK` → `AIP_RECOUPMENT`, `T3_LL` →
+  `AIP_STILL_OWED`, `T3_MM` → `NET_EARNED_PERFORMANCE_PAYMENT`.
+  `T3_BB` and `T3_II` are now text (`[BB]` is the Y/N low-revenue criteria
+  flag, `[II]` a text result). `SAVINGS_REALIZED` → `SAVINGS_OR_LOSSES_REALIZED`.
   `PERSON_YEARS_<TYPE>` is removed: Table 3 `[B]` is a single value.
   `fct_settlement_risk` is wide (one row per type) instead of one row per
   section, so `SECTION_CODE`, `SECTION_LABEL`, `BY3_VALUE`, `PY_VALUE` and
