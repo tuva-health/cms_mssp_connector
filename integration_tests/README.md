@@ -74,11 +74,13 @@ the build does not exercise that path; the `int_member_month_risk` unit
 tests `test_enrollment_type_priority_and_score_selection` (P6) and
 `test_mbi_resolves_through_the_excluded_beneficiary_crosswalk` do.
 
-Every test runs at its own severity, and the build has one warning: cms_alr_connector's `alr_file_without_file_parameters`, set to `warn` in `dbt_project.yml` because the copied ALR fixtures include an unmatchable file (A18) on purpose. The
-connector's `mssp_aco_agreement` seed ships to clients with only its
-`EXAMPLE-ACO` row, so `dbt_project.yml` here appends `A0000`'s row (variable
-MSR, ACPT at PY1) to it with a seed post-hook; a root seed of the same name
-cannot replace a package's.
+Every test runs at its own severity, and the build has one warning:
+cms_alr_connector's `alr_file_without_file_parameters`, set to `warn` in
+`dbt_project.yml` because the copied ALR fixtures include an unmatchable file
+(A18) on purpose. The connector's `mssp_aco_agreement` seed ships to clients
+with only its `EXAMPLE-ACO` row, so `dbt_project.yml` here appends `A0000`'s
+row (variable MSR, ACPT at PY1) to it with a seed post-hook; a root seed of
+the same name cannot replace a package's.
 
 The ALR seeds assign and score every enrollment type in 2025, including the
 disabled and aged/dual beneficiaries TUVA-134 added, so

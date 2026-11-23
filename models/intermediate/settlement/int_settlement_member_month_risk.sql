@@ -93,12 +93,7 @@ eligible_months as (
             'cast(MONTH_NUMBER as ' ~ dbt.type_string() ~ ')'
         ]) }}                                                   as YEAR_MONTH,
         ENROLL_FLAG,
-        case ENROLL_FLAG
-            when 1 then 'esrd'
-            when 2 then 'disabled'
-            when 3 then 'aged_dual'
-            when 4 then 'aged_non_dual'
-        end                                                     as ENROLLMENT_TYPE,
+        {{ enroll_flag_type('ENROLL_FLAG') }}                   as ENROLLMENT_TYPE,
         {{ to_double('RISK_SCORE') }}                           as RISK_SCORE,
         {{ to_double(
             'case ENROLL_FLAG

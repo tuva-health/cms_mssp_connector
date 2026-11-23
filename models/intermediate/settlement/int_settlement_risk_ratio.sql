@@ -25,8 +25,9 @@
     some BY3 beneficiaries at reconciliation, which the ALR inputs cannot
     reproduce (TUVA-161).
 
-    Nothing is defaulted. A type with person years but no [L], [B] or [E]
-    leaves the aggregates, the cap and [I] NULL for the year, as
+    Nothing is defaulted. A type with person years but no [L] leaves every
+    weight of the year NULL; one with weight but no [B] or [E] leaves the
+    aggregates, the cap and [I] NULL for the year, as
     fact_benchmark_aco_quarter does. A type CMS lists in the workbook with
     no eligible month keeps its row with zero person years and weight 0.
 -#}
@@ -89,7 +90,7 @@ workbook_benchmark as (
 type_keys as (
 
     select ACO_ID, PERFORMANCE_YEAR, ENROLLMENT_TYPE from population
-    union
+    union distinct
     select workbook_risk.ACO_ID, workbook_risk.PERFORMANCE_YEAR, workbook_risk.ENROLLMENT_TYPE
     from workbook_risk
     inner join (select distinct ACO_ID, PERFORMANCE_YEAR from population) as settled
@@ -137,21 +138,32 @@ weighted as (
 
     select
         typed.*,
+        -- A type with person years and no benchmark leaves the weights incomplete.
+        max(case when PERSON_YEARS > 0 and HISTORICAL_BENCHMARK is null then 1 else 0 end)
+            over (partition by ACO_ID, PERFORMANCE_YEAR)        as HAS_MISSING_WEIGHT,
         {{ safe_divide(
             'HISTORICAL_BENCHMARK * PERSON_YEARS',
             'sum(HISTORICAL_BENCHMARK * PERSON_YEARS) over (partition by ACO_ID, PERFORMANCE_YEAR)'
-        ) }}                                                    as RISK_SCORE_WEIGHT,
-        -- A type with person years and no benchmark leaves the weights incomplete.
-        max(case when PERSON_YEARS > 0 and HISTORICAL_BENCHMARK is null then 1 else 0 end)
-            over (partition by ACO_ID, PERFORMANCE_YEAR)        as HAS_MISSING_WEIGHT
+        ) }}                                                    as WEIGHT_FROM_KNOWN_TYPES
     from typed
+
+),
+
+weights as (
+
+    select
+        weighted.*,
+        -- Incomplete weights are unknown weights, for every type of the year.
+        case when HAS_MISSING_WEIGHT = 0 then WEIGHT_FROM_KNOWN_TYPES end
+                                                                as RISK_SCORE_WEIGHT
+    from weighted
 
 ),
 
 aggregated as (
 
     select
-        weighted.*,
+        weights.*,
         case when HAS_MISSING_WEIGHT = 0 then
             sum(RISK_SCORE_WEIGHT * UNCAPPED_RISK_RATIO) over (partition by ACO_ID, PERFORMANCE_YEAR)
         end                                                     as WEIGHTED_UNCAPPED_RISK_RATIO,
@@ -163,18 +175,21 @@ aggregated as (
             over (partition by ACO_ID, PERFORMANCE_YEAR)        as HAS_MISSING_RATIO,
         max(case when RISK_SCORE_WEIGHT > 0 and DEMOGRAPHIC_RISK_RATIO is null then 1 else 0 end)
             over (partition by ACO_ID, PERFORMANCE_YEAR)        as HAS_MISSING_DEMOGRAPHIC_RATIO
-    from weighted
+    from weights
 
 ),
 
-capped as (
+-- The aggregates, NULL where a weighted type's ratio is unknown, and [H].
+aggregates as (
 
     select
         aggregated.*,
         case when HAS_MISSING_RATIO = 0 then WEIGHTED_UNCAPPED_RISK_RATIO end
                                                                 as AGGREGATE_UNCAPPED_RISK_RATIO,
         case when HAS_MISSING_DEMOGRAPHIC_RATIO = 0 then WEIGHTED_DEMOGRAPHIC_RISK_RATIO end
-                                                                as AGGREGATE_DEMOGRAPHIC_RISK_RATIO
+                                                                as AGGREGATE_DEMOGRAPHIC_RISK_RATIO,
+        case when HAS_MISSING_DEMOGRAPHIC_RATIO = 0 then WEIGHTED_DEMOGRAPHIC_RISK_RATIO end
+            + {{ to_double(cap) }}                              as AGGREGATE_CAP
     from aggregated
 
 )
@@ -196,17 +211,16 @@ select
     DEMOGRAPHIC_RISK_RATIO,
     AGGREGATE_UNCAPPED_RISK_RATIO,
     AGGREGATE_DEMOGRAPHIC_RISK_RATIO,
-    AGGREGATE_DEMOGRAPHIC_RISK_RATIO + {{ to_double(cap) }}     as AGGREGATE_CAP,
+    AGGREGATE_CAP,
     case
         when AGGREGATE_UNCAPPED_RISK_RATIO is null
-          or AGGREGATE_DEMOGRAPHIC_RISK_RATIO is null then null
-        else AGGREGATE_UNCAPPED_RISK_RATIO > AGGREGATE_DEMOGRAPHIC_RISK_RATIO + {{ to_double(cap) }}
+          or AGGREGATE_CAP is null then cast(null as {{ dbt.type_boolean() }})
+        else AGGREGATE_UNCAPPED_RISK_RATIO > AGGREGATE_CAP
     end                                                         as IS_CAP_BINDING,
     case
         when AGGREGATE_UNCAPPED_RISK_RATIO is null
-          or AGGREGATE_DEMOGRAPHIC_RISK_RATIO is null then {{ to_double('null') }}
-        when AGGREGATE_UNCAPPED_RISK_RATIO > AGGREGATE_DEMOGRAPHIC_RISK_RATIO + {{ to_double(cap) }}
-            then AGGREGATE_DEMOGRAPHIC_RISK_RATIO + {{ to_double(cap) }}
+          or AGGREGATE_CAP is null then {{ to_double('null') }}
+        when AGGREGATE_UNCAPPED_RISK_RATIO > AGGREGATE_CAP then AGGREGATE_CAP
         else UNCAPPED_RISK_RATIO
     end                                                         as FINAL_RISK_RATIO
-from capped
+from aggregates

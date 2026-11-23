@@ -72,10 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `fact_member_month_benchmark`: `SETTLEMENT_ENROLLMENT_TYPE`,
     `SETTLEMENT_RISK_SCORE`, `SETTLEMENT_RISK_RATIO` and
     `SETTLEMENT_FINAL_RISK_RATIO`.
-  - `assert_settlement_risk_reproduces_table_a1` (warn): the fact's
+  - `assert_settlement_risk_reproduces_table_a1` (warn): the ACO fact's
     settlement columns against the workbook's A1, relative 1e-4.
-- `alr_mbi_to_person`: the ALR MBI-to-person crosswalk as a macro, shared
-  by `int_member_month_risk` and the settlement member-months.
+  - `assert_member_month_settlement_agrees_with_aco_settlement`: the member
+    fact's settlement [I], and its mean score where it covers every scored
+    settlement month, against the ACO fact's.
+- `alr_mbi_to_person` and `enroll_flag_type`: the ALR MBI-to-person
+  crosswalk and the EnrollFlag-to-type mapping as macros, shared by
+  `int_member_month_risk` and the settlement member-months.
 
 ### Changed
 

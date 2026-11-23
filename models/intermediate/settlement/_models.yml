@@ -322,7 +322,10 @@ models:
       - name: HISTORICAL_BENCHMARK
         description: The settlement workbook's Table 1 [L] for the type, the benchmark the weights use.
       - name: RISK_SCORE_WEIGHT
-        description: "[A]: `HISTORICAL_BENCHMARK x PERSON_YEARS` over its sum across the year's types."
+        description: >
+          [A]: `HISTORICAL_BENCHMARK x PERSON_YEARS` over its sum across the
+          year's types. NULL for every type of the year when a type with
+          person years has no [L], since the sum is then unknown.
       - name: BY3_CMS_HCC_RISK_SCORE
         description: "[B]: the settlement workbook's A1 [B]."
       - name: PY_CMS_HCC_RISK_SCORE
@@ -516,9 +519,11 @@ unit_tests:
   - name: test_settlement_risk_ratio_reproduces_table_a1
     model: int_settlement_risk_ratio
     description: >
-      M-SETTLE against a synthetic Table A1. Every value is dyadic, so the
-      expected [A], [C], [D], [F], [G], [H] and [I] are exact, well inside
-      1e-12.
+      M-SETTLE against a synthetic Table A1. The inputs are dyadic, so the
+      means, weights and ratios are exact; [H] adds the 0.03 cap, and the
+      expected 1.155 and 1.03 are the doubles 1.125 + 0.03 and 1.0 + 0.03.
+      Every expected [A], [C], [D], [F], [G], [H] and [I] is therefore
+      exact, well inside 1e-12.
 
       2025, the cap does not bind. Aged/non-dual: B1's 12 months (6 at 1.0,
       6 at 1.5) and B2's first 6 (1.25), so [C] 1.25 over 18 months, 1.5
@@ -534,6 +539,10 @@ unit_tests:
       2026, the cap binds. Aged/non-dual and ESRD, one beneficiary each,
       equal weights; [D] 2.0 and 1.0 give R 1.5, above [H] = 1.0 + 0.03, so
       [I] is 1.03 for both.
+
+      2027, a type with person years but no Table 1 [L]: every weight of
+      the year is NULL, and so are the aggregates, [H] and [I]; the type's
+      own [C] and [D] still resolve. Nothing is defaulted.
 
       Decoys: the workbook's weighted-average row, and another ACO's
       workbook rows with no settlement population.
@@ -602,6 +611,30 @@ unit_tests:
           - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202610', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
           - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202611', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
           - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, BENE_MBI_ID: 'B6', YEAR_MONTH: '202612', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 4.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202701', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202701', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202702', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202702', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202703', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202703', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202704', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202704', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202705', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202705', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202706', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202706', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202707', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202707', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202708', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202708', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202709', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202709', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202710', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202710', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202711', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202711', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B7', YEAR_MONTH: '202712', ENROLLMENT_TYPE: 'aged_non_dual', RISK_SCORE: 1.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, BENE_MBI_ID: 'B8', YEAR_MONTH: '202712', ENROLLMENT_TYPE: 'esrd', RISK_SCORE: 2.0, DEMOGRAPHIC_RISK_SCORE: 1.0}
 
       - input: ref('fct_settlement_risk')
         rows:
@@ -613,6 +646,8 @@ unit_tests:
           - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'aged_non_dual',    BY3_CMS_HCC_RISK_SCORE: 1.0,  BY3_DEMOGRAPHIC_RISK_SCORE: 1.0}
           - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'esrd',             BY3_CMS_HCC_RISK_SCORE: 4.0,  BY3_DEMOGRAPHIC_RISK_SCORE: 1.0}
           - {ACO_ID: 'A2', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'aged_non_dual',    BY3_CMS_HCC_RISK_SCORE: 1.0,  BY3_DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, ENROLLMENT_TYPE: 'aged_non_dual',    BY3_CMS_HCC_RISK_SCORE: 1.0,  BY3_DEMOGRAPHIC_RISK_SCORE: 1.0}
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, ENROLLMENT_TYPE: 'esrd',             BY3_CMS_HCC_RISK_SCORE: 2.0,  BY3_DEMOGRAPHIC_RISK_SCORE: 1.0}
 
       - input: ref('fct_settlement_historical_benchmark')
         rows:
@@ -623,6 +658,8 @@ unit_tests:
           - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'aged_non_dual', HISTORICAL_BENCHMARK: 1000}
           - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'esrd',          HISTORICAL_BENCHMARK: 1000}
           - {ACO_ID: 'A2', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'aged_non_dual', HISTORICAL_BENCHMARK: 1000}
+          # 2027: aged/non-dual has no [L].
+          - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, ENROLLMENT_TYPE: 'esrd',          HISTORICAL_BENCHMARK: 1000}
 
     expect:
       rows:
@@ -632,3 +669,5 @@ unit_tests:
         - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2025, ENROLLMENT_TYPE: 'esrd',          ELIGIBLE_MEMBER_MONTHS: 0,  SCORED_MEMBER_MONTHS: 0,  PERSON_YEARS: 0.0, RISK_SCORE_WEIGHT: 0.0,   PY_CMS_HCC_RISK_SCORE: null, UNCAPPED_RISK_RATIO: null, PY_DEMOGRAPHIC_RISK_SCORE: null, DEMOGRAPHIC_RISK_RATIO: null, AGGREGATE_UNCAPPED_RISK_RATIO: 0.9375, AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.125, AGGREGATE_CAP: 1.155, IS_CAP_BINDING: false, FINAL_RISK_RATIO: null}
         - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'aged_non_dual', ELIGIBLE_MEMBER_MONTHS: 12, SCORED_MEMBER_MONTHS: 12, PERSON_YEARS: 1.0, RISK_SCORE_WEIGHT: 0.5,   PY_CMS_HCC_RISK_SCORE: 2.0,  UNCAPPED_RISK_RATIO: 2.0,  PY_DEMOGRAPHIC_RISK_SCORE: 1.0,  DEMOGRAPHIC_RISK_RATIO: 1.0,  AGGREGATE_UNCAPPED_RISK_RATIO: 1.5,    AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.0,   AGGREGATE_CAP: 1.03,  IS_CAP_BINDING: true,  FINAL_RISK_RATIO: 1.03}
         - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2026, ENROLLMENT_TYPE: 'esrd',          ELIGIBLE_MEMBER_MONTHS: 12, SCORED_MEMBER_MONTHS: 12, PERSON_YEARS: 1.0, RISK_SCORE_WEIGHT: 0.5,   PY_CMS_HCC_RISK_SCORE: 4.0,  UNCAPPED_RISK_RATIO: 1.0,  PY_DEMOGRAPHIC_RISK_SCORE: 1.0,  DEMOGRAPHIC_RISK_RATIO: 1.0,  AGGREGATE_UNCAPPED_RISK_RATIO: 1.5,    AGGREGATE_DEMOGRAPHIC_RISK_RATIO: 1.0,   AGGREGATE_CAP: 1.03,  IS_CAP_BINDING: true,  FINAL_RISK_RATIO: 1.03}
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, ENROLLMENT_TYPE: 'aged_non_dual', ELIGIBLE_MEMBER_MONTHS: 12, SCORED_MEMBER_MONTHS: 12, PERSON_YEARS: 1.0, RISK_SCORE_WEIGHT: null,  PY_CMS_HCC_RISK_SCORE: 1.0,  UNCAPPED_RISK_RATIO: 1.0,  PY_DEMOGRAPHIC_RISK_SCORE: 1.0,  DEMOGRAPHIC_RISK_RATIO: 1.0,  AGGREGATE_UNCAPPED_RISK_RATIO: null,   AGGREGATE_DEMOGRAPHIC_RISK_RATIO: null,  AGGREGATE_CAP: null,  IS_CAP_BINDING: null,  FINAL_RISK_RATIO: null}
+        - {ACO_ID: 'A1', PERFORMANCE_YEAR: 2027, ENROLLMENT_TYPE: 'esrd',          ELIGIBLE_MEMBER_MONTHS: 12, SCORED_MEMBER_MONTHS: 12, PERSON_YEARS: 1.0, RISK_SCORE_WEIGHT: null,  PY_CMS_HCC_RISK_SCORE: 2.0,  UNCAPPED_RISK_RATIO: 1.0,  PY_DEMOGRAPHIC_RISK_SCORE: 1.0,  DEMOGRAPHIC_RISK_RATIO: 1.0,  AGGREGATE_UNCAPPED_RISK_RATIO: null,   AGGREGATE_DEMOGRAPHIC_RISK_RATIO: null,  AGGREGATE_CAP: null,  IS_CAP_BINDING: null,  FINAL_RISK_RATIO: null}

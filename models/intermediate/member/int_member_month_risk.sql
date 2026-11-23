@@ -104,12 +104,7 @@ assignment_list as (
         -- ALR Table 1-1 EnrollFlag for this month (cms_alr_connector
         -- enrollment.enroll_flag): 1 ESRD, 2 Disabled, 3 Aged/Dual,
         -- 4 Aged/Non-Dual. Any other value types nothing.
-        case cast(enroll_flag as integer)
-            when 1 then 'esrd'
-            when 2 then 'disabled'
-            when 3 then 'aged_dual'
-            when 4 then 'aged_non_dual'
-        end                                                     as ENROLL_FLAG_TYPE,
+        {{ enroll_flag_type('cast(enroll_flag as integer)') }}  as ENROLL_FLAG_TYPE,
 
         case substring(cast(bene_member_month as {{ dbt.type_string() }}), 5, 2)
             when '01' then bene_rsk_r_scre_01
