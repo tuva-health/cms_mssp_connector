@@ -104,8 +104,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `fact_member_month_benchmark`: `SETTLEMENT_SUBMISSION_ID`,
     `SETTLEMENT_FLAT_BENCHMARK_PMPM` and
     `SETTLEMENT_ENROLLMENT_TYPE_BENCHMARK_PMPM`.
+  - `fct_projected_savings`, `fct_projected_savings_current`,
+    `fact_benchmark_aco_quarter`: `SETTLEMENT_SAVINGS_PERCENTAGE`, the
+    projected savings percentage's formula on the settled figures
+    (`(T2 [I] - T3 [E]) / T2 [I]`), and
+    `SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE`, settled minus the row's
+    `PROJECTED_SAVINGS_PERCENTAGE`, on every quarter (and, in
+    `fct_projected_savings`, every delivery) row of a settled year: how far
+    off each quarterly report was from the final.
   - `assert_facts_carry_the_settlement_beside_the_projection`: every fact's
-    settlement columns against `fct_settlement`, and NULL in open years.
+    settlement columns against `fct_settlement`, and NULL in open years;
+    on the ACO-level facts, each row's settled savings percentage and its
+    difference from the row's own projection.
 - `alr_mbi_to_person` and `enroll_flag_type`: the ALR MBI-to-person
   crosswalk and the EnrollFlag-to-type mapping as macros, shared by
   `int_member_month_risk` and the settlement member-months.

@@ -10,11 +10,15 @@
         (settlement_enrollment_type_columns).
       * fact_member_month_benchmark carries Table 2 [I] / 12, and [G] / 12 at
         the month's settlement type.
+      * Every quarter row of the ACO-year facts carries the settled savings
+        percentage (settled_savings_percentage) and its own difference from
+        it: settled minus the row's PROJECTED_SAVINGS_PERCENTAGE, NULL
+        exactly where either side is (scope extension, 2026-11-24).
 
     On a year that is not settled each of these is NULL, so the same
     comparison proves that too. A copied figure must match exactly
-    (settlement_copy_differs); the two divided by 12 allow float rounding
-    (settlement_values_differ).
+    (settlement_copy_differs); the two divided by 12 and the savings
+    percentages allow float rounding (settlement_values_differ).
 
     One row per fact, ACO, year and column that disagrees.
 -#}
@@ -53,6 +57,8 @@ mismatches as (
         {%- for field, column in settlement_outcome_columns() %}
         union all select '{{ column }}'
         {%- endfor %}
+        union all select 'SETTLEMENT_SAVINGS_PERCENTAGE'
+        union all select 'SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE'
     ) as checks
     where case checks.COLUMN_NAME
             when 'IS_SETTLED'
@@ -61,6 +67,24 @@ mismatches as (
             when '{{ column }}'
                 then {{ settlement_copy_differs('fact.' ~ column, 'settlement.' ~ field) }}
             {%- endfor %}
+            when 'SETTLEMENT_SAVINGS_PERCENTAGE'
+                then coalesce(
+                    {{ settlement_values_differ('fact.SETTLEMENT_SAVINGS_PERCENTAGE', settled_savings_percentage('settlement')) }},
+                    (fact.SETTLEMENT_SAVINGS_PERCENTAGE is null)
+                        <> (({{ settled_savings_percentage('settlement') }}) is null)
+                )
+            {#- the row's own projection, the settlement and the difference:
+                settled minus projected, present exactly where both are -#}
+            when 'SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE'
+                then coalesce(
+                    {{ settlement_values_differ(
+                        'fact.SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE',
+                        '(' ~ settled_savings_percentage('settlement') ~ ') - fact.PROJECTED_SAVINGS_PERCENTAGE') }},
+                    (fact.SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE is null)
+                        <> (settlement.ACO_ID is null
+                            or fact.PROJECTED_SAVINGS_PERCENTAGE is null
+                            or ({{ settled_savings_percentage('settlement') }}) is null)
+                )
           end
 
     union all

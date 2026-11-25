@@ -61,3 +61,16 @@ case
     else true
 end
 {%- endmacro -%}
+
+{#- The projection's savings percentage [R] = ([P] - [Q]) / [P] on CMS's
+    settled figures: (Table 2 [I] - Table 3 [E]) / Table 2 [I], the updated
+    benchmark per capita standing for [P] and the per capita expenditure for
+    [Q]. It equals Table 3 [I] / [H], the savings rate CMS compares with the
+    MSR, since [H] and [G] are [F] (= T2 [I]) and [E] times the same person
+    years. NULL where the year is not settled. -#}
+{%- macro settled_savings_percentage(relation_alias) -%}
+{{ safe_divide(
+       to_double(relation_alias ~ '.UPDATED_BENCHMARK') ~ ' - '
+       ~ to_double(relation_alias ~ '.PER_CAPITA_EXPENDITURE'),
+       relation_alias ~ '.UPDATED_BENCHMARK') }}
+{%- endmacro -%}

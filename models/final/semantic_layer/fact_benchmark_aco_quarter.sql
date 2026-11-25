@@ -93,7 +93,8 @@
 
     IS_SETTLED and the settlement outcome columns (TUVA-160) come through
     from fct_projected_savings_current as they are, the same on every quarter
-    row of a settled year.
+    row of a settled year, with the settled savings percentage and each
+    quarter's difference from it.
 
     All arithmetic goes through to_double and safe_divide; see the macros.
 -#}
@@ -156,6 +157,8 @@ with projections as (
         {%- for field, column in settlement_outcome_columns() %}
         {{ column }},
         {%- endfor %}
+        SETTLEMENT_SAVINGS_PERCENTAGE,
+        SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE,
 
         {#- the member fact's rule: latest quarter of the year, lowest ACO on ties -#}
         row_number() over (
@@ -679,7 +682,9 @@ select
     projections.IS_SETTLED                                  as IS_SETTLED
     {%- for field, column in settlement_outcome_columns() %},
     projections.{{ column }}{{ ' ' * (44 - column | length) }}as {{ column }}
-    {%- endfor %}
+    {%- endfor %},
+    projections.SETTLEMENT_SAVINGS_PERCENTAGE               as SETTLEMENT_SAVINGS_PERCENTAGE,
+    projections.SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE    as SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE
 
 from projections
 

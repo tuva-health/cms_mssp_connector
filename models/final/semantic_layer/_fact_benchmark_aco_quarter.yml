@@ -576,6 +576,16 @@ models:
           As on `fct_projected_savings_current`. The same on every quarter
           row of a settled year.
 
+      - name: SETTLEMENT_SAVINGS_PERCENTAGE
+        description: >
+          As on `fct_projected_savings_current`. The same on every quarter
+          row of a settled year.
+
+      - name: SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE
+        description: >
+          As on `fct_projected_savings_current`: settled minus this
+          quarter's `PROJECTED_SAVINGS_PERCENTAGE`.
+
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:

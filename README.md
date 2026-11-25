@@ -162,8 +162,8 @@ for a settled year, CMS's final figures **beside** it.
 - In a settled year, `SETTLEMENT_*` columns carry the final figures from
   `fct_settlement`, copied as written, with `SETTLEMENT_SUBMISSION_ID` naming
   the delivery. In an open year they are all NULL.
-- The projection's own columns never change. A settled year keeps its last
-  quarterly projection, so the two can be compared row by row; an open year
+- The projection's own columns never change. A settled year keeps every
+  quarterly projection, so each can be compared with the final row by row; an open year
   comes out exactly as it did before settlement columns existed.
 
 Which settlement columns a fact carries follows its grain:
@@ -173,6 +173,31 @@ Which settlement columns a fact carries follows its grain:
 | `fct_projected_savings`, its `_current` version, `fact_benchmark_aco_quarter` (one row per ACO and quarter) | `SETTLEMENT_UPDATED_BENCHMARK` (T2 `[I]`, beside `[P]`), `SETTLEMENT_PER_CAPITA_EXPENDITURE` (T3 `[E]`, beside `[Q]`), `SETTLEMENT_TOTAL_SAVINGS` / `_TOTAL_LOSSES` (`[J]`, `[K]`), `SETTLEMENT_MINIMUM_SAVINGS_RATE` (`[L]`, beside `ESTIMATED_MSR`), `SETTLEMENT_SAVINGS_OR_LOSSES_REALIZED` (`[P]`, text, beside `SAVINGS_STATUS`), `SETTLEMENT_FINAL_SHARING_RATE` (`[CC]`), `SETTLEMENT_SHARED_SAVINGS` (`[EE]`), `SETTLEMENT_EARNED_PERFORMANCE_PAYMENT` (`[HH]`), `SETTLEMENT_NET_EARNED_PERFORMANCE_PAYMENT` (`[MM]`), `SETTLEMENT_PAYMENT_DUE_TO_CMS` (`[UU]`) |
 | `fct_projected_benchmark_by_enrollment_type` and its `_current` version (one row per enrollment type) | the row's own type: `SETTLEMENT_UPDATED_BENCHMARK` (T2 `[G]`, beside `[M]`), `SETTLEMENT_BENEFICIARY_PROPORTION` (T2 `[H]`, beside `[O]`), `SETTLEMENT_PER_CAPITA_EXPENDITURE` (T3 `[C]`) |
 | `fact_member_month_benchmark` (one row per member-month) | `SETTLEMENT_FLAT_BENCHMARK_PMPM` (T2 `[I]` / 12, beside the flat rate) and `SETTLEMENT_ENROLLMENT_TYPE_BENCHMARK_PMPM` (T2 `[G]` / 12 at the month's settlement type, beside the type rate) |
+
+**How far off was each quarterly report?** The settlement joins on ACO and
+performance year, so every quarter row of a settled year carries it, in
+`fct_projected_savings` on every benchmark delivery as well. Beside each
+row's own `PROJECTED_SAVINGS_PERCENTAGE`, the ACO-level facts carry:
+
+- `SETTLEMENT_SAVINGS_PERCENTAGE`: the projection's `[R] = ([P] - [Q]) / [P]`
+  on CMS's settled figures, `(T2 [I] - T3 [E]) / T2 [I]`, with the same sign
+  and denominator. CMS prints no savings-rate letter; this equals Table 3
+  `[I] / [H]`, the rate CMS compares with the MSR.
+- `SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE`: settled minus projected,
+  positive where the settlement came out better than that quarter projected.
+  NULL in an open year and where the row's projection is not calculable.
+
+So one query over `fct_projected_savings_current` (one row per quarter) or
+`fct_projected_savings` (every delivery) answers it for any ACO:
+
+```sql
+select ACO_ID, PERFORMANCE_YEAR, PERIOD,
+       PROJECTED_SAVINGS_PERCENTAGE, SETTLEMENT_SAVINGS_PERCENTAGE,
+       SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE
+from fct_projected_savings_current
+where IS_SETTLED
+order by ACO_ID, PERFORMANCE_YEAR, QUARTER_NUM
+```
 
 The ACO-level dollar outcomes stay off the enrollment-type and member-month
 facts, where they would repeat on every row and sum to a multiple of

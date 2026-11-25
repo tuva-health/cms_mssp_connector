@@ -27,7 +27,11 @@
     IS_SETTLED where fct_settlement has a row for the ACO and year, and the
     SETTLEMENT_* columns copied from it (settlement_outcome_columns). The
     projection's columns are computed exactly as for an open year, whose
-    settlement columns are NULL.
+    settlement columns are NULL. The settlement joins on ACO and year alone,
+    so every quarter and delivery row of a settled year carries it, and with
+    it the settled savings percentage and that row's distance from it
+    (SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE): how far off each quarterly
+    report was from the final.
 -#}
 
 with per_enrollment_type as (
@@ -342,7 +346,20 @@ select
     settlement.ACO_ID is not null                       as IS_SETTLED
     {%- for field, column in settlement_outcome_columns() %},
     settlement.{{ field }}{{ ' ' * (35 - field | length) }}as {{ column }}
-    {%- endfor %}
+    {%- endfor %},
+
+    {#- [R] on CMS's settled figures: (T2 [I] - T3 [E]) / T2 [I], term for
+        term the projection's ([P] - [Q]) / [P], so the two share a sign and
+        a denominator. It equals T3 [I] / [H], the rate CMS sets against the
+        MSR; CMS prints no savings-rate letter of its own. -#}
+    {{ settled_savings_percentage('settlement') }}
+                                                        as SETTLEMENT_SAVINGS_PERCENTAGE,
+
+    {#- how far this quarter's projection was from the final: settled minus
+        projected, NULL where either side is missing -#}
+    {{ settled_savings_percentage('settlement') }}
+        - projected_savings.PROJECTED_SAVINGS_PERCENTAGE
+                                                        as SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE
 
 from projected_savings
 
