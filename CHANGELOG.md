@@ -112,11 +112,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `integration_tests/seeds/alr_cclf/`: the ALR CSVs are copied from the
-  unreleased `cms_alr_connector` change that adds the settlement population
-  (settlement AALRs A15/A16, benchmark AALR A17, unmatchable file A18). The
-  connector's `alr_file_without_file_parameters` test is set to `warn` in
-  `integration_tests`, as in its own project, because A18 is deliberate.
+- `cms_alr_connector` moves to `v1.2.0` (TUVA-152, TUVA-113, TUVA-164), which
+  adds `aalr_settlement_population` for the settlement risk models. A
+  settlement AALR never governs a month, so `enrollment` and the member-month
+  facts don't change on deliveries v1.1.1 already covered. Benchmark AALRs with
+  no `mssp_file_parameters` row now cover their calendar year, and any other
+  unmatched ALR file fails cms_alr_connector's new
+  `alr_file_without_file_parameters` test (set it to warn to build anyway).
+  The harness's ALR and CCLF seeds are copied again at the tag (settlement
+  AALRs A15/A16, benchmark AALR A17, unmatchable file A18). The test is set to
+  `warn` in `integration_tests`, as in that connector's own project, because
+  A18 is deliberate.
+- Through `cms_alr_connector` `v1.2.0`, `medicare_cclf_connector` moves to
+  `v1.0.3`: `medical_claim.file_date` on Part A rows and
+  `pharmacy_claim.file_date` carry the delivery's `FILE_DATE` (were null), and
+  `medical_claim.ingest_datetime` is a timestamp (was a string). Fully refresh
+  incremental or snapshotted tables built from `medical_claim`.
 - **Breaking:** `int_member_month_risk` types a member-month by its ALR
   EnrollFlag first, then the type score column, then the eligibility codes
   (was score column first). CMS types a person-month by its EnrollFlag; a quarterly or initial

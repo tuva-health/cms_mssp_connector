@@ -2,8 +2,8 @@
 
 `integration_tests` is the dbt project used for local development and CI of
 `cms_mssp_connector`. It installs the connector as a local package
-(`packages.yml` → `local: ../`), which brings in `cms_alr_connector` v1.1.1,
-`medicare_cclf_connector` v1.0.2, Tuva Core v1.0.0 (dbt package name
+(`packages.yml` → `local: ../`), which brings in `cms_alr_connector` v1.2.0,
+`medicare_cclf_connector` v1.0.3, Tuva Core v1.0.0 (dbt package name
 `the_tuva_project`), the semantic-layer stack and CMS chronic conditions. It
 loads synthetic fixture seeds where every `source()` expects raw tables and builds the whole stack
 against them on local DuckDB, with no warehouse and no credentials. All CI
@@ -39,7 +39,7 @@ before it is committed.
 
 | Seeds | Source tables | Origin |
 | --- | --- | --- |
-| `seeds/alr_cclf/` | the six ALR tables (source `cms_ssp_reports`) and the CCLF tables (source `medicare_cclf`) | Copied unchanged from `cms_alr_connector` `integration_tests/seeds/`, which the `cclf-synth` generator builds: the ALR CSVs from the unreleased change that adds `aalr_settlement_population` (the pin bump to its release is pending), the CCLF CSVs from v1.1.1. Shared fake beneficiaries `9TT0FK…`, ACO `A0000`. Copy them again when the ALR pin moves. |
+| `seeds/alr_cclf/` | the six ALR tables (source `cms_ssp_reports`) and the CCLF tables (source `medicare_cclf`) | Copied unchanged from `cms_alr_connector` `integration_tests/seeds/`, which the `cclf-synth` generator builds: at the pinned tag, v1.2.0. Shared fake beneficiaries `9TT0FK…`, ACO `A0000`. Copy them again when the ALR pin moves. |
 | `seeds/workbooks/` | the twenty BNMRK / AEXPU / QEXPU relations of the workbook export contract, and the five STLMT relations the settlement facts read | `cclf-synth generate-mssp`: CMS-consistent synthetic workbooks for ACO `A0000`, PY2025 (see below). The STLMT seeds are header only (see the exception below). |
 | `seeds/mssp/` | the other `mssp_raw` tables: BEUR, BAIP, NCBP, MCQM, BNEX, the participant lists and the shadow bundles | BEUR, `beneficiary_exclusions` and `excluded_beneficiary_mbi_xref` carry rows from `cclf-synth generate-mssp` for the ALR fixture beneficiaries; the rest are header only. `seeds/mssp/_seeds.yml` names the source of each header. |
 

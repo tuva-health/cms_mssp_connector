@@ -529,18 +529,13 @@ the raw tables this connector reads, so the two are released in pairs:
 |---|---|---|
 | v1.0.1 | v0.4.0 | v1.0.2 (cms_alr_connector v1.1.1) |
 
-**Pending pin bump.** The settlement risk models (TUVA-162) read
-`ref('cms_aalr_connector', 'aalr_settlement_population')`, which
-`cms_alr_connector` v1.1.1 does not have. They compile once the pin moves to
-the ALR release that ships it; that bump, with the ALR seeds re-copied at its
-tag, is still to come.
-
 - `dbt-labs/dbt_utils`
-- `tuva-health/cms_alr_connector` `v1.1.1`, which brings
-  `tuva-health/medicare_cclf_connector` `v1.0.2` and Tuva Core `v1.0.0`
+- `tuva-health/cms_alr_connector` `v1.2.0`, which brings
+  `tuva-health/medicare_cclf_connector` `v1.0.3` and Tuva Core `v1.0.0`
   (`tuva-health/tuva-core`, dbt package name `the_tuva_project`). v1.1.0
   publishes the monthly enrollment flag on `enrollment.enroll_flag`, which
-  `int_member_month_risk` types member-months from.
+  `int_member_month_risk` types member-months from; v1.2.0 adds
+  `aalr_settlement_population`, which the settlement risk models read.
 - the Tuva semantic layer, `tuva-health/semantic-layer` `v1.0.0` (dbt package
   name `semantic_layer`). Its README asks the root project to declare Tuva
   Core and the five marts it builds on, so `packages.yml` lists them too, all
