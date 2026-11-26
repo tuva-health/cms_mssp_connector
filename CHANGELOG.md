@@ -14,6 +14,22 @@ tables at workbook contract 1.3.0. It runs medicare_cclf_connector v1.0.3
 through cms_alr_connector v1.2.0. Release the two together. Two changes
 below are marked **Breaking**; read them before upgrading.
 
+**Upgrade check:** cms_alr_connector v1.2.0 adds the test
+`alr_file_without_file_parameters`, which errors by default. It names any ALR
+file in your store with no `mssp_file_parameters` row; benchmark AALRs are
+exempt. Before v1.2.0, such a file silently produced NULL months and repeated
+rows. If your build fails on it, either add a `mssp_file_parameters` row for
+the named file (when its months should count), or set the test to warn in
+your project's `dbt_project.yml` to build anyway; the test still lists the
+file:
+
+```yaml
+data_tests:
+  cms_aalr_connector:
+    alr_file_without_file_parameters:
+      +severity: warn
+```
+
 ### Added
 
 - `scripts/dbt-pipeline-e2e <pipeline-checkout> [dbt build args...]`, a
