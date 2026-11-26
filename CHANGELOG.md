@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-25
+
+This release requires cms_mssp_pipeline v0.5.0, which writes the STLMT
+tables at workbook contract 1.3.0. It runs medicare_cclf_connector v1.0.3
+through cms_alr_connector v1.2.0. Release the two together. Two changes
+below are marked **Breaking**; read them before upgrading.
+
+**Upgrade check:** cms_alr_connector v1.2.0 adds the test
+`alr_file_without_file_parameters`, which errors by default. It names any ALR
+file in your store with no `mssp_file_parameters` row; benchmark AALRs are
+exempt. Before v1.2.0, such a file silently produced NULL months and repeated
+rows. If your build fails on it, either add a `mssp_file_parameters` row for
+the named file (when its months should count), or set the test to warn in
+your project's `dbt_project.yml` to build anyway; the test still lists the
+file:
+
+```yaml
+data_tests:
+  cms_aalr_connector:
+    alr_file_without_file_parameters:
+      +severity: warn
+```
+
 ### Added
 
 - `scripts/dbt-pipeline-e2e <pipeline-checkout> [dbt build args...]`, a
@@ -598,7 +621,8 @@ client dev and prod deployment on 2026-09-03/04.
   anything is pushed, and `release-metadata/` is git-ignored (TUVA-54).
 - README setup instructions refer to the `cms_mssp_connector` profile name.
 
-[Unreleased]: https://github.com/tuva-health/cms_mssp_connector/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/tuva-health/cms_mssp_connector/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/tuva-health/cms_mssp_connector/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/tuva-health/cms_mssp_connector/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/tuva-health/cms_mssp_connector/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/tuva-health/cms_mssp_connector/compare/v0.2.0...v0.3.0
