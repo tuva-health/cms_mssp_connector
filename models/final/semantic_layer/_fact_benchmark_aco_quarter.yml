@@ -539,9 +539,10 @@ models:
         description: >
           The settled aggregate uncapped ratio, sum over the four types of
           Table A1 `[A]` x `[D]` as CMS printed them, added in a fixed
-          order; NULL if any type is missing. The same weights the
-          projection's `AGGREGATE_RISK_RATIO` uses (person years x
-          historical benchmark expenditure). It agrees with A1's printed
+          order; NULL if any type is missing. The same weighting formula as
+          the projection's `AGGREGATE_RISK_RATIO` (PY person years x
+          historical benchmark expenditure), on CMS's settled person years
+          rather than the quarter's. It agrees with A1's printed
           Weighted Average `[D]` to CMS's rounding
           (`assert_settlement_weighted_average_risk_ratio_is_the_weighted_sum`,
           warn). Not `SETTLEMENT_AGGREGATE_RISK_RATIO` (M-SETTLE). NULL in

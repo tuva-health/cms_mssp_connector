@@ -68,6 +68,13 @@ end
     [Q]. It equals Table 3 [I] / [H], the savings rate CMS compares with the
     MSR, since [H] and [G] are [F] (= T2 [I]) and [E] times the same person
     years. NULL where the year is not settled. -#}
+{#- The two columns fct_projected_savings derives from the settlement and
+    its own projection, carried as they are by fct_projected_savings_current
+    and fact_benchmark_aco_quarter. -#}
+{%- macro settlement_savings_columns() -%}
+    {{ return(['SETTLEMENT_SAVINGS_PERCENTAGE', 'SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE']) }}
+{%- endmacro -%}
+
 {%- macro settled_savings_percentage(relation_alias) -%}
 {{ safe_divide(
        to_double(relation_alias ~ '.UPDATED_BENCHMARK') ~ ' - '

@@ -168,8 +168,9 @@ with projections as (
         {%- for field, column in settlement_outcome_columns() %}
         {{ column }},
         {%- endfor %}
-        SETTLEMENT_SAVINGS_PERCENTAGE,
-        SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE,
+        {%- for column in settlement_savings_columns() %}
+        {{ column }},
+        {%- endfor %}
 
         {#- the member fact's rule: latest quarter of the year, lowest ACO on ties -#}
         row_number() over (
@@ -286,8 +287,10 @@ settlement_a1_types as (
 ),
 
 -- The weighted uncapped aggregate, sum of [A] x [D] over the four types,
--- as four named terms in a fixed order (see `totals`). Any missing term
--- makes it NULL: a weighted mean over three of four types is not CMS's.
+-- as four named terms in a fixed order, for the reason `totals` gives.
+-- Unlike `summed`, any missing term makes it NULL: Table A1 fills [A] and
+-- [D] for every type, so a blank one is a gap in the delivery, and a
+-- weighted mean over three of four types is not CMS's.
 -- It agrees with A1's printed Weighted Average [D] to its rounding;
 -- assert_settlement_weighted_average_risk_ratio_is_the_weighted_sum holds
 -- the two together.
@@ -750,9 +753,10 @@ select
     projections.IS_SETTLED                                  as IS_SETTLED
     {%- for field, column in settlement_outcome_columns() %},
     projections.{{ column }}{{ ' ' * (44 - column | length) }}as {{ column }}
-    {%- endfor %},
-    projections.SETTLEMENT_SAVINGS_PERCENTAGE               as SETTLEMENT_SAVINGS_PERCENTAGE,
-    projections.SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE    as SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE
+    {%- endfor %}
+    {%- for column in settlement_savings_columns() %},
+    projections.{{ column }}{{ ' ' * (44 - column | length) }}as {{ column }}
+    {%- endfor %}
 
 from projections
 

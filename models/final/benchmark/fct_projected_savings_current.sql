@@ -72,8 +72,9 @@ select
     IS_SETTLED                                          as IS_SETTLED
     {%- for field, column in settlement_outcome_columns() %},
     {{ column }}{{ ' ' * (52 - column | length) }}as {{ column }}
-    {%- endfor %},
-    SETTLEMENT_SAVINGS_PERCENTAGE                       as SETTLEMENT_SAVINGS_PERCENTAGE,
-    SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE            as SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE
+    {%- endfor %}
+    {%- for column in settlement_savings_columns() %},
+    {{ column }}{{ ' ' * (52 - column | length) }}as {{ column }}
+    {%- endfor %}
 
 from projected_savings

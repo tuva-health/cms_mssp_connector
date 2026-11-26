@@ -163,8 +163,9 @@ for a settled year, CMS's final figures **beside** it.
   `fct_settlement`, copied as written, with `SETTLEMENT_SUBMISSION_ID` naming
   the delivery. In an open year they are all NULL.
 - The projection's own columns never change. A settled year keeps every
-  quarterly projection, so each can be compared with the final row by row; an open year
-  comes out exactly as it did before settlement columns existed.
+  quarterly projection, so each can be compared with the final row by
+  row; an open year comes out exactly as it did before settlement columns
+  existed.
 
 Which settlement columns a fact carries follows its grain:
 
@@ -208,10 +209,11 @@ from the settlement population:
   `RISK_RATIO_<TYPE>`, and `SETTLEMENT_UNCAPPED_RISK_RATIO_DIFFERENCE_<TYPE>`,
   settled minus projected.
 - `SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO`, the sum of A1 `[A]` x `[D]`
-  over the four types, beside `AGGREGATE_RISK_RATIO`, which uses the same
-  weights, and `SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO_DIFFERENCE`. The sum
-  agrees with A1's printed Weighted Average `[D]` to CMS's rounding; a warn
-  test reports it if not.
+  over the four types, beside `AGGREGATE_RISK_RATIO`, which weights by the
+  same formula on the quarter's own person years, and
+  `SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO_DIFFERENCE`. The sum agrees with
+  A1's printed Weighted Average `[D]` to CMS's rounding; a warn test
+  reports it if not.
 
 Only the uncapped ratios are compared. The projection's cap is a flat
 `1 + mssp_risk_score_cap` with each type clipped at `min(r_t, bound)`; CMS's

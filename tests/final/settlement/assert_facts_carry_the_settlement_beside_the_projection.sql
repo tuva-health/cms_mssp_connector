@@ -54,14 +54,14 @@ a1 as (
         PERFORMANCE_YEAR
         {%- for t in a1_types %},
         max(case when ENROLLMENT_TYPE = '{{ t }}' then {{ to_double('UNCAPPED_RISK_RATIO') }} end)
-                                                        as D_{{ t | upper }}
+                                                        as UNCAPPED_RISK_RATIO_{{ t | upper }}
         {%- endfor %},
         {% for t in a1_types -%}
         max(case when ENROLLMENT_TYPE = '{{ t }}' then {{ to_double('RISK_SCORE_WEIGHT') }} end)
             * max(case when ENROLLMENT_TYPE = '{{ t }}' then {{ to_double('UNCAPPED_RISK_RATIO') }} end)
         {%- if not loop.last %}
             + {% endif %}
-        {%- endfor %}                                   as WEIGHTED
+        {%- endfor %}                                   as WEIGHTED_UNCAPPED_RISK_RATIO
     from {{ ref('fct_settlement_risk') }}
     group by ACO_ID, PERFORMANCE_YEAR
 
@@ -130,14 +130,14 @@ mismatches as (
     ) as checks
     where case checks.COLUMN_NAME
             when 'SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO'
-                then {{ settlement_float_differs('fact.SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO', 'a1.WEIGHTED') }}
+                then {{ settlement_float_differs('fact.SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO', 'a1.WEIGHTED_UNCAPPED_RISK_RATIO') }}
             when 'SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO_DIFFERENCE'
-                then {{ settlement_float_differs('fact.SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO_DIFFERENCE', 'a1.WEIGHTED - fact.AGGREGATE_RISK_RATIO') }}
+                then {{ settlement_float_differs('fact.SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO_DIFFERENCE', 'a1.WEIGHTED_UNCAPPED_RISK_RATIO - fact.AGGREGATE_RISK_RATIO') }}
             {%- for t in a1_types %}
             when 'SETTLEMENT_UNCAPPED_RISK_RATIO_{{ t | upper }}'
-                then {{ settlement_float_differs('fact.SETTLEMENT_UNCAPPED_RISK_RATIO_' ~ (t | upper), 'a1.D_' ~ (t | upper)) }}
+                then {{ settlement_float_differs('fact.SETTLEMENT_UNCAPPED_RISK_RATIO_' ~ (t | upper), 'a1.UNCAPPED_RISK_RATIO_' ~ (t | upper)) }}
             when 'SETTLEMENT_UNCAPPED_RISK_RATIO_DIFFERENCE_{{ t | upper }}'
-                then {{ settlement_float_differs('fact.SETTLEMENT_UNCAPPED_RISK_RATIO_DIFFERENCE_' ~ (t | upper), 'a1.D_' ~ (t | upper) ~ ' - fact.RISK_RATIO_' ~ (t | upper)) }}
+                then {{ settlement_float_differs('fact.SETTLEMENT_UNCAPPED_RISK_RATIO_DIFFERENCE_' ~ (t | upper), 'a1.UNCAPPED_RISK_RATIO_' ~ (t | upper) ~ ' - fact.RISK_RATIO_' ~ (t | upper)) }}
             {%- endfor %}
           end
 
