@@ -1293,3 +1293,38 @@ unit_tests:
         - {SUBMISSION_ID: 'B-SUB-2', SUBMISSION_RANK: 1, IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'disabled', ENROLLMENT_TYPE_LABEL: 'Disabled', ENROLLMENT_TYPE_SORT: 2,  BY_LABEL: 'BY2', ACO_ROW_LABEL: 'Disabled',   ACO_RISK_SCORE: 1.30, RISK_RATIO_TO_BY3: 0.90, NATIONAL_ROW_LABEL: null,         NATIONAL_MEAN_RISK_SCORE: null}
         - {SUBMISSION_ID: 'B-SUB-2', SUBMISSION_RANK: 1, IS_LATEST_SUBMISSION: true,  ENROLLMENT_TYPE: 'unmapped', ENROLLMENT_TYPE_LABEL: 'Unmapped', ENROLLMENT_TYPE_SORT: 99, BY_LABEL: 'BY1', ACO_ROW_LABEL: 'Aged/Other', ACO_RISK_SCORE: 2.0,  RISK_RATIO_TO_BY3: 2.0,  NATIONAL_ROW_LABEL: 'Aged/other', NATIONAL_MEAN_RISK_SCORE: 1.7}
         - {SUBMISSION_ID: 'B-SUB-1', SUBMISSION_RANK: 2, IS_LATEST_SUBMISSION: false, ENROLLMENT_TYPE: 'esrd',     ENROLLMENT_TYPE_LABEL: 'ESRD',     ENROLLMENT_TYPE_SORT: 1,  BY_LABEL: 'BY3', ACO_ROW_LABEL: 'ESRD',       ACO_RISK_SCORE: 1.24, RISK_RATIO_TO_BY3: 1,    NATIONAL_ROW_LABEL: 'ESRD',       NATIONAL_MEAN_RISK_SCORE: 1.05}
+
+  - name: test_annual_expenditures_leave_out_the_settlement_workbook
+    model: int_expenditures_annual
+    description: >
+      One performance year, one benchmark delivery and one final settlement
+      bundle that share a stamp (TUVA-159).
+
+      The benchmark delivery ships its BY1-BY3 workbooks under 'D-SUB'. The
+      settlement bundle ships one AEXPU, for the performance year itself,
+      under 'STLMT.D-SUB'. That workbook is not part of any benchmark window.
+      Counted in, it ranks first for its own year and labels itself BY3, so a
+      reader of the latest BY3 gets two workbooks.
+
+      What the expected rows pin: the benchmark workbooks keep their BY1-BY3
+      labels and their latest flag, and no settlement row comes through.
+
+    given:
+
+      - input: ref('mssp_enrollment_type')
+        rows:
+          - {ROW_LABEL_UPPER: 'ESRD', ENROLLMENT_TYPE: 'esrd', ENROLLMENT_TYPE_LABEL: 'ESRD', ENROLLMENT_TYPE_SORT: 1}
+
+      - input: ref('stg_aexpu_table_1')
+        rows:
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, BENCHMARK_YEAR: 1997, SUBMISSION_ID: 'D-SUB',       FILE_DATE: '1997-12-31', FILE_PATH: 'py2000/D-SUB/Y1997.xlsx',       ROW_NUM: 8, SECTION_LABEL: 'Total Expenditures by Assigned Beneficiary Medicare Enrollment Type', ROW_LABEL: 'ESRD', COLUMN_LABEL: 'ACO-Specific', VALUE_TEXT: '1', VALUE_NUMERIC: 1}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, BENCHMARK_YEAR: 1998, SUBMISSION_ID: 'D-SUB',       FILE_DATE: '1998-12-31', FILE_PATH: 'py2000/D-SUB/Y1998.xlsx',       ROW_NUM: 8, SECTION_LABEL: 'Total Expenditures by Assigned Beneficiary Medicare Enrollment Type', ROW_LABEL: 'ESRD', COLUMN_LABEL: 'ACO-Specific', VALUE_TEXT: '2', VALUE_NUMERIC: 2}
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, BENCHMARK_YEAR: 1999, SUBMISSION_ID: 'D-SUB',       FILE_DATE: '1999-12-31', FILE_PATH: 'py2000/D-SUB/Y1999.xlsx',       ROW_NUM: 8, SECTION_LABEL: 'Total Expenditures by Assigned Beneficiary Medicare Enrollment Type', ROW_LABEL: 'ESRD', COLUMN_LABEL: 'ACO-Specific', VALUE_TEXT: '3', VALUE_NUMERIC: 3}
+          # The settlement bundle's AEXPU, for the performance year.
+          - {ACO_ID: 'TEST-ACO', PERFORMANCE_YEAR: 2000, BENCHMARK_YEAR: 2000, SUBMISSION_ID: 'STLMT.D-SUB', FILE_DATE: '2000-12-31', FILE_PATH: 'py2000/STLMT.D-SUB/Y2000.xlsx', ROW_NUM: 8, SECTION_LABEL: 'Total Expenditures by Assigned Beneficiary Medicare Enrollment Type', ROW_LABEL: 'ESRD', COLUMN_LABEL: 'ACO-Specific', VALUE_TEXT: '4', VALUE_NUMERIC: 4}
+
+    expect:
+      rows:
+        - {SUBMISSION_ID: 'D-SUB', BENCHMARK_YEAR: 1997, BENCHMARK_YEAR_LABEL: 'BY1', IS_LATEST_SUBMISSION: true, ENROLLMENT_TYPE: 'esrd', VALUE_NUMERIC: 1}
+        - {SUBMISSION_ID: 'D-SUB', BENCHMARK_YEAR: 1998, BENCHMARK_YEAR_LABEL: 'BY2', IS_LATEST_SUBMISSION: true, ENROLLMENT_TYPE: 'esrd', VALUE_NUMERIC: 2}
+        - {SUBMISSION_ID: 'D-SUB', BENCHMARK_YEAR: 1999, BENCHMARK_YEAR_LABEL: 'BY3', IS_LATEST_SUBMISSION: true, ENROLLMENT_TYPE: 'esrd', VALUE_NUMERIC: 3}

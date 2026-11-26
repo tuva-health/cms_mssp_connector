@@ -2,8 +2,8 @@
 
 `integration_tests` is the dbt project used for local development and CI of
 `cms_mssp_connector`. It installs the connector as a local package
-(`packages.yml` → `local: ../`), which brings in `cms_alr_connector` v1.1.1,
-`medicare_cclf_connector` v1.0.2, Tuva Core v1.0.0 (dbt package name
+(`packages.yml` → `local: ../`), which brings in `cms_alr_connector` v1.2.0,
+`medicare_cclf_connector` v1.0.3, Tuva Core v1.0.0 (dbt package name
 `the_tuva_project`), the semantic-layer stack and CMS chronic conditions. It
 loads synthetic fixture seeds where every `source()` expects raw tables and builds the whole stack
 against them on local DuckDB, with no warehouse and no credentials. All CI
@@ -39,9 +39,19 @@ before it is committed.
 
 | Seeds | Source tables | Origin |
 | --- | --- | --- |
-| `seeds/alr_cclf/` | the six ALR tables (source `cms_ssp_reports`) and the CCLF tables (source `medicare_cclf`) | Copied unchanged from `cms_alr_connector` v1.1.1 `integration_tests/seeds/`, which the `cclf-synth` generator builds. Shared fake beneficiaries `9TT0FK…`, ACO `A0000`. Copy them again when the ALR pin moves. |
-| `seeds/workbooks/` | the twenty BNMRK / AEXPU / QEXPU relations of the workbook export contract | `cclf-synth generate-mssp`: CMS-consistent synthetic workbooks for ACO `A0000`, PY2025 (see below). |
+| `seeds/alr_cclf/` | the six ALR tables (source `cms_ssp_reports`) and the CCLF tables (source `medicare_cclf`) | Copied unchanged from `cms_alr_connector` `integration_tests/seeds/`, which the `cclf-synth` generator builds: at the pinned tag, v1.2.0. Shared fake beneficiaries `9TT0FK…`, ACO `A0000`. Copy them again when the ALR pin moves. |
+| `seeds/workbooks/` | the twenty BNMRK / AEXPU / QEXPU relations of the workbook export contract, and the five STLMT relations the settlement facts read | `cclf-synth generate-mssp`: CMS-consistent synthetic workbooks for ACO `A0000`, PY2025 (see below). The STLMT seeds are header only (see the exception below). |
 | `seeds/mssp/` | the other `mssp_raw` tables: BEUR, BAIP, NCBP, MCQM, BNEX, the participant lists and the shadow bundles | BEUR, `beneficiary_exclusions` and `excluded_beneficiary_mbi_xref` carry rows from `cclf-synth generate-mssp` for the ALR fixture beneficiaries; the rest are header only. `seeds/mssp/_seeds.yml` names the source of each header. |
+
+**Exception: the STLMT seeds are header only.** `stlmt_table_1`,
+`stlmt_table_2`, `stlmt_table_3`, `stlmt_table_a1` and `stlmt_table_a2` carry
+the workbook contract's `stlmt_cell_grain` columns and no rows. They are not
+generated: cclf-synth does not write a settlement workbook yet. CI therefore
+builds the settlement models (`int_settlement_values` and the four
+`fct_settlement*` facts) empty, and their unit tests carry the logic.
+`scripts/dbt-pipeline-e2e` runs them on the pipeline's synthetic STLMT
+workbook, which is in the real CMS layout. Replace the headers with generated
+rows once cclf-synth writes one.
 
 The workbook relations follow the delivered CMS workbooks' grammar: the
 labels, the cells CMS leaves empty or writes `-` in, and the sheets each
@@ -64,11 +74,13 @@ the build does not exercise that path; the `int_member_month_risk` unit
 tests `test_enrollment_type_priority_and_score_selection` (P6) and
 `test_mbi_resolves_through_the_excluded_beneficiary_crosswalk` do.
 
-Every test runs at its own severity, and the build has no warnings. The
-connector's `mssp_aco_agreement` seed ships to clients with only its
-`EXAMPLE-ACO` row, so `dbt_project.yml` here appends `A0000`'s row (variable
-MSR, ACPT at PY1) to it with a seed post-hook; a root seed of the same name
-cannot replace a package's.
+Every test runs at its own severity, and the build has one warning:
+cms_alr_connector's `alr_file_without_file_parameters`, set to `warn` in
+`dbt_project.yml` because the copied ALR fixtures include an unmatchable file
+(A18) on purpose. The connector's `mssp_aco_agreement` seed ships to clients
+with only its `EXAMPLE-ACO` row, so `dbt_project.yml` here appends `A0000`'s
+row (variable MSR, ACPT at PY1) to it with a seed post-hook; a root seed of
+the same name cannot replace a package's.
 
 The ALR seeds assign and score every enrollment type in 2025, including the
 disabled and aged/dual beneficiaries TUVA-134 added, so
@@ -125,6 +137,62 @@ duckdb -cmd "ATTACH '/path/to/other.duckdb' AS cms_mssp_connector_ci; USE cms_ms
 ```
 
 Set `DBT_PROFILES_DIR` (and `DBT_PROFILE`) to use another warehouse.
+
+## Against cms_mssp_pipeline's synthetic output
+
+The seeds above are this repo's copy of what the pipeline writes. To check a
+pipeline change against the connector's models and tests, or a connector
+change against a pipeline table that is not seeded yet, run the pipeline's
+own synthetic end-to-end build through the connector:
+
+```sh
+scripts/dbt-pipeline-e2e <pipeline-checkout> [dbt build args...]
+scripts/dbt-pipeline-e2e ../cms_mssp_pipeline --select +int_expenditures_annual --indirect-selection cautious
+```
+
+`<pipeline-checkout>` is any cms_mssp_pipeline checkout or worktree, merged
+or not. The script changes nothing tracked there (`uv run` may sync its
+`.venv`). It then:
+
+1. Runs the pipeline's `tests/e2e/synthetic_run.py` there, writing its
+   output under this checkout.
+2. Seeds this project into a fresh database of its own and replaces every
+   relation of the pipeline's workbook export contract
+   (`contracts/workbook/v1.json` in that checkout) with the table the run
+   wrote, creating any the seeds lack, such as the STLMT tables
+   (`scripts/pipeline_overlay.py`). The ALR, CCLF and other `mssp_raw`
+   seeds stay: the pipeline's CCLF rows are placeholders.
+3. Runs `dbt build` with your arguments (none builds everything), always
+   excluding this project's seeds so the build cannot reload them over the
+   pipeline's tables.
+
+Use it whenever a connector change reads a table the pipeline changed:
+prove the change here before the pipeline merges, then add the generated
+seeds as usual so the `dbt build / duckdb` job covers it.
+
+Things to know:
+
+- Everything lives in `integration_tests/target/pipeline_e2e/` of this
+  checkout: the run in `pipeline/`, the database in
+  `cms_mssp_connector_ci.duckdb`, dbt's artifacts in `target/`. It never
+  touches `scripts/dbt-local`'s database, and worktrees never share a file.
+  `PIPELINE_E2E_DIR` moves it; give each worktree its own, because every run
+  deletes the database there first.
+- The pipeline's workbooks are its test builders' minimal fixtures for ACO
+  `T0000`, not the CMS-consistent `cclf-synth` workbooks for `A0000`. Several
+  benchmark tests that check CMS consistency fail on them (BY labels,
+  enrollment-type mapping, risk-score completeness), as do tests that join
+  the workbooks to the `A0000` ALR seeds or agreement row. Select the models
+  you are proving, and compare against a run on the pipeline's `main` to see
+  what your change adds.
+- Pass `--indirect-selection cautious` with a narrow selection. Singular
+  tests with several parents are otherwise selected with any one of them and
+  fail on the parents the selection did not build. Your own `--exclude`
+  adds to the script's: dbt merges repeated `--exclude` flags.
+- `pyproject.toml`'s `workbook_contract` pin is release metadata, not a
+  runtime check, so a newer contract runs as is; the script prints a note
+  when the two differ. Bump the pin in the connector change that reads the
+  newer contract's tables or columns.
 
 ## CI
 

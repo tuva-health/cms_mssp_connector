@@ -491,3 +491,151 @@ seeds:
         benchmark_year: varchar
         submission_id: varchar
         period: varchar
+
+  # The five STLMT relations the settlement facts read (workbook contract 1.3.0)
+  # are header only: the contract's stlmt_cell_grain columns, is_embargoed
+  # included, and no rows. cclf-synth does not generate a settlement workbook
+  # yet, so CI builds the settlement models empty and their unit tests carry
+  # the logic. scripts/dbt-pipeline-e2e runs them on the pipeline's
+  # synthetic STLMT workbook. Replace these with generated rows once
+  # cclf-synth writes one.
+
+  - name: stlmt_table_1
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        block_label: varchar
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        row_kind: varchar
+        column_group_label: varchar
+        column_code: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+        is_embargoed: boolean
+
+  - name: stlmt_table_2
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        block_label: varchar
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        row_kind: varchar
+        column_group_label: varchar
+        column_code: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+        is_embargoed: boolean
+
+  - name: stlmt_table_3
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        block_label: varchar
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        row_kind: varchar
+        column_group_label: varchar
+        column_code: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+        is_embargoed: boolean
+
+  - name: stlmt_table_a1
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        block_label: varchar
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        row_kind: varchar
+        column_group_label: varchar
+        column_code: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+        is_embargoed: boolean
+
+  - name: stlmt_table_a2
+    config:
+      database: "{{ var('input_database') }}"
+      schema: "{{ var('input_schema') }}"
+      tags: ci_fixture
+      column_types:
+        row_num: bigint
+        block_label: varchar
+        group_label: varchar
+        section_code: varchar
+        section_label: varchar
+        row_label: varchar
+        row_kind: varchar
+        column_group_label: varchar
+        column_code: varchar
+        column_label: varchar
+        value_text: varchar
+        file_path: varchar
+        directory_name: varchar
+        file_name: varchar
+        file_date: date
+        aco_id: varchar
+        performance_year: varchar
+        benchmark_year: varchar
+        submission_id: varchar
+        period: varchar
+        is_embargoed: boolean

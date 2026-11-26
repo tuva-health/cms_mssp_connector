@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Run this connector's dbt against a cms_mssp_pipeline checkout's synthetic
+# end-to-end output (TUVA-163). Use it to prove a pipeline change, or a
+# connector change that reads a pipeline table, before either merges:
+#
+#   scripts/dbt-pipeline-e2e <pipeline-checkout> [dbt build args...]
+#   scripts/dbt-pipeline-e2e ../cms_mssp_pipeline --select +int_expenditures_annual
+#
+# 1. Runs the pipeline's synthetic e2e build (tests/e2e/synthetic_run.py) in
+#    <pipeline-checkout>, which may be an unmerged worktree. Nothing tracked
+#    there changes (uv may sync its .venv); the run's output goes under this
+#    checkout.
+# 2. Seeds integration_tests into a fresh DuckDB file of its own, then
+#    replaces every relation of the pipeline's workbook export contract with
+#    the table the run wrote (scripts/pipeline_overlay.py). Everything else
+#    (ALR, CCLF, BEUR and the other mssp_raw tables) keeps its seed.
+# 3. Runs `dbt build` with the arguments given (none builds everything),
+#    excluding the integration_tests seeds so the build cannot reload them
+#    over the pipeline's tables.
+#
+# Everything lives in integration_tests/target/pipeline_e2e/ of this checkout
+# (or PIPELINE_E2E_DIR): the run's output in pipeline/, the database in
+# cms_mssp_connector_ci.duckdb, dbt's artifacts in target/. It is separate
+# from scripts/dbt-local's database, so a harness run never touches it, and
+# two worktrees never share a file. See integration_tests/README.md.
+set -euo pipefail
+
+usage() {
+  echo "usage: scripts/dbt-pipeline-e2e <pipeline-checkout> [dbt build args...]" >&2
+  exit 2
+}
+[[ $# -ge 1 && "${1}" != -* ]] || usage
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PIPELINE="$(cd "${1}" && pwd)"
+shift
+
+CONTRACT="${PIPELINE}/contracts/workbook/v1.json"
+if [[ ! -f "${PIPELINE}/tests/e2e/synthetic_run.py" || ! -f "${CONTRACT}" ]]; then
+  echo "${PIPELINE} is not a cms_mssp_pipeline checkout (no tests/e2e/synthetic_run.py or ${CONTRACT#"${PIPELINE}"/})" >&2
+  exit 1
+fi
+
+HARNESS_DIR="${PIPELINE_E2E_DIR:-${REPO_ROOT}/integration_tests/target/pipeline_e2e}"
+mkdir -p "${HARNESS_DIR}"
+HARNESS_DIR="$(cd "${HARNESS_DIR}" && pwd)"
+# Each run deletes the database here, so never share scripts/dbt-local's.
+if [[ "${HARNESS_DIR}" == "$(cd "${REPO_ROOT}/integration_tests" && pwd)/target" ]]; then
+  echo "PIPELINE_E2E_DIR must not be integration_tests/target, which holds scripts/dbt-local's database" >&2
+  exit 1
+fi
+# integration_tests/dbt_project.yml var input_schema: where the seeds load.
+INPUT_SCHEMA=raw
+
+# The file is named after the catalog, so the duckdb CLI opens it as is.
+export DBT_DUCKDB_PATH="${HARNESS_DIR}/cms_mssp_connector_ci.duckdb"
+export DBT_TARGET_PATH="${HARNESS_DIR}/target"
+dbt_local="${REPO_ROOT}/scripts/dbt-local"
+
+echo "== pipeline synthetic run: ${PIPELINE}"
+# The pipeline's tests need AWS_PROFILE unset.
+(cd "${PIPELINE}" && env -u AWS_PROFILE uv run --frozen python -m tests.e2e.synthetic_run \
+  --workdir "${HARNESS_DIR}/pipeline")
+
+if [[ ! -d "${REPO_ROOT}/integration_tests/dbt_packages" ]]; then
+  "${dbt_local}" deps
+fi
+
+echo "== seeds, then the pipeline's workbook relations: ${DBT_DUCKDB_PATH}"
+rm -f "${DBT_DUCKDB_PATH}" "${DBT_DUCKDB_PATH}.wal"
+"${dbt_local}" seed --full-refresh --select package:integration_tests
+uv run --project "${REPO_ROOT}" --locked python "${REPO_ROOT}/scripts/pipeline_overlay.py" \
+  --contract "${CONTRACT}" \
+  --parquet "${HARNESS_DIR}/pipeline/parquet" \
+  --database "${DBT_DUCKDB_PATH}" \
+  --schema "${INPUT_SCHEMA}"
+
+# The pin is release metadata; the models read whatever columns they name, so
+# a newer contract runs as is. Say so when they differ, as a reminder to bump.
+pinned="$(sed -n 's/^workbook_contract = .*version = "\([0-9.]*\)".*/\1/p' "${REPO_ROOT}/pyproject.toml")"
+contract_version="$(uv run --project "${REPO_ROOT}" --locked python -c \
+  'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "${CONTRACT}")"
+if [[ "${pinned}" != "${contract_version}" ]]; then
+  echo "note: the pipeline writes workbook contract ${contract_version}; pyproject.toml pins ${pinned:-nothing}"
+fi
+
+echo "== dbt build $*"
+exec "${dbt_local}" build "$@" --exclude package:integration_tests,resource_type:seed

@@ -51,14 +51,19 @@
 
     Enrollment type resolves in priority order and is never defaulted; see the
     column documentation in _models.yml for each step. It is a monthly fact:
-    the assignment list's type score column, else its monthly EnrollFlag for
-    the month, else the eligibility codes on the span covering the month. The score comes only
+    the assignment list's monthly EnrollFlag for the month, as CMS types a
+    person-month (TUVA-161/162), else its type score column, else the
+    eligibility codes on the span covering the month. The type score column
+    is not the month's type: on a quarterly or initial list it holds the most
+    recent payment year's score, typed as the member was then. The score comes only
     from the assignment list, read from whichever layout the row carries: the
     populated per-type column on 2025+ files, or the monthly column for the
     row's own month on 2022-2024 files, where BENE_RSK_R_SCRE_NN holds the
     score for month NN of the performance year. The demographic-only DEM_*
     scores are never read: a new enrollee's score is the one CMS wrote in the
-    column of their actual type, and their type is that column's.
+    column of their type. On a quarterly or initial list that score is the
+    most recent available payment year's, which mid-PY is the BY3 year's
+    (TUVA-161), so a ratio built from it is BY3-year based.
 -#}
 
 with member_months as (
@@ -99,12 +104,7 @@ assignment_list as (
         -- ALR Table 1-1 EnrollFlag for this month (cms_alr_connector
         -- enrollment.enroll_flag): 1 ESRD, 2 Disabled, 3 Aged/Dual,
         -- 4 Aged/Non-Dual. Any other value types nothing.
-        case cast(enroll_flag as integer)
-            when 1 then 'esrd'
-            when 2 then 'disabled'
-            when 3 then 'aged_dual'
-            when 4 then 'aged_non_dual'
-        end                                                     as ENROLL_FLAG_TYPE,
+        {{ enroll_flag_type('cast(enroll_flag as integer)') }}  as ENROLL_FLAG_TYPE,
 
         case substring(cast(bene_member_month as {{ dbt.type_string() }}), 5, 2)
             when '01' then bene_rsk_r_scre_01
@@ -164,38 +164,6 @@ pinned_delivery as (
 
 ),
 
-cclf_beneficiary_xref as (
-
-    select
-        cast(prvs_num as {{ dbt.type_string() }})               as PREVIOUS_MBI,
-        cast(crnt_num as {{ dbt.type_string() }})               as CURRENT_MBI
-    from {{ ref('medicare_cclf_connector', 'int_beneficiary_xref_deduped') }}
-    where prvs_num is not null
-      and crnt_num is not null
-
-),
-
-excluded_beneficiary_xref as (
-
-    select
-        PREVIOUS_MBI,
-        CURRENT_MBI
-    from (
-        select
-            cast(PREVIOUS_BENE_MBI as {{ dbt.type_string() }})  as PREVIOUS_MBI,
-            cast(CURRENT_BENE_MBI as {{ dbt.type_string() }})   as CURRENT_MBI,
-            row_number() over (
-                partition by PREVIOUS_BENE_MBI
-                order by PERFORMANCE_YEAR desc, REPORT_MONTH desc, FILE_DATE desc nulls last, FILE_PATH desc
-            )                                                   as MAPPING_RANK
-        from {{ ref('stg_excluded_beneficiary_mbi_xref') }}
-        where PREVIOUS_BENE_MBI is not null
-          and CURRENT_BENE_MBI is not null
-    ) as ranked
-    where MAPPING_RANK = 1
-
-),
-
 -- Every assignment-list MBI, resolved to a Tuva person once.
 mbi_keys as (
 
@@ -203,36 +171,7 @@ mbi_keys as (
 
 ),
 
-mbi_resolved as (
-
-    select
-        mbi_keys.BENE_MBI_ID,
-        case
-            when direct.PERSON_ID is not null        then direct.PERSON_ID
-            when via_cclf.PERSON_ID is not null      then via_cclf.PERSON_ID
-            when via_excluded.PERSON_ID is not null  then via_excluded.PERSON_ID
-        end                                                     as PERSON_ID,
-        case
-            when direct.PERSON_ID is not null        then 'direct'
-            when via_cclf.PERSON_ID is not null      then 'cclf_beneficiary_xref'
-            when via_excluded.PERSON_ID is not null  then 'excluded_beneficiary_mbi_xref'
-        end                                                     as MBI_CROSSWALK_SOURCE
-    from mbi_keys
-
-    left join persons as direct
-        on direct.PERSON_ID = mbi_keys.BENE_MBI_ID
-
-    left join cclf_beneficiary_xref
-        on cclf_beneficiary_xref.PREVIOUS_MBI = mbi_keys.BENE_MBI_ID
-    left join persons as via_cclf
-        on via_cclf.PERSON_ID = cclf_beneficiary_xref.CURRENT_MBI
-
-    left join excluded_beneficiary_xref
-        on excluded_beneficiary_xref.PREVIOUS_MBI = mbi_keys.BENE_MBI_ID
-    left join persons as via_excluded
-        on via_excluded.PERSON_ID = excluded_beneficiary_xref.CURRENT_MBI
-
-),
+{{ alr_mbi_to_person() }},
 
 -- Every assignment-list row resolved to a person, flagged when it comes from
 -- the pinned delivery of the month's own calendar year.
@@ -297,6 +236,8 @@ assignment as (
 -- assigned from, else the latest off-year row, whose flag still states CMS's
 -- type for the member that month. A NULL or 0 flag on that row does not fall
 -- through to another row's flag; ALR v1.1.0 requires 1-4, so it cannot occur.
+-- Since the flag types first (TUVA-162), the score-column step below types a
+-- month only on such a row: a fallback, unreached on ALR v1.1 enrollment.
 enroll_flag_type as (
 
     select
@@ -426,14 +367,14 @@ select
     assignment.ASSIGNMENT_TYPE                                  as ASSIGNMENT_TYPE,
 
     coalesce(
-        assignment.SCORE_COLUMN_TYPE,
         enroll_flag_type.ENROLLMENT_TYPE,
+        assignment.SCORE_COLUMN_TYPE,
         eligibility_type.ENROLLMENT_TYPE
     )                                                           as ENROLLMENT_TYPE,
 
     case
-        when assignment.SCORE_COLUMN_TYPE is not null       then 'assignment_list_score_column'
         when enroll_flag_type.ENROLLMENT_TYPE is not null   then 'assignment_list_enroll_flag'
+        when assignment.SCORE_COLUMN_TYPE is not null       then 'assignment_list_score_column'
         when eligibility_type.ENROLLMENT_TYPE is not null   then 'eligibility_codes'
     end                                                         as ENROLLMENT_TYPE_SOURCE,
 

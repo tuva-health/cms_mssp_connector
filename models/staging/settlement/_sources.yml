@@ -1,0 +1,17 @@
+version: 2
+
+sources:
+  - name: mssp_raw
+    database: "{{ var('input_database') }}"
+    schema: "{{ var('input_schema') }}"
+    tables:
+      # Final settlement (financial reconciliation, STLMT) workbook, one per
+      # performance year, workbook contract 1.3.0. CMS can deliver it twice,
+      # embargoed and unembargoed, with the same workbook; both load.
+      # The pipeline loads all twelve 'Table *' sheets and Parameters; the
+      # connector reads the five the settlement facts need.
+      - name: stlmt_table_1
+      - name: stlmt_table_2
+      - name: stlmt_table_3
+      - name: stlmt_table_a1
+      - name: stlmt_table_a2

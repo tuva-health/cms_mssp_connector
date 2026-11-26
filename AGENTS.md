@@ -4,12 +4,15 @@ This file provides guidance to Agents when working with code in this repository.
 
 ## Project Overview
 
-This is a dbt project (`cms_mssp_connector`, repo [tuva-health/cms_mssp_connector](https://github.com/tuva-health/cms_mssp_connector)) that stages the raw CMS Medicare Shared Savings Program files [cms_mssp_pipeline](https://github.com/tuva-health/cms_mssp_pipeline) loads, derives the benchmark and projected-savings facts from the CMS benchmark workbooks, and adds member-month benchmark facts beside the Tuva semantic layer. `packages.yml` pins [cms_alr_connector](https://github.com/tuva-health/cms_alr_connector) `v1.1.1`, which brings [medicare_cclf_connector](https://github.com/tuva-health/medicare_cclf_connector) `v1.0.2` and [Tuva Core](https://github.com/tuva-health/tuva-core) `v1.0.0` (dbt package name `the_tuva_project`). It also pins the semantic-layer package, the five marts it builds on and [CMS chronic conditions](https://github.com/tuva-health/cms_chronic_conditions), all at `v1.0.0`; move these pins together. The release is a container image (see the README). Client forks deploy it.
+This is a dbt project (`cms_mssp_connector`, repo [tuva-health/cms_mssp_connector](https://github.com/tuva-health/cms_mssp_connector)) that stages the raw CMS Medicare Shared Savings Program files [cms_mssp_pipeline](https://github.com/tuva-health/cms_mssp_pipeline) loads, derives the benchmark and projected-savings facts from the CMS benchmark workbooks, and adds member-month benchmark facts beside the Tuva semantic layer. `packages.yml` pins [cms_alr_connector](https://github.com/tuva-health/cms_alr_connector) `v1.2.0`, which brings [medicare_cclf_connector](https://github.com/tuva-health/medicare_cclf_connector) `v1.0.3` and [Tuva Core](https://github.com/tuva-health/tuva-core) `v1.0.0` (dbt package name `the_tuva_project`). It also pins the semantic-layer package, the five marts it builds on and [CMS chronic conditions](https://github.com/tuva-health/cms_chronic_conditions), all at `v1.0.0`; move these pins together. The release is a container image (see the README). Client forks deploy it.
+
+The ALR seeds in `integration_tests/seeds/alr_cclf/` include a deliberately unmatchable file (A18), so cms_alr_connector's `alr_file_without_file_parameters` test is set to warn in `integration_tests`, as it is in that connector's own integration project.
 
 ## Before you start
 
 - **Running dbt, tests or CI**: read [integration_tests/README.md](integration_tests/README.md).
   Every local run goes through `scripts/dbt-local` (`--project-dir integration_tests`); the toolchain is `uv` and `uv.lock`.
+- **Reading a table cms_mssp_pipeline changed** (a new or changed workbook relation, such as the STLMT tables): prove it against the pipeline's synthetic output with `scripts/dbt-pipeline-e2e <pipeline-checkout> --select <models> --indirect-selection cautious` before either side merges. It works on an unmerged pipeline worktree; see [integration_tests/README.md](integration_tests/README.md#against-cms_mssp_pipelines-synthetic-output).
 - **Changing anything user-visible**: add it to `CHANGELOG.md` under `[Unreleased]` in the same PR, marking breaking changes **Breaking**.
 - **Releasing or bumping `version`**: read the Releases section of [README.md](README.md#releases). `pyproject.toml` carries the release version.
 
@@ -47,8 +50,8 @@ This repository is public. Commit synthetic data only:
 
 The pipeline writes every raw table to `{{ var('input_database') }}.{{ var('input_schema') }}`. This connector reads them through three sources:
 
-- `mssp_raw` (this repo): the twenty BNMRK/AEXPU/QEXPU cell-grain relations, versioned by the workbook export contract (`contracts/workbook/v1.json` in the pipeline). `pyproject.toml` `[tool.cms_mssp_connector] workbook_contract` names the version the models read; bump it together with the models. It also covers the CSV, XML and fixed-width families (BEUR, BAIP, NCBP, MCQM, BNEX, participant lists, shadow bundles). The pipeline upper-cases the CSV headers and appends `FILE_PATH`, `DIRECTORY_NAME`, `FILE_NAME` and `FILE_DATE` to every family; MCQM also gets `PERIOD`.
+- `mssp_raw` (this repo): the twenty BNMRK/AEXPU/QEXPU cell-grain relations and the five STLMT ones the settlement facts read (Tables 1, 2, 3, A1 and A2), versioned by the workbook export contract (`contracts/workbook/v1.json` in the pipeline). `pyproject.toml` `[tool.cms_mssp_connector] workbook_contract` names the version the models read; bump it together with the models. It also covers the CSV, XML and fixed-width families (BEUR, BAIP, NCBP, MCQM, BNEX, participant lists, shadow bundles). The pipeline upper-cases the CSV headers and appends `FILE_PATH`, `DIRECTORY_NAME`, `FILE_NAME` and `FILE_DATE` to every family; MCQM also gets `PERIOD`.
 - `cms_ssp_reports` (cms_alr_connector): the six ALR tables.
-- `medicare_cclf` (medicare_cclf_connector): the CCLF tables. CCLF v1.0.2 reads Part A and Part B demonstration codes as `parta_demo_codes` and `partb_demo_codes`; cms_mssp_pipeline v0.4.0 writes them under those names (TUVA-125).
+- `medicare_cclf` (medicare_cclf_connector): the CCLF tables. CCLF v1.0.3 reads Part A and Part B demonstration codes as `parta_demo_codes` and `partb_demo_codes`; cms_mssp_pipeline v0.4.0 writes them under those names (TUVA-125).
 
 A change to a table name or column set is a change to both repos. Update the seeds under `integration_tests/seeds/` to match, so that `dbt build / duckdb` exercises the change.

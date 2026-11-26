@@ -7,6 +7,196 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/dbt-pipeline-e2e <pipeline-checkout> [dbt build args...]`, a
+  development harness that runs cms_mssp_pipeline's synthetic end-to-end
+  build in any pipeline checkout, loads its workbook-contract tables over
+  this project's seeds in a database of its own, and runs `dbt build` on the
+  selection given. See `integration_tests/README.md`.
+- `fct_settlement`: CMS's final settled result for a performance year, one
+  row per ACO and performance year, read from the final settlement (STLMT)
+  workbook in its real CMS layout: Table 2 `[A]`-`[I]` per enrollment type
+  (`[B]` split into BY3 and PY) and Table 3 `[A]`-`[UU]` (`[C]` and `[D]`
+  per type). Every field has a meaningful name, documented with its CMS code
+  and footnote meaning. Y/N flags and text results stay text. When the
+  embargoed and unembargoed deliveries are both present, the unembargoed one
+  is read.
+- `fct_settlement_risk`: the settlement workbook's Table A1, one row per ACO,
+  performance year and enrollment type, a column per letter (weight, BY3 and
+  PY CMS-HCC scores, uncapped ratio, BY3 and PY demographic scores,
+  demographic ratio, aggregate cap, final capped ratio), and the
+  `Weighted Average` row as `ENROLLMENT_TYPE = 'weighted_average'`.
+- `fct_settlement_historical_benchmark`: Table 1's per-enrollment-type rows
+  by benchmark year, with `[L]` as `HISTORICAL_BENCHMARK`.
+- `fct_settlement_renormalization`: Table A2's national mean CMS-HCC and
+  demographic risk scores, per enrollment type, BY1-BY3 and PY.
+- `stg_stlmt_table_1`, `stg_stlmt_table_2`, `stg_stlmt_table_3`,
+  `stg_stlmt_table_a1`, `stg_stlmt_table_a2` and `int_settlement_values`
+  beneath them. Each field is mapped to one cell by sheet, row code (Table
+  A2's block), row kind, enrollment type and column
+  (`macros/settlement_fields.sql`); CMS's en-dash blank is NULL and
+  E-notation figures parse. New tests: `assert_settlement_cells_are_mapped`,
+  `assert_settlement_fields_are_present` and
+  `assert_settlement_cross_table_identities` (Table 2 `[C]` = A1 `[I]`,
+  Table 2 `[A]` = Table 1 `[L]`, Table 3 `[D]` = Table 2 `[H]`, Table 3
+  `[F]` = Table 2 `[I]`, `[MM]` = `[HH]` - `[KK]`).
+  **Breaking:** the connector now reads five STLMT relations
+  (`stlmt_table_1`, `stlmt_table_2`, `stlmt_table_3`, `stlmt_table_a1`,
+  `stlmt_table_a2`) in their real-layout schema, and `workbook_contract` is
+  pinned to cms_mssp_pipeline's workbook contract 1.3.0. The staging views
+  fail to build against a pipeline release that does not write those tables
+  and columns; release with a pipeline that does.
+
+
+- `fact_benchmark_aco_quarter.PY_RISK_SCORE_BASIS`: what the PY scores
+  behind the risk ratios are, from the score source. In-year it is
+  `by3_year_scores`: the quarterly and initial lists' type score columns
+  hold the most recent payment year's score, the BY3 year's mid-PY, so the
+  ratio projects a flat score trend. `performance_year_scores` for a year
+  scored from monthly columns, `mixed` for both. The README explains why.
+
+- Settled-year risk ratios from the settlement population (TUVA-162,
+  method M-SETTLE). Reads `aalr_settlement_population` from
+  `cms_alr_connector` `v1.2.0`.
+  - `int_settlement_member_month_risk`: the settlement AALR's eligible
+    person-months, typed by EnrollFlag, with the month's own score as
+    printed and the demographic score of its type.
+  - `int_settlement_risk_ratio`: Table A1 [A]-[I] per type computed from
+    them, with BY3 [B]/[E] from the settlement workbook's A1 and the weights'
+    benchmark from its Table 1 [L]. [I] is CMS's per-type clip: when the
+    weighted [D] exceeds [H] (weighted [G] + 0.03), a type above [H] is set
+    to [H] and a type at or below it keeps its [D] (specifications section
+    3.2.4.2, 87 FR 69935).
+  - `fact_benchmark_aco_quarter`: `SETTLEMENT_*` columns per type (weight,
+    PY score, ratio, PY demographic score, demographic ratio, final ratio)
+    and the aggregate ratio, demographic ratio, cap and binding flag, beside
+    the projection.
+  - `fact_benchmark_aco_quarter` adds its five sums over the enrollment
+    types (the weight total, the weighted ratio and growth, and the two
+    risk-adjusted benchmarks) as four named terms in a fixed order, as
+    `fct_projected_savings` adds `[P]`, instead of with `sum()`. The
+    aggregate no longer depends on the physical order of its input rows.
+  - `fact_member_month_benchmark`: `SETTLEMENT_ENROLLMENT_TYPE`,
+    `SETTLEMENT_RISK_SCORE`, `SETTLEMENT_RISK_RATIO` and
+    `SETTLEMENT_FINAL_RISK_RATIO`.
+  - `assert_settlement_risk_reproduces_table_a1` (warn): the ACO fact's
+    settlement columns against the workbook's A1, relative 1e-4.
+  - `assert_member_month_settlement_agrees_with_aco_settlement`: the member
+    fact's settlement [I], and its mean score where it covers every scored
+    settlement month, against the ACO fact's.
+- Settled years beside the projection (TUVA-160). Every savings and
+  benchmark fact gains `IS_SETTLED`, true when `fct_settlement` has a row for
+  the ACO and performance year, and `SETTLEMENT_*` columns copied from it,
+  NULL in an open year. The projection columns are unchanged, and an open
+  year's rows are identical to before. The README's "Settled and projected
+  years" records the decision and the columns per fact.
+  - `fct_projected_savings`, `fct_projected_savings_current`,
+    `fact_benchmark_aco_quarter`: `SETTLEMENT_SUBMISSION_ID`,
+    `SETTLEMENT_UPDATED_BENCHMARK`, `SETTLEMENT_PER_CAPITA_EXPENDITURE`,
+    `SETTLEMENT_TOTAL_SAVINGS`, `SETTLEMENT_TOTAL_LOSSES`,
+    `SETTLEMENT_MINIMUM_SAVINGS_RATE`,
+    `SETTLEMENT_SAVINGS_OR_LOSSES_REALIZED`, `SETTLEMENT_FINAL_SHARING_RATE`,
+    `SETTLEMENT_SHARED_SAVINGS`, `SETTLEMENT_EARNED_PERFORMANCE_PAYMENT`,
+    `SETTLEMENT_NET_EARNED_PERFORMANCE_PAYMENT`,
+    `SETTLEMENT_PAYMENT_DUE_TO_CMS`.
+  - `fct_projected_benchmark_by_enrollment_type` and its `_current`
+    version: `SETTLEMENT_SUBMISSION_ID`, and at the row's type
+    `SETTLEMENT_UPDATED_BENCHMARK`, `SETTLEMENT_BENEFICIARY_PROPORTION` and
+    `SETTLEMENT_PER_CAPITA_EXPENDITURE`.
+  - `fact_member_month_benchmark`: `SETTLEMENT_SUBMISSION_ID`,
+    `SETTLEMENT_FLAT_BENCHMARK_PMPM` and
+    `SETTLEMENT_ENROLLMENT_TYPE_BENCHMARK_PMPM`.
+  - `fct_projected_savings`, `fct_projected_savings_current`,
+    `fact_benchmark_aco_quarter`: `SETTLEMENT_SAVINGS_PERCENTAGE`, the
+    projected savings percentage's formula on the settled figures
+    (`(T2 [I] - T3 [E]) / T2 [I]`), and
+    `SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE`, settled minus the row's
+    `PROJECTED_SAVINGS_PERCENTAGE`, on every quarter (and, in
+    `fct_projected_savings`, every delivery) row of a settled year: how far
+    off each quarterly report was from the final.
+  - `fact_benchmark_aco_quarter`: CMS's printed Table A1 beside each
+    quarter's projected risk ratios, `SETTLEMENT_UNCAPPED_RISK_RATIO_<TYPE>`
+    (`[D]`) and `SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO` (sum of
+    `[A]` x `[D]`), each with a `_DIFFERENCE` column (settled minus
+    `RISK_RATIO_<TYPE>` or `AGGREGATE_RISK_RATIO`). No capped difference:
+    the projection's `RISK_RATIO_CLIPPED_<TYPE>` clip at a flat 1 + cap,
+    without the demographic growth in A1 `[H]`, so it would measure the
+    cap level, not projection error. New warn test
+    `assert_settlement_weighted_average_risk_ratio_is_the_weighted_sum`
+    checks the sum against A1's printed Weighted Average `[D]`.
+  - `assert_facts_carry_the_settlement_beside_the_projection`: every fact's
+    settlement columns against `fct_settlement`, and NULL in open years;
+    on the ACO-level facts, each row's settled savings percentage and its
+    difference from the row's own projection; on `fact_benchmark_aco_quarter`,
+    each quarter's A1 ratios and their differences.
+- `alr_mbi_to_person` and `enroll_flag_type`: the ALR MBI-to-person
+  crosswalk and the EnrollFlag-to-type mapping as macros, shared by
+  `int_member_month_risk` and the settlement member-months.
+
+### Changed
+
+- `cms_alr_connector` moves to `v1.2.0` (TUVA-152, TUVA-113, TUVA-164), which
+  adds `aalr_settlement_population` for the settlement risk models. A
+  settlement AALR never governs a month, so `enrollment` and the member-month
+  facts don't change on deliveries v1.1.1 already covered. Benchmark AALRs with
+  no `mssp_file_parameters` row now cover their calendar year, and any other
+  unmatched ALR file fails cms_alr_connector's new
+  `alr_file_without_file_parameters` test (set it to warn to build anyway).
+  The harness's ALR and CCLF seeds are copied again at the tag (settlement
+  AALRs A15/A16, benchmark AALR A17, unmatchable file A18). The test is set to
+  `warn` in `integration_tests`, as in that connector's own project, because
+  A18 is deliberate.
+- Through `cms_alr_connector` `v1.2.0`, `medicare_cclf_connector` moves to
+  `v1.0.3`: `medical_claim.file_date` on Part A rows and
+  `pharmacy_claim.file_date` carry the delivery's `FILE_DATE` (were null), and
+  `medical_claim.ingest_datetime` is a timestamp (was a string). Fully refresh
+  incremental or snapshotted tables built from `medical_claim`.
+- **Breaking:** `int_member_month_risk` types a member-month by its ALR
+  EnrollFlag first, then the type score column, then the eligibility codes
+  (was score column first). CMS types a person-month by its EnrollFlag; a quarterly or initial
+  list's score column carries the type of the payment year it was scored
+  in, which can differ. `ENROLLMENT_TYPE_SOURCE` is
+  `assignment_list_enroll_flag` on those months, and the type, the
+  type-level PY means and ratios in `fact_benchmark_aco_quarter`, and the
+  type rates in `fact_member_month_benchmark` move with it. The singular
+  test `assert_new_enrollee_rows_carry_their_score_column_type` is removed:
+  a new enrollee is typed by its flag like any other month.
+- **Renamed from the first, unreleased settlement build** (no migration: it
+  never shipped). The coded names are gone. Table 2: `T2_A_<TYPE>` →
+  `HISTORICAL_BENCHMARK_<TYPE>`, `T2_B_<TYPE>` → `BY3_CMS_HCC_RISK_SCORE_<TYPE>`
+  and `PY_CMS_HCC_RISK_SCORE_<TYPE>`, `T2_C_<TYPE>` → `CAPPED_RISK_RATIO_<TYPE>`,
+  `T2_D_<TYPE>` → `RISK_ADJUSTED_HISTORICAL_BENCHMARK_<TYPE>`, `T2_E_<TYPE>` →
+  `NATIONAL_REGIONAL_UPDATE_FACTOR_<TYPE>`, `T2_F_<TYPE>` →
+  `THREE_WAY_UPDATE_FACTOR_<TYPE>`, `T2_G_<TYPE>` → `UPDATED_BENCHMARK_<TYPE>`,
+  `T2_H_<TYPE>` → `UPDATED_BENCHMARK_BENEFICIARY_PROPORTION_<TYPE>`. Table 3:
+  `T3_G` → `TOTAL_EXPENDITURES`, `T3_H` → `TOTAL_BENCHMARK_EXPENDITURES`,
+  `T3_I` → `BENCHMARK_MINUS_EXPENDITURES`, `T3_J` → `TOTAL_SAVINGS`, `T3_L`
+  → `MINIMUM_SAVINGS_RATE`, `T3_N` → `MINIMUM_SAVINGS_AMOUNT`, `T3_X` →
+  `MAXIMUM_SHARING_RATE`, `T3_Y` → `QUALITY_SCORE`, `T3_Z` →
+  `MET_QUALITY_STANDARD`, `T3_AA` → `MET_ALTERNATIVE_QUALITY_STANDARD`,
+  `T3_BB` → `MET_LOW_REVENUE_SHARING_CRITERIA`, `T3_CC` →
+  `FINAL_SHARING_RATE`, `T3_EE` → `SHARED_SAVINGS`, `T3_FF` →
+  `SHARED_SAVINGS_CAP`, `T3_GG` → `SEQUESTRATION_ADJUSTMENT`, `T3_HH` →
+  `EARNED_PERFORMANCE_PAYMENT`, `T3_II` → `APPLICABLE_PAYMENT`, `T3_JJ` →
+  `MAXIMUM_AIP_RECOUPMENT`, `T3_KK` → `AIP_RECOUPMENT`, `T3_LL` →
+  `AIP_STILL_OWED`, `T3_MM` → `NET_EARNED_PERFORMANCE_PAYMENT`.
+  `T3_BB` and `T3_II` are now text (`[BB]` is the Y/N low-revenue criteria
+  flag, `[II]` a text result). `SAVINGS_REALIZED` → `SAVINGS_OR_LOSSES_REALIZED`.
+  `PERSON_YEARS_<TYPE>` is removed: Table 3 `[B]` is a single value.
+  `fct_settlement_risk` is wide (one row per type) instead of one row per
+  section, so `SECTION_CODE`, `SECTION_LABEL`, `BY3_VALUE`, `PY_VALUE` and
+  their `_TEXT` columns are gone.
+
+### Fixed
+
+- `int_expenditures_annual` leaves out the AEXPU workbook from a final
+  settlement bundle. cms_mssp_pipeline gives that workbook a submission of its
+  own (`SUBMISSION_ID` starting `STLMT.`, workbook contract 1.1.0), where it
+  ranked first for the performance year and counted itself `BY3`. A
+  performance year then had two latest `BY3` workbooks. The new singular test
+  `assert_one_latest_workbook_per_benchmark_year_label` fails on that shape.
+
 ## [1.0.1] - 2026-11-20
 
 The first published release of the 1.0 line. `v1.0.0` was tagged, but its

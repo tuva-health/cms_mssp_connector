@@ -18,6 +18,7 @@ Current staging groups:
 - `mssp`: MSSP payment and utilization files
 - `shadow_bundles`: shadow bundle source files
 - `benchmark`: historical benchmark and expenditure/utilization workbooks
+- `settlement`: the final settlement (STLMT) workbook's Tables 1, 2, 3, A1 and A2
 
 Model metadata in the `_models.yml` files configures these staging models into the `_stg_input_layer` schema.
 
@@ -26,6 +27,7 @@ tables, configured into the `_int_input_layer` schema:
 
 - `benchmark`: typed facts over the BNMRK / AEXPU / QEXPU workbooks
 - `member`: enrollment type and CMS prospective risk score per member-month
+- `settlement`: the settlement workbook's cells, ranked by delivery and mapped to fields
 
 The staging models are faithful but untyped — one row per worksheet cell, every
 value in a text column — so an input to the historical benchmark is a
@@ -42,15 +44,19 @@ deliveries without choosing between them:
 - `int_expenditures_annual` — AEXPU Table 1, by benchmark year
 - `int_expenditures_quarterly` — QEXPU Table 1
 - `int_expenditures_regional` — QEXPU Table 2, regional expenditures and weights
+- `int_settlement_values` — STLMT Tables 1, 2, 3, A1 and A2, one row per cell,
+  with the embargoed and unembargoed deliveries ranked and each cell mapped to
+  the settlement field it is
 
 They calculate nothing. Deriving the benchmark from these inputs is the job of
 the final layer.
 
 `int_member_month_risk` sits alongside them on the `core__member_month` grain
 (person, data source, month). It states which MSSP enrollment type the member
-is in — from the populated score column on the 2025+ assignment list, else the
-assignment list's monthly enrollment flag (`EnrollFlag`, 1 ESRD, 2 disabled,
-3 aged/dual, 4 aged/non-dual), else the Tuva eligibility codes, with
+is in — from the assignment list's monthly enrollment flag (`EnrollFlag`,
+1 ESRD, 2 disabled, 3 aged/dual, 4 aged/non-dual), as CMS types a
+person-month, else the populated score column on the 2025+ assignment list,
+else the Tuva eligibility codes, with
 `ENROLLMENT_TYPE_SOURCE` saying which — and the CMS prospective HCC risk score
 the assignment list supplies, read from the per-type column or the monthly
 column depending on the file's layout. Assignment-list MBIs are mapped to the
@@ -73,6 +79,16 @@ models:
   one row per ACO, performance year, quarter (and enrollment type), with the
   projected updated benchmark and the ACO's expenditure also expressed per
   member per month (`*_PMPM`, the annual figure divided by twelve)
+- `fct_settlement` — CMS's final settled result, one row per ACO and
+  performance year: the settlement workbook's Table 2 `[A]`-`[I]` (per
+  enrollment type) and Table 3 `[A]`-`[UU]`
+- `fct_settlement_risk` — the settlement workbook's Table A1, one row per ACO,
+  performance year and enrollment type, a column per letter `[A]`-`[I]`, and
+  the `Weighted Average` row as `ENROLLMENT_TYPE = 'weighted_average'`
+- `fct_settlement_historical_benchmark` — Table 1's per-enrollment-type rows,
+  by benchmark year, with `[L]` (`HISTORICAL_BENCHMARK`)
+- `fct_settlement_renormalization` — Table A2's national mean CMS-HCC and
+  demographic risk scores, per enrollment type, BY1-BY3 and PY
 
 Two things about their grain govern how they must be queried, and both are
 documented at length in `models/final/benchmark/_models.yml`:
@@ -96,6 +112,137 @@ the minimum savings rate band schedule, and `seeds/mssp_aco_agreement.csv`, the
 per-ACO minimum savings rate election and agreement performance year. The second
 ships with a synthetic example row only; an ACO with no row takes documented
 defaults and every output row it produces is flagged `IS_AGREEMENT_DEFAULTED`.
+
+### Settlement
+
+CMS settles each performance year in a final settlement bundle, around August
+to November of the following year, and can deliver it twice: embargoed and
+unembargoed. The settlement workbooks in the two copies are byte-identical;
+`fct_settlement` reads the unembargoed one when both are there
+(`SETTLEMENT_DELIVERY_COUNT` says how many came). Only the embargoed directory
+carries the settlement AALR and the AEXPU; the unembargoed one has neither.
+
+The facts read the workbook's results and never recompute them. Every field
+has a meaningful name and its CMS code, documented with CMS's footnote meaning
+in `models/final/settlement/_models.yml`. Y/N flags and text results stay text
+(Table 3 `[P]`, `[T]`, `[W]`, `[Z]`, `[AA]`, `[BB]`, `[II]`). `[BB]`
+(`MET_LOW_REVENUE_SHARING_CRITERIA`) is the low-revenue criteria flag; the
+low-revenue outcome shows in `FINAL_SHARING_RATE` (`[CC]`) and the payment
+fields (`[EE]`, `[HH]`).
+
+Each field is mapped to one cell by its labels: the sheet, the row's `[X]`
+code (Table A2's block title; Table A1's letters label its columns), the row's
+kind and enrollment type, and the column (Table 2's `Benchmark Period` or
+`Performance Year`, Table 1's `BY1`-`BY3` or `Benchmark`, Table A1's letter).
+`macros/settlement_fields.sql` holds the map. CMS's blank, an en dash, is NULL,
+and a figure in E-notation reads as its number. Four tests keep the map honest
+on every delivery: `assert_settlement_cells_are_mapped` (a value no field
+reads), `assert_settlement_fields_are_present` (a field whose cell is missing),
+`assert_settlement_fields_are_numeric` (a figure that does not parse), and
+`assert_settlement_cross_table_identities`, which checks the figures CMS's
+footnotes tie together: Table 2 `[C]` = A1 `[I]`, Table 2 `[A]` = Table 1
+`[L]`, Table 3 `[D]` = Table 2 `[H]`, Table 3 `[F]` = Table 2 `[I]`, and
+`[MM]` = `[HH]` - `[KK]`.
+
+`int_expenditures_annual` leaves out the AEXPU workbook the settlement bundle
+also carries: it reports the performance year, not a benchmark year.
+
+### Settled and projected years
+
+A performance year is **settled** when `fct_settlement` has a row for the ACO
+and year, and **open** until then. The savings and benchmark facts show both
+kinds of year the same way: the projection from the quarterly reports, and,
+for a settled year, CMS's final figures **beside** it.
+
+- `IS_SETTLED` on every row of `fct_projected_savings`,
+  `fct_projected_savings_current`, `fct_projected_benchmark_by_enrollment_type`,
+  `fct_projected_benchmark_by_enrollment_type_current`,
+  `fact_benchmark_aco_quarter` and `fact_member_month_benchmark` says which
+  kind of year the row is in.
+- In a settled year, `SETTLEMENT_*` columns carry the final figures from
+  `fct_settlement`, copied as written, with `SETTLEMENT_SUBMISSION_ID` naming
+  the delivery. In an open year they are all NULL.
+- The projection's own columns never change. A settled year keeps every
+  quarterly projection, so each can be compared with the final row by
+  row; an open year comes out exactly as it did before settlement columns
+  existed.
+
+Which settlement columns a fact carries follows its grain:
+
+| Facts | Settlement columns |
+| --- | --- |
+| `fct_projected_savings`, its `_current` version, `fact_benchmark_aco_quarter` (one row per ACO and quarter) | `SETTLEMENT_UPDATED_BENCHMARK` (T2 `[I]`, beside `[P]`), `SETTLEMENT_PER_CAPITA_EXPENDITURE` (T3 `[E]`, beside `[Q]`), `SETTLEMENT_TOTAL_SAVINGS` / `_TOTAL_LOSSES` (`[J]`, `[K]`), `SETTLEMENT_MINIMUM_SAVINGS_RATE` (`[L]`, beside `ESTIMATED_MSR`), `SETTLEMENT_SAVINGS_OR_LOSSES_REALIZED` (`[P]`, text, beside `SAVINGS_STATUS`), `SETTLEMENT_FINAL_SHARING_RATE` (`[CC]`), `SETTLEMENT_SHARED_SAVINGS` (`[EE]`), `SETTLEMENT_EARNED_PERFORMANCE_PAYMENT` (`[HH]`), `SETTLEMENT_NET_EARNED_PERFORMANCE_PAYMENT` (`[MM]`), `SETTLEMENT_PAYMENT_DUE_TO_CMS` (`[UU]`) |
+| `fct_projected_benchmark_by_enrollment_type` and its `_current` version (one row per enrollment type) | the row's own type: `SETTLEMENT_UPDATED_BENCHMARK` (T2 `[G]`, beside `[M]`), `SETTLEMENT_BENEFICIARY_PROPORTION` (T2 `[H]`, beside `[O]`), `SETTLEMENT_PER_CAPITA_EXPENDITURE` (T3 `[C]`) |
+| `fact_member_month_benchmark` (one row per member-month) | `SETTLEMENT_FLAT_BENCHMARK_PMPM` (T2 `[I]` / 12, beside the flat rate) and `SETTLEMENT_ENROLLMENT_TYPE_BENCHMARK_PMPM` (T2 `[G]` / 12 at the month's settlement type, beside the type rate) |
+
+**How far off was each quarterly report?** The settlement joins on ACO and
+performance year, so every quarter row of a settled year carries it, in
+`fct_projected_savings` on every benchmark delivery as well. Beside each
+row's own `PROJECTED_SAVINGS_PERCENTAGE`, the ACO-level facts carry:
+
+- `SETTLEMENT_SAVINGS_PERCENTAGE`: the projection's `[R] = ([P] - [Q]) / [P]`
+  on CMS's settled figures, `(T2 [I] - T3 [E]) / T2 [I]`, with the same sign
+  and denominator. CMS prints no savings-rate letter; this equals Table 3
+  `[I] / [H]`, the rate CMS compares with the MSR.
+- `SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE`: settled minus projected,
+  positive where the settlement came out better than that quarter projected.
+  NULL in an open year and where the row's projection is not calculable.
+
+So one query over `fct_projected_savings_current` (one row per quarter) or
+`fct_projected_savings` (every delivery) answers it for any ACO:
+
+```sql
+select ACO_ID, PERFORMANCE_YEAR, PERIOD,
+       PROJECTED_SAVINGS_PERCENTAGE, SETTLEMENT_SAVINGS_PERCENTAGE,
+       SETTLEMENT_SAVINGS_PERCENTAGE_DIFFERENCE
+from fct_projected_savings_current
+where IS_SETTLED
+order by ACO_ID, PERFORMANCE_YEAR, QUARTER_NUM
+```
+
+`fact_benchmark_aco_quarter` does the same for the risk ratio, on each
+quarter's latest delivery, against CMS's printed Table A1
+(`fct_settlement_risk`), not the M-SETTLE `SETTLEMENT_*` ratios recomputed
+from the settlement population:
+
+- `SETTLEMENT_UNCAPPED_RISK_RATIO_<TYPE>` (A1 `[D]`) beside
+  `RISK_RATIO_<TYPE>`, and `SETTLEMENT_UNCAPPED_RISK_RATIO_DIFFERENCE_<TYPE>`,
+  settled minus projected.
+- `SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO`, the sum of A1 `[A]` x `[D]`
+  over the four types, beside `AGGREGATE_RISK_RATIO`, which weights by the
+  same formula on the quarter's own person years, and
+  `SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO_DIFFERENCE`. The sum agrees with
+  A1's printed Weighted Average `[D]` to CMS's rounding; a warn test
+  reports it if not.
+
+Only the uncapped ratios are compared. The projection's CMS-method clipped
+ratios (`RISK_RATIO_CLIPPED_<TYPE>`) clip at a flat
+`1 + mssp_risk_score_cap` and omit the aggregate demographic growth that
+CMS adds to the cap (A1 `[H]` = weighted `[G]` + 0.03, which clips each
+type above it; specifications section 3.2.4.2, 87 FR 69935), so a
+difference against A1 `[I]` would measure the cap level, not projection
+error.
+
+The ACO-level dollar outcomes stay off the enrollment-type and member-month
+facts, where they would repeat on every row and sum to a multiple of
+themselves. The settled-year risk columns (`SETTLEMENT_*` risk ratios,
+weights and cap in `fact_benchmark_aco_quarter`, and the settlement type,
+score and ratios in `fact_member_month_benchmark`) are computed from the
+settlement population and sit beside the projection in the same way.
+
+`fact_member_month_benchmark` takes `ACO_ID` from the year's projection, so
+a month in a year with no quarterly projection is not shown as settled.
+
+**Why beside, not instead.** Decided 2026-11-22 (TUVA-160). Replacing the
+projection with the settlement would make one column mean two things
+depending on the year, so a report could not tell a projection from CMS's
+final figure, and it would erase the Q4 projection that settlement is the
+test of. Beside, the status is a column of its own, the projection is
+comparable with the outcome, and an open year is untouched. The same decision
+governs the member side: the settlement AALR never decides a month's
+population, type or score. Those stay on the quarterly assignment lists; the
+settlement population is exposed through `cms_alr_connector`'s
+`aalr_settlement_population` and read only for the `SETTLEMENT_*` columns.
 
 ### Which member-months count as assigned
 
@@ -287,6 +434,57 @@ The connector adds two facts of its own to that schema, under
   columns and are informational. Swapping in a factor CMS publishes is a
   change to the variable, not the model.
 
+  In-year, the PY scores are BY3-year scores, and `PY_RISK_SCORE_BASIS` says
+  so (`by3_year_scores`). The quarterly and initial assignment lists score
+  each beneficiary in a per-type column (`ESRD_SCORE`, `DIS_SCORE`,
+  `AGDU_SCORE`, `AGND_SCORE`) that holds the most recent payment year CMS
+  has scored. During the performance year that is the BY3 year, not the PY:
+  the PY's own scores appear only in the settlement AALR's monthly
+  `BENE_RSK_R_SCRE_NN` columns, after the year closes. So the in-year ratio
+  is a projection that assumes the ACO's scores stay flat from BY3 to the
+  PY: it compares the current population's BY3-year scores with the BY3
+  `[C]`, and is not CMS's settled ratio. The column is read from the score
+  source, so a year scored from monthly columns reads
+  `performance_year_scores`, and one scored from both reads `mixed`.
+
+  Each member-month is typed by its monthly EnrollFlag, as CMS types a
+  person-month, and not by which score column is filled: the column reflects
+  the member's type in the scored payment year, which can differ. Such a
+  month keeps the one score the list carries and enters the mean of its
+  flag's type, so a member who changed type since the scored year
+  contributes a score from the other type's model. The quarterly list has no
+  other score for the month, and CMS's own settlement types the month by
+  the flag too.
+
+  Settled years carry CMS's settlement view beside the projection
+  (TUVA-162). Once the settlement AALR is delivered, the PY's own scores
+  exist, and the facts compute Table A1 from them by method M-SETTLE:
+  `int_settlement_member_month_risk` types each eligible person-month of the
+  settlement population (`aalr_settlement_population`, latest delivery) by
+  its EnrollFlag and reads that month's `BENE_RSK_R_SCRE_NN` as printed;
+  `int_settlement_risk_ratio` takes the person-month means per type ([C],
+  [F]), divides by the settlement workbook's BY3 [B] and [E] (not the
+  benchmark report's: CMS rescores some BY3 beneficiaries at
+  reconciliation), weights by Table 1 [L] times person years ([A]), and
+  applies A1's cap: [H] is the weighted [G] plus 0.03, and when the
+  weighted [D] exceeds [H], each type whose [D] is above [H] is set to
+  [H] while a type at or below it keeps its [D] ([I], the specifications'
+  section 3.2.4.2 Steps 6-7 and 87 FR 69935; Step 6 says "greater than or
+  equal to" where 425.605(a)(1)(ii)(B) says "exceeds", and the model
+  follows the regulation). `fact_benchmark_aco_quarter`
+  carries the result as `SETTLEMENT_*` columns on every quarter row of the
+  settled year, and `fact_member_month_benchmark` carries the month's
+  settlement type, score, ratio and final [I]. The projection's own columns
+  do not change. A warn-level test holds the fact's settlement columns to
+  the workbook's own A1 within a relative 1e-4. A unit test pins the
+  arithmetic.
+
+  Unscored months are left out of the mean: an assigned, typed month with no
+  score is not counted as zero or as the type's average. This is an
+  assumption, not a CMS rule, and it holds for settled years too (the month
+  still counts as a person year there). Real data checked so far had no
+  unscored eligible months, so the effect has not been observed.
+
   Everything is NULL-safe and nothing is defaulted: a type with no assigned,
   scored member-months leaves the aggregate, the factor and the capped
   columns NULL for the year rather than treating the type as unchanged. A
@@ -360,6 +558,12 @@ long/tidy column contract:
 - `qexpu_table_3`
 - `qexpu_parameters`
 
+The settlement (`STLMT`) workbook loads the same way, with three more grammar
+columns (`block_label`, `row_kind`, `column_code`) and `is_embargoed`
+(workbook contract 1.3.0). The connector reads five of its tables,
+`stlmt_table_1`, `stlmt_table_2`, `stlmt_table_3`, `stlmt_table_a1` and
+`stlmt_table_a2`.
+
 Some of these are legitimately absent from a given delivery rather than missing:
 `bnmrk_table_6` does not appear in the preliminary benchmark delivery, and
 `aexpu_table_1a` / `aexpu_table_4a` are shipped for the first two benchmark
@@ -379,11 +583,12 @@ the raw tables this connector reads, so the two are released in pairs:
 | v1.0.1 | v0.4.0 | v1.0.2 (cms_alr_connector v1.1.1) |
 
 - `dbt-labs/dbt_utils`
-- `tuva-health/cms_alr_connector` `v1.1.1`, which brings
-  `tuva-health/medicare_cclf_connector` `v1.0.2` and Tuva Core `v1.0.0`
+- `tuva-health/cms_alr_connector` `v1.2.0`, which brings
+  `tuva-health/medicare_cclf_connector` `v1.0.3` and Tuva Core `v1.0.0`
   (`tuva-health/tuva-core`, dbt package name `the_tuva_project`). v1.1.0
   publishes the monthly enrollment flag on `enrollment.enroll_flag`, which
-  `int_member_month_risk` types member-months from.
+  `int_member_month_risk` types member-months from; v1.2.0 adds
+  `aalr_settlement_population`, which the settlement risk models read.
 - the Tuva semantic layer, `tuva-health/semantic-layer` `v1.0.0` (dbt package
   name `semantic_layer`). Its README asks the root project to declare Tuva
   Core and the five marts it builds on, so `packages.yml` lists them too, all
@@ -690,16 +895,19 @@ With `upstream` as the fork's remote for this repository:
 |-- models/
 |   |-- final/
 |   |   |-- benchmark/
-|   |   `-- semantic_layer/
+|   |   |-- semantic_layer/
+|   |   `-- settlement/
 |   |-- intermediate/
 |   |   |-- benchmark/
-|   |   `-- member/
+|   |   |-- member/
+|   |   `-- settlement/
 |   `-- staging/
 |       |-- benchmark/
 |       |-- bnex/
 |       |-- mcqm/
 |       |-- mssp/
 |       |-- participants/
+|       |-- settlement/
 |       `-- shadow_bundles/
 |-- integration_tests/   # local DuckDB + CI harness, synthetic fixtures
 |-- macros/

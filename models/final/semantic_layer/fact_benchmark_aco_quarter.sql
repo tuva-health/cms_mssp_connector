@@ -91,6 +91,24 @@
     to reach into that model; assert_aco_quarter_projection_agrees_with_
     member_fact holds the two together.
 
+    IS_SETTLED and the settlement outcome columns (TUVA-160) come through
+    from fct_projected_savings_current as they are, the same on every quarter
+    row of a settled year, with the settled savings percentage and each
+    quarter's difference from it.
+
+    Beside each quarter's own risk ratios the fact carries CMS's printed
+    Table A1 (fct_settlement_risk) for a settled year: [D], the uncapped
+    ratio, per type, the weighted aggregate sum [A] x [D], and each one
+    minus the quarter's projected RISK_RATIO_<TYPE> or AGGREGATE_RISK_RATIO
+    — how far off the quarter's report was from the final. These are the
+    printed final figures, not the M-SETTLE SETTLEMENT_* ratios above.
+    There is no capped difference: the projection's CMS-method clipped
+    ratios (RISK_RATIO_CLIPPED_<TYPE>, step 5) clip at a flat 1 + cap and
+    omit the aggregate demographic growth that CMS adds to the cap
+    ([H] = sum(w x g) + 0.03, specifications section 3.2.4.2, 87 FR
+    69935), so a difference against A1 [I] would measure the cap level,
+    not projection error.
+
     All arithmetic goes through to_double and safe_divide; see the macros.
 -#}
 
@@ -107,6 +125,19 @@ case
     else least(RISK_RATIO, {{ to_double(1) }} + {{ to_double(cap) }})
 end
 {%- endset -%}
+
+{#- The five sums over the types, each (name, per-type term). They are added
+    as four named terms in the order above rather than with sum(), as
+    fct_projected_savings adds [P]: double addition is not associative, and
+    sum() would leave the order to the rows' physical order and the query
+    plan, so the last bit of a ratio could change with nothing else. -#}
+{%- set totals = [
+        ('WEIGHT_TOTAL',                     'WEIGHT'),
+        ('WEIGHTED_RISK_RATIO_TOTAL',        'WEIGHT * RISK_RATIO'),
+        ('WEIGHTED_GROWTH_TOTAL',            'WEIGHT * NATIONAL_GROWTH_PROJECTED'),
+        ('RISK_ADJUSTED_BENCHMARK_UNCAPPED', 'ENROLLMENT_PROPORTION * ENROLLMENT_TYPE_BENCHMARK * RISK_RATIO'),
+        ('RISK_ADJUSTED_BENCHMARK_CLIPPED',  'ENROLLMENT_PROPORTION * ENROLLMENT_TYPE_BENCHMARK * ' ~ clipped_ratio)
+    ] -%}
 
 with projections as (
 
@@ -135,6 +166,13 @@ with projections as (
         ANNUAL_EXPENDITURE_SUBMISSION_ID,
         ACPT_PERFORMANCE_YEAR_LABEL,
         IS_AGREEMENT_DEFAULTED,
+        IS_SETTLED,
+        {%- for field, column in settlement_outcome_columns() %}
+        {{ column }},
+        {%- endfor %}
+        {%- for column in settlement_savings_columns() %}
+        {{ column }},
+        {%- endfor %}
 
         {#- the member fact's rule: latest quarter of the year, lowest ACO on ties -#}
         row_number() over (
@@ -154,7 +192,8 @@ member_months as (
         {{ cast_year_or_null('substring(YEAR_MONTH, 1, 4)') }}
                                                             as PERFORMANCE_YEAR,
         ENROLLMENT_TYPE,
-        {{ to_double('RISK_SCORE') }}                       as RISK_SCORE
+        {{ to_double('RISK_SCORE') }}                       as RISK_SCORE,
+        RISK_SCORE_SOURCE
     from {{ ref('int_member_month_risk') }}
     where IS_ASSIGNED
       and RISK_SCORE is not null
@@ -171,6 +210,103 @@ member_scores as (
         avg(RISK_SCORE)                                     as PY_MEAN_RISK_SCORE
     from member_months
     group by PERFORMANCE_YEAR, ENROLLMENT_TYPE
+
+),
+
+-- What the PY scores are (TUVA-162), over the same member-months as the
+-- means. A quarterly or initial list's type score column holds the most
+-- recent payment year CMS has scored, the BY3 year's mid-PY (TUVA-161); a
+-- monthly BENE_RSK_R_SCRE_NN column holds the year's own score.
+score_basis as (
+
+    select
+        PERFORMANCE_YEAR,
+        case
+            when min(RISK_SCORE_SOURCE) = 'assignment_list_type_score'
+             and max(RISK_SCORE_SOURCE) = 'assignment_list_type_score'
+                then 'by3_year_scores'
+            when min(RISK_SCORE_SOURCE) = 'assignment_list_monthly_score'
+             and max(RISK_SCORE_SOURCE) = 'assignment_list_monthly_score'
+                then 'performance_year_scores'
+            else 'mixed'
+        end                                                 as PY_RISK_SCORE_BASIS
+    from member_months
+    group by PERFORMANCE_YEAR
+
+),
+
+-- The settled year's Table A1 as computed from the settlement population
+-- (TUVA-162, M-SETTLE), one row per ACO and year, beside the projection.
+settlement_ratios as (
+
+    select
+        ACO_ID,
+        PERFORMANCE_YEAR,
+        max(AGGREGATE_UNCAPPED_RISK_RATIO)                  as SETTLEMENT_AGGREGATE_RISK_RATIO,
+        max(AGGREGATE_DEMOGRAPHIC_RISK_RATIO)               as SETTLEMENT_AGGREGATE_DEMOGRAPHIC_RISK_RATIO,
+        max(AGGREGATE_CAP)                                  as SETTLEMENT_AGGREGATE_CAP,
+        max(case when IS_CAP_BINDING then 1 when not IS_CAP_BINDING then 0 end)
+                                                            as SETTLEMENT_CAP_BINDING_FLAG
+        {%- for enrollment_type in enrollment_types %}
+        {%- set t = enrollment_type | upper %},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then RISK_SCORE_WEIGHT end)
+                                                            as SETTLEMENT_RISK_SCORE_WEIGHT_{{ t }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then PY_CMS_HCC_RISK_SCORE end)
+                                                            as SETTLEMENT_PY_RISK_SCORE_{{ t }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then UNCAPPED_RISK_RATIO end)
+                                                            as SETTLEMENT_RISK_RATIO_{{ t }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then PY_DEMOGRAPHIC_RISK_SCORE end)
+                                                            as SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_{{ t }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then DEMOGRAPHIC_RISK_RATIO end)
+                                                            as SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_{{ t }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then FINAL_RISK_RATIO end)
+                                                            as SETTLEMENT_FINAL_RISK_RATIO_{{ t }}
+        {%- endfor %}
+    from {{ ref('int_settlement_risk_ratio') }}
+    group by ACO_ID, PERFORMANCE_YEAR
+
+),
+
+-- CMS's printed Table A1 (fct_settlement_risk), one row per ACO and year:
+-- [A] and [D] per type, for the settled-minus-projected differences
+-- (TUVA-160, 2026-11-25). Not the M-SETTLE figures above, which are
+-- recomputed from the settlement population.
+settlement_a1_types as (
+
+    select
+        ACO_ID,
+        PERFORMANCE_YEAR
+        {%- for enrollment_type in enrollment_types %}
+        {%- set t = enrollment_type | upper %},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}'
+                 then {{ to_double('RISK_SCORE_WEIGHT') }} end)        as A1_WEIGHT_{{ t }},
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}'
+                 then {{ to_double('UNCAPPED_RISK_RATIO') }} end)      as A1_UNCAPPED_RISK_RATIO_{{ t }}
+        {%- endfor %}
+    from {{ ref('fct_settlement_risk') }}
+    group by ACO_ID, PERFORMANCE_YEAR
+
+),
+
+-- The weighted uncapped aggregate, sum of [A] x [D] over the four types,
+-- as four named terms in a fixed order, for the reason `totals` gives.
+-- Unlike `summed`, any missing term makes it NULL: Table A1 fills [A] and
+-- [D] for every type, so a blank one is a gap in the delivery, and a
+-- weighted mean over three of four types is not CMS's.
+-- It agrees with A1's printed Weighted Average [D] to its rounding;
+-- assert_settlement_weighted_average_risk_ratio_is_the_weighted_sum holds
+-- the two together.
+settlement_a1 as (
+
+    select
+        settlement_a1_types.*,
+        {% for enrollment_type in enrollment_types -%}
+        A1_WEIGHT_{{ enrollment_type | upper }} * A1_UNCAPPED_RISK_RATIO_{{ enrollment_type | upper }}
+        {%- if not loop.last %}
+            + {% endif %}
+        {%- endfor %}
+                                                            as A1_WEIGHTED_UNCAPPED_RISK_RATIO
+    from settlement_a1_types
 
 ),
 
@@ -354,15 +490,15 @@ aggregated as (
                 else 0
             end) = 0                                        as HAS_COMPLETE_GROWTH,
 
-        sum(WEIGHT)                                         as WEIGHT_TOTAL,
-        sum(WEIGHT * RISK_RATIO)                            as WEIGHTED_RISK_RATIO_TOTAL,
-        sum(WEIGHT * NATIONAL_GROWTH_PROJECTED)             as WEIGHTED_GROWTH_TOTAL,
-        sum(ENROLLMENT_PROPORTION * ENROLLMENT_TYPE_BENCHMARK * RISK_RATIO)
-                                                            as RISK_ADJUSTED_BENCHMARK_UNCAPPED,
-
-        {#- the CMS method's sum, meaningful only where the cap binds -#}
-        sum(ENROLLMENT_PROPORTION * ENROLLMENT_TYPE_BENCHMARK * {{ clipped_ratio | indent(12) }})
-                                                            as RISK_ADJUSTED_BENCHMARK_CLIPPED
+        {#- the five sums' terms, one per type, added in a fixed order below -#}
+        {%- for total, term in totals %}
+        {%- for enrollment_type in enrollment_types %}
+        max(case when ENROLLMENT_TYPE = '{{ enrollment_type }}' then {{ term | indent(12) }} end)
+                                                            as {{ total }}_TERM_{{ enrollment_type | upper }}
+        {%- if not loop.last %},{% endif %}
+        {%- endfor %}
+        {%- if not loop.last %},{% endif %}
+        {%- endfor %}
 
         {%- for enrollment_type in enrollment_types %},
 
@@ -385,10 +521,29 @@ aggregated as (
 
 ),
 
+-- Each sum as four named terms in a fixed order. A NULL term is left out,
+-- as sum() leaves out a NULL row, and the total is NULL only when every
+-- term is; adding the 0 that stands in for a missing term is exact.
+summed as (
+
+    select
+        aggregated.*
+        {%- for total, term in totals %},
+        case
+            when {% for enrollment_type in enrollment_types %}{{ total }}_TERM_{{ enrollment_type | upper }} is null{% if not loop.last %} and {% endif %}{% endfor %}
+                then {{ to_double('null') }}
+            else {% for enrollment_type in enrollment_types %}coalesce({{ total }}_TERM_{{ enrollment_type | upper }}, {{ to_double(0) }}){% if not loop.last %}
+               + {% endif %}{% endfor %}
+        end                                                 as {{ total }}
+        {%- endfor %}
+    from aggregated
+
+),
+
 ratios as (
 
     select
-        aggregated.*,
+        summed.*,
 
         case
             when HAS_COMPLETE_RATIOS
@@ -403,7 +558,7 @@ ratios as (
         {{ to_double(cap) }}                                as RISK_SCORE_CAP,
         {{ to_double(1) }} + {{ to_double(cap) }}           as CAP_UPPER_BOUND
 
-    from aggregated
+    from summed
 
 ),
 
@@ -493,7 +648,8 @@ select
     projections.SAVINGS_EXCEEDS_MSR                         as SAVINGS_EXCEEDS_MSR,
     projections.SAVINGS_STATUS                              as SAVINGS_STATUS,
 
-    scenario.BY3_CALENDAR_YEAR                              as BY3_CALENDAR_YEAR
+    scenario.BY3_CALENDAR_YEAR                              as BY3_CALENDAR_YEAR,
+    score_basis.PY_RISK_SCORE_BASIS                         as PY_RISK_SCORE_BASIS
 
     {%- for enrollment_type in enrollment_types %},
     scenario.ASSIGNED_SCORED_MEMBER_MONTHS_{{ enrollment_type | upper }}
@@ -552,7 +708,57 @@ select
     projections.ANNUAL_EXPENDITURE_BENCHMARK_YEAR           as ANNUAL_EXPENDITURE_BENCHMARK_YEAR,
     projections.ANNUAL_EXPENDITURE_SUBMISSION_ID            as ANNUAL_EXPENDITURE_SUBMISSION_ID,
     projections.ACPT_PERFORMANCE_YEAR_LABEL                 as ACPT_PERFORMANCE_YEAR_LABEL,
-    projections.IS_AGREEMENT_DEFAULTED                      as IS_AGREEMENT_DEFAULTED
+    projections.IS_AGREEMENT_DEFAULTED                      as IS_AGREEMENT_DEFAULTED,
+
+    {#- the settlement view beside the projection (TUVA-162): the settled
+        year's A1 computed from the settlement population, the same on every
+        quarter row of the year, NULL for a year not settled -#}
+    {%- for enrollment_type in enrollment_types %}
+    {%- set t = enrollment_type | upper %}
+    settlement_ratios.SETTLEMENT_RISK_SCORE_WEIGHT_{{ t }}  as SETTLEMENT_RISK_SCORE_WEIGHT_{{ t }},
+    settlement_ratios.SETTLEMENT_PY_RISK_SCORE_{{ t }}      as SETTLEMENT_PY_RISK_SCORE_{{ t }},
+    settlement_ratios.SETTLEMENT_RISK_RATIO_{{ t }}         as SETTLEMENT_RISK_RATIO_{{ t }},
+    settlement_ratios.SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_{{ t }}
+                                                            as SETTLEMENT_PY_DEMOGRAPHIC_RISK_SCORE_{{ t }},
+    settlement_ratios.SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_{{ t }}
+                                                            as SETTLEMENT_DEMOGRAPHIC_RISK_RATIO_{{ t }},
+    settlement_ratios.SETTLEMENT_FINAL_RISK_RATIO_{{ t }}   as SETTLEMENT_FINAL_RISK_RATIO_{{ t }},
+    {%- endfor %}
+    settlement_ratios.SETTLEMENT_AGGREGATE_RISK_RATIO       as SETTLEMENT_AGGREGATE_RISK_RATIO,
+    settlement_ratios.SETTLEMENT_AGGREGATE_DEMOGRAPHIC_RISK_RATIO
+                                                            as SETTLEMENT_AGGREGATE_DEMOGRAPHIC_RISK_RATIO,
+    settlement_ratios.SETTLEMENT_AGGREGATE_CAP              as SETTLEMENT_AGGREGATE_CAP,
+    case settlement_ratios.SETTLEMENT_CAP_BINDING_FLAG
+        when 1 then true
+        when 0 then false
+    end                                                     as SETTLEMENT_IS_CAP_BINDING,
+
+    {#- CMS's printed Table A1 against this quarter's projection (TUVA-160,
+        2026-11-25): settled minus projected, NULL in a year not settled.
+        Uncapped only: RISK_RATIO_CLIPPED_<TYPE> clips at a flat 1 + cap,
+        without the aggregate demographic growth CMS adds to A1 [H]
+        (sum(w x g) + 0.03), so a capped difference would measure the cap
+        level, not projection error. -#}
+    {%- for enrollment_type in enrollment_types %}
+    {%- set t = enrollment_type | upper %}
+    settlement_a1.A1_UNCAPPED_RISK_RATIO_{{ t }}            as SETTLEMENT_UNCAPPED_RISK_RATIO_{{ t }},
+    settlement_a1.A1_UNCAPPED_RISK_RATIO_{{ t }} - scenario.RISK_RATIO_{{ t }}
+                                                            as SETTLEMENT_UNCAPPED_RISK_RATIO_DIFFERENCE_{{ t }},
+    {%- endfor %}
+    settlement_a1.A1_WEIGHTED_UNCAPPED_RISK_RATIO           as SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO,
+    settlement_a1.A1_WEIGHTED_UNCAPPED_RISK_RATIO - scenario.AGGREGATE_RISK_RATIO
+                                                            as SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO_DIFFERENCE,
+
+    {#- CMS's settled result (TUVA-160), from fct_settlement through
+        fct_projected_savings_current: the same on every quarter row of a
+        settled year, IS_SETTLED false and NULL for a year not settled -#}
+    projections.IS_SETTLED                                  as IS_SETTLED
+    {%- for field, column in settlement_outcome_columns() %},
+    projections.{{ column }}{{ ' ' * (44 - column | length) }}as {{ column }}
+    {%- endfor %}
+    {%- for column in settlement_savings_columns() %},
+    projections.{{ column }}{{ ' ' * (44 - column | length) }}as {{ column }}
+    {%- endfor %}
 
 from projections
 
@@ -561,3 +767,14 @@ left join scenario
     and scenario.PERFORMANCE_YEAR = projections.PERFORMANCE_YEAR
     and scenario.PERIOD = projections.PERIOD
     and scenario.BENCHMARK_SUBMISSION_ID = projections.BENCHMARK_SUBMISSION_ID
+
+left join score_basis
+    on score_basis.PERFORMANCE_YEAR = projections.PERFORMANCE_YEAR
+
+left join settlement_ratios
+    on settlement_ratios.ACO_ID = projections.ACO_ID
+    and settlement_ratios.PERFORMANCE_YEAR = projections.PERFORMANCE_YEAR
+
+left join settlement_a1
+    on settlement_a1.ACO_ID = projections.ACO_ID
+    and settlement_a1.PERFORMANCE_YEAR = projections.PERFORMANCE_YEAR
