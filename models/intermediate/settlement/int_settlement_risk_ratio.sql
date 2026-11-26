@@ -18,8 +18,14 @@
       [A]  w_t = L_t x PY_t / sum(L x PY)
       [D]  r_t = [C] / [B];   [G] g_t = [F] / [E]
       R    = sum(w x r);      [H] = sum(w x g) + mssp_risk_score_cap
-      [I]  = [H] when R > [H], else r_t   (A1's own rule: every type takes
-             the cap when the aggregate exceeds it)
+      [I]  = min(r_t, [H]) when R > [H], else r_t
+
+    [I] is CMS's per-type clip (Methodology Specifications, section 3.2.4.2,
+    Steps 6-7; 87 FR 69935, Step 7; 425.605(a)(1)(ii)(B)): the cap applies
+    only when the aggregate R exceeds [H], and then only to a type whose own
+    ratio is above [H], which is set to [H]; a type at or below [H] keeps
+    its ratio. The specifications' Step 6 tests R >= [H] where the
+    regulation says "exceeds"; the model follows the regulation (R > [H]).
 
     BY3 comes from the STLMT workbook, not the benchmark report: CMS rescores
     some BY3 beneficiaries at reconciliation, which the ALR inputs cannot
@@ -220,7 +226,12 @@ select
     case
         when AGGREGATE_UNCAPPED_RISK_RATIO is null
           or AGGREGATE_CAP is null then {{ to_double('null') }}
-        when AGGREGATE_UNCAPPED_RISK_RATIO > AGGREGATE_CAP then AGGREGATE_CAP
+        -- Spelled out rather than left to least(): least() ignores a NULL
+        -- argument on DuckDB but returns NULL on Snowflake, and a type with
+        -- no ratio must stay NULL on every adapter, not come back as [H].
+        when UNCAPPED_RISK_RATIO is null then {{ to_double('null') }}
+        when AGGREGATE_UNCAPPED_RISK_RATIO > AGGREGATE_CAP
+            then least(UNCAPPED_RISK_RATIO, AGGREGATE_CAP)
         else UNCAPPED_RISK_RATIO
     end                                                         as FINAL_RISK_RATIO
 from aggregates

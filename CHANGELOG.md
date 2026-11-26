@@ -64,7 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     printed and the demographic score of its type.
   - `int_settlement_risk_ratio`: Table A1 [A]-[I] per type computed from
     them, with BY3 [B]/[E] from the settlement workbook's A1 and the weights'
-    benchmark from its Table 1 [L].
+    benchmark from its Table 1 [L]. [I] is CMS's per-type clip: when the
+    weighted [D] exceeds [H] (weighted [G] + 0.03), a type above [H] is set
+    to [H] and a type at or below it keeps its [D] (specifications section
+    3.2.4.2, 87 FR 69935).
   - `fact_benchmark_aco_quarter`: `SETTLEMENT_*` columns per type (weight,
     PY score, ratio, PY demographic score, demographic ratio, final ratio)
     and the aggregate ratio, demographic ratio, cap and binding flag, beside
@@ -117,7 +120,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`[D]`) and `SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO` (sum of
     `[A]` x `[D]`), each with a `_DIFFERENCE` column (settled minus
     `RISK_RATIO_<TYPE>` or `AGGREGATE_RISK_RATIO`). No capped difference:
-    the projection's cap method is not CMS's. New warn test
+    the projection's `RISK_RATIO_CLIPPED_<TYPE>` clip at a flat 1 + cap,
+    without the demographic growth in A1 `[H]`, so it would measure the
+    cap level, not projection error. New warn test
     `assert_settlement_weighted_average_risk_ratio_is_the_weighted_sum`
     checks the sum against A1's printed Weighted Average `[D]`.
   - `assert_facts_carry_the_settlement_beside_the_projection`: every fact's

@@ -102,10 +102,12 @@
     minus the quarter's projected RISK_RATIO_<TYPE> or AGGREGATE_RISK_RATIO
     — how far off the quarter's report was from the final. These are the
     printed final figures, not the M-SETTLE SETTLEMENT_* ratios above.
-    There is no capped difference: the projection clips each type at the
-    flat bound 1 + cap, min(r_t, bound), while A1 [I] sets every type to
-    the demographic cap [H] = weighted [G] + cap when the aggregate exceeds
-    it. A difference between the two would measure the method.
+    There is no capped difference: the projection's CMS-method clipped
+    ratios (RISK_RATIO_CLIPPED_<TYPE>, step 5) clip at a flat 1 + cap and
+    omit the aggregate demographic growth that CMS adds to the cap
+    ([H] = sum(w x g) + 0.03, specifications section 3.2.4.2, 87 FR
+    69935), so a difference against A1 [I] would measure the cap level,
+    not projection error.
 
     All arithmetic goes through to_double and safe_divide; see the macros.
 -#}
@@ -733,10 +735,10 @@ select
 
     {#- CMS's printed Table A1 against this quarter's projection (TUVA-160,
         2026-11-25): settled minus projected, NULL in a year not settled.
-        Uncapped only: the projection's cap is not CMS's (a flat bound
-        min(r_t, 1 + cap) per type, where A1 [I] sets every type to the
-        demographic cap [H]), so a capped difference would measure the
-        method, not the projection. -#}
+        Uncapped only: RISK_RATIO_CLIPPED_<TYPE> clips at a flat 1 + cap,
+        without the aggregate demographic growth CMS adds to A1 [H]
+        (sum(w x g) + 0.03), so a capped difference would measure the cap
+        level, not projection error. -#}
     {%- for enrollment_type in enrollment_types %}
     {%- set t = enrollment_type | upper %}
     settlement_a1.A1_UNCAPPED_RISK_RATIO_{{ t }}            as SETTLEMENT_UNCAPPED_RISK_RATIO_{{ t }},

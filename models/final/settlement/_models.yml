@@ -638,9 +638,11 @@ models:
 
       - name: FINAL_RISK_RATIO
         description: >
-          Table A1 `[I]`. Final risk ratio (capped): `[H]` when the
-          weighted-average `[D]` exceeds `[H]`, else `[D]`. Feeds Table 2
-          `[C]`.
+          Table A1 `[I]`. Final risk ratio (capped): when the
+          weighted-average `[D]` exceeds `[H]`, the type's `[D]` clipped at
+          `[H]` (a type at or below `[H]` keeps its `[D]`), else `[D]`
+          (specifications section 3.2.4.2, Step 7; 87 FR 69935). Feeds
+          Table 2 `[C]`.
 
   - name: fct_settlement_historical_benchmark
     description: >

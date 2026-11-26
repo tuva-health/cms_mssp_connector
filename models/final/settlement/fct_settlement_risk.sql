@@ -7,7 +7,8 @@
     Table A1's last row, Weighted Average, is the row whose ENROLLMENT_TYPE
     is 'weighted_average'. CMS fills it only under [D] (UNCAPPED_RISK_RATIO)
     and [G] (DEMOGRAPHIC_RISK_RATIO); its other fields are NULL. The cap
-    [H] applies when the weighted-average [D] exceeds it.
+    [H] applies when the weighted-average [D] exceeds it, and then only to
+    a type whose [D] is above [H] (specifications section 3.2.4.2).
 -#}
 
 with cells as (

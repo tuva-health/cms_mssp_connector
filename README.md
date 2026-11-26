@@ -215,11 +215,13 @@ from the settlement population:
   A1's printed Weighted Average `[D]` to CMS's rounding; a warn test
   reports it if not.
 
-Only the uncapped ratios are compared. The projection's cap is a flat
-`1 + mssp_risk_score_cap` with each type clipped at `min(r_t, bound)`; CMS's
-A1 `[I]` sets every type to the demographic cap `[H]` (weighted `[G]` +
-0.03) when the weighted `[D]` exceeds it. A capped difference would measure
-that difference in method, not how far off the projection was.
+Only the uncapped ratios are compared. The projection's CMS-method clipped
+ratios (`RISK_RATIO_CLIPPED_<TYPE>`) clip at a flat
+`1 + mssp_risk_score_cap` and omit the aggregate demographic growth that
+CMS adds to the cap (A1 `[H]` = weighted `[G]` + 0.03, which clips each
+type above it; specifications section 3.2.4.2, 87 FR 69935), so a
+difference against A1 `[I]` would measure the cap level, not projection
+error.
 
 The ACO-level dollar outcomes stay off the enrollment-type and member-month
 facts, where they would repeat on every row and sum to a multiple of
@@ -464,8 +466,12 @@ The connector adds two facts of its own to that schema, under
   [F]), divides by the settlement workbook's BY3 [B] and [E] (not the
   benchmark report's: CMS rescores some BY3 beneficiaries at
   reconciliation), weights by Table 1 [L] times person years ([A]), and
-  applies A1's cap: [H] is the weighted [G] plus 0.03, and every type takes
-  [H] when the weighted [D] exceeds it ([I]). `fact_benchmark_aco_quarter`
+  applies A1's cap: [H] is the weighted [G] plus 0.03, and when the
+  weighted [D] exceeds [H], each type whose [D] is above [H] is set to
+  [H] while a type at or below it keeps its [D] ([I], the specifications'
+  section 3.2.4.2 Steps 6-7 and 87 FR 69935; Step 6 says "greater than or
+  equal to" where 425.605(a)(1)(ii)(B) says "exceeds", and the model
+  follows the regulation). `fact_benchmark_aco_quarter`
   carries the result as `SETTLEMENT_*` columns on every quarter row of the
   settled year, and `fact_member_month_benchmark` carries the month's
   settlement type, score, ratio and final [I]. The projection's own columns
