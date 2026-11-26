@@ -112,10 +112,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `PROJECTED_SAVINGS_PERCENTAGE`, on every quarter (and, in
     `fct_projected_savings`, every delivery) row of a settled year: how far
     off each quarterly report was from the final.
+  - `fact_benchmark_aco_quarter`: CMS's printed Table A1 beside each
+    quarter's projected risk ratios, `SETTLEMENT_UNCAPPED_RISK_RATIO_<TYPE>`
+    (`[D]`) and `SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO` (sum of
+    `[A]` x `[D]`), each with a `_DIFFERENCE` column (settled minus
+    `RISK_RATIO_<TYPE>` or `AGGREGATE_RISK_RATIO`). No capped difference:
+    the projection's cap method is not CMS's. New warn test
+    `assert_settlement_weighted_average_risk_ratio_is_the_weighted_sum`
+    checks the sum against A1's printed Weighted Average `[D]`.
   - `assert_facts_carry_the_settlement_beside_the_projection`: every fact's
     settlement columns against `fct_settlement`, and NULL in open years;
     on the ACO-level facts, each row's settled savings percentage and its
-    difference from the row's own projection.
+    difference from the row's own projection; on `fact_benchmark_aco_quarter`,
+    each quarter's A1 ratios and their differences.
 - `alr_mbi_to_person` and `enroll_flag_type`: the ALR MBI-to-person
   crosswalk and the EnrollFlag-to-type mapping as macros, shared by
   `int_member_month_risk` and the settlement member-months.

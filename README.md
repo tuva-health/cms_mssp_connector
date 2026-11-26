@@ -199,6 +199,26 @@ where IS_SETTLED
 order by ACO_ID, PERFORMANCE_YEAR, QUARTER_NUM
 ```
 
+`fact_benchmark_aco_quarter` does the same for the risk ratio, on each
+quarter's latest delivery, against CMS's printed Table A1
+(`fct_settlement_risk`), not the M-SETTLE `SETTLEMENT_*` ratios recomputed
+from the settlement population:
+
+- `SETTLEMENT_UNCAPPED_RISK_RATIO_<TYPE>` (A1 `[D]`) beside
+  `RISK_RATIO_<TYPE>`, and `SETTLEMENT_UNCAPPED_RISK_RATIO_DIFFERENCE_<TYPE>`,
+  settled minus projected.
+- `SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO`, the sum of A1 `[A]` x `[D]`
+  over the four types, beside `AGGREGATE_RISK_RATIO`, which uses the same
+  weights, and `SETTLEMENT_WEIGHTED_UNCAPPED_RISK_RATIO_DIFFERENCE`. The sum
+  agrees with A1's printed Weighted Average `[D]` to CMS's rounding; a warn
+  test reports it if not.
+
+Only the uncapped ratios are compared. The projection's cap is a flat
+`1 + mssp_risk_score_cap` with each type clipped at `min(r_t, bound)`; CMS's
+A1 `[I]` sets every type to the demographic cap `[H]` (weighted `[G]` +
+0.03) when the weighted `[D]` exceeds it. A capped difference would measure
+that difference in method, not how far off the projection was.
+
 The ACO-level dollar outcomes stay off the enrollment-type and member-month
 facts, where they would repeat on every row and sum to a multiple of
 themselves. The settled-year risk columns (`SETTLEMENT_*` risk ratios,

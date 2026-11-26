@@ -74,3 +74,12 @@ end
        ~ to_double(relation_alias ~ '.PER_CAPITA_EXPENDITURE'),
        relation_alias ~ '.UPDATED_BENCHMARK') }}
 {%- endmacro -%}
+
+{#- True unless two figures agree to float rounding (settlement_values_differ)
+    or are both NULL. Never NULL. -#}
+{%- macro settlement_float_differs(left, right) -%}
+coalesce(
+    {{ settlement_values_differ(left, right) }},
+    (({{ left }}) is null) <> (({{ right }}) is null)
+)
+{%- endmacro -%}
