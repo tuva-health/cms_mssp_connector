@@ -57,8 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scored from monthly columns, `mixed` for both. The README explains why.
 
 - Settled-year risk ratios from the settlement population (TUVA-162,
-  method M-SETTLE). Compiles once `cms_alr_connector` is pinned at the
-  release that ships `aalr_settlement_population`; that pin bump is pending.
+  method M-SETTLE). Reads `aalr_settlement_population` from
+  `cms_alr_connector` `v1.2.0`.
   - `int_settlement_member_month_risk`: the settlement AALR's eligible
     person-months, typed by EnrollFlag, with the month's own score as
     printed and the demographic score of its type.
