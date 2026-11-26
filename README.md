@@ -580,6 +580,7 @@ the raw tables this connector reads, so the two are released in pairs:
 
 | cms_mssp_connector | cms_mssp_pipeline | medicare_cclf_connector (via cms_alr_connector) |
 |---|---|---|
+| v1.1.0 | v0.5.0 | v1.0.3 (cms_alr_connector v1.2.0) |
 | v1.0.1 | v0.4.0 | v1.0.2 (cms_alr_connector v1.1.1) |
 
 - `dbt-labs/dbt_utils`
