@@ -338,7 +338,13 @@ models:
       - name: BY3_DEMOGRAPHIC_RISK_SCORE
         description: "[E]: the settlement workbook's A1 [E]."
       - name: PY_DEMOGRAPHIC_RISK_SCORE
-        description: "[F]: the mean demographic score over the type's person-months."
+        description: >
+          [F]: the mean demographic score over the type's person-months. On
+          real data it can differ from the printed A1 [F] at about the 1e-6
+          level when a beneficiary dies mid-year: CMS appears to treat some
+          death months differently, and no general rule reproduces it, so
+          [G] and [H] can differ at that level too. [A]-[E] and [I] match to
+          about 1e-13.
       - name: DEMOGRAPHIC_RISK_RATIO
         description: "[G]: `[F] / [E]`."
       - name: AGGREGATE_UNCAPPED_RISK_RATIO
